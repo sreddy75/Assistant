@@ -16,9 +16,10 @@ nest_asyncio.apply()
 
 st.set_page_config(
     page_title="Assistant",
-    page_icon=":orange_heart:",
+    page_icon="favicon.png",
 )
-st.title("Akilli")
+
+st.title("Rosy")
 
 def main() -> None:
     # Get LLM Model
@@ -33,18 +34,6 @@ def main() -> None:
 
     # Sidebar checkboxes for selecting tools
     st.sidebar.markdown("### Select Tools")
-
-    # # Enable Calculator
-    # if "calculator_enabled" not in st.session_state:
-    #     st.session_state["calculator_enabled"] = True
-    # # Get calculator_enabled from session state if set
-    # calculator_enabled = st.session_state["calculator_enabled"]
-    # # Checkbox for enabling calculator
-    # calculator = st.sidebar.checkbox("Calculator", value=calculator_enabled, help="Enable calculator.")
-    # if calculator_enabled != calculator:
-    #     st.session_state["calculator_enabled"] = calculator
-    #     calculator_enabled = calculator
-    #     restart_assistant()
 
     # Enable file tools
     if "file_tools_enabled" not in st.session_state:
