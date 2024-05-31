@@ -1,0 +1,9 @@
+Detonation pressure is the pressure generated at the front of a detonation wave in an explosive material.
+ Non-ideal explosives, which do not follow the ideal detonation theory perfectly, 
+ often have lower detonation pressures due to less efficient energy release and incomplete reactions at the
+  detonation front. These explosives, usually less dense and more porous, show varying detonation velocities 
+  and gradual pressure buildups. Factors such as chemical composition, initiation method, and environmental
+   conditions play significant roles in influencing detonation pressure. Non-ideal explosives are commonly 
+   used where controlled and less intense energy release is desired, such as in mining or demolition.
+    Measurements of detonation pressure in these explosives involve complex empirical and computational models,
+     modified by principles like the Chapman-Jouguet condition to account for their unique reaction dynamics.
