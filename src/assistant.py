@@ -285,10 +285,7 @@ def get_llm_os(
         add_datetime_to_instructions=True,
         # Add an introductory Assistant message
         introduction=dedent(
-            """\
-        Hi, I'm Akilli.
-        Let's solve some problems together!\
-        """
+            """Yes, Mr. J !"""
         ),
         debug_mode=debug_mode,
     )
