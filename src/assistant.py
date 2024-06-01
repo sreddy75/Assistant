@@ -21,8 +21,8 @@ from kr8.storage.assistant.postgres import PgAssistantStorage
 from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
 
-# db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
-db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
+db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
+# db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
 cwd = Path(__file__).parent.resolve()
 scratch_dir = cwd.joinpath("scratch")
 if not scratch_dir.exists():
@@ -286,7 +286,8 @@ def get_llm_os(
         add_datetime_to_instructions=True,
         # Add an introductory Assistant message
         introduction=dedent(
-            """Yes, Mr. J !"""
+            "How may I assist you to today?"
+            " I have the tools and team members on stand by, check them out in the side bar."
         ),
         debug_mode=debug_mode,
     )

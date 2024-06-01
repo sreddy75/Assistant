@@ -1,4 +1,7 @@
+import base64
+import io
 from typing import List
+from PIL import Image
 
 import nest_asyncio
 import streamlit as st
@@ -6,6 +9,7 @@ from kr8.assistant import Assistant
 from kr8.document import Document
 from kr8.document.reader.pdf import PDFReader
 from kr8.document.reader.website import WebsiteReader
+from kr8.utils.ut import log_event, initialize_usage_tracking
 from kr8.utils.log import logger
 from dotenv import load_dotenv
 load_dotenv()
@@ -49,7 +53,35 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.title("Rosy")
+image_path = "rozy.png"
+icon_image = Image.open(image_path)
+# Convert the image to base64
+buffered = io.BytesIO()
+icon_image.save(buffered, format="PNG")
+img_str = base64.b64encode(buffered.getvalue()).decode()
+
+
+# Create a custom title with an icon using markdown and HTML
+st.markdown(
+    f"""
+    <style>
+    .title-with-icon {{
+        display: flex;
+        align-items: center;
+    }}
+    .title-with-icon img {{
+        margin-right: 10px;
+    }}
+    </style>
+    <div class="title-with-icon">
+        <img src="data:image/png;base64,{img_str}" width="100" height="100">
+        <h1>Rozy</h1>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+initialize_usage_tracking()
 
 def main() -> None:
     # Get LLM Model
@@ -175,6 +207,7 @@ def main() -> None:
 
     # Prompt for user input
     if prompt := st.chat_input():
+        log_event("chat_input", prompt)
         st.session_state["messages"].append({"role": "user", "content": prompt})
 
     # Display existing chat messages
@@ -195,6 +228,7 @@ def main() -> None:
                 response += delta  # type: ignore
                 resp_container.markdown(response)
             st.session_state["messages"].append({"role": "assistant", "content": response})
+            log_event("assistant_response", question, response=response)  # Log the response
 
     # Load LLM OS knowledge base
     if llm_os.knowledge_base:
@@ -207,6 +241,7 @@ def main() -> None:
         )
         add_url_button = st.sidebar.button("Add URL")
         if add_url_button:
+            log_event("add_url", input_url)
             if input_url is not None:
                 alert = st.sidebar.info("Processing URLs...", icon="ℹ️")
                 if f"{input_url}_scraped" not in st.session_state:
@@ -227,6 +262,7 @@ def main() -> None:
             "Add a PDF :page_facing_up:", type="pdf", key=st.session_state["file_uploader_key"]
         )
         if uploaded_file is not None:
+            log_event("upload_pdf", uploaded_file.name)
             alert = st.sidebar.info("Processing PDF...", icon="🧠")
             auto_rag_name = uploaded_file.name.split(".")[0]
             if f"{auto_rag_name}_uploaded" not in st.session_state:
@@ -241,6 +277,7 @@ def main() -> None:
 
     if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
         if st.sidebar.button("Clear Knowledge Base"):
+            log_event("clear_knowledge_base", "User cleared the knowledge base")           
             llm_os.knowledge_base.vector_db.clear()
             st.sidebar.success("Knowledge base cleared")
 
@@ -269,6 +306,7 @@ def main() -> None:
             st.rerun()
 
     if st.sidebar.button("New Run"):
+        log_event("new_run", "User initiated a new run")
         restart_assistant()
 
 
