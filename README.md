@@ -28,7 +28,7 @@ EXA_API_KEY=***
 provide long-term memory and knowledge to the LLM.
 
 
--  run using the docker run command
+- run using the docker run command
 
 ```shell
 docker run -d \
