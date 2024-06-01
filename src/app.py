@@ -26,13 +26,13 @@ st.markdown(
     @import url('https://fonts.googleapis.com/css2?family=Comic+Sans+MS:wght@400;700&display=swap');
 
     html, body, [class*="css"]  {
-        font-family: 'Helvetica', cursive, sans-serif;
-        # background-color: #282828;
-        # color: #E0E0E0;
+        font-family: 'Comic Sans MS', cursive, sans-serif;
+        background-color: #F0F0F0;
+        color: #333333;
     }
 
     .stButton>button {
-        background-color: #1DB954;
+        background-color: #4CAF50;
         color: #FFFFFF;
         border: none;
         padding: 10px 20px;
@@ -48,6 +48,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 st.title("Rosy")
 
 def main() -> None:
@@ -86,38 +87,27 @@ def main() -> None:
     if ddg_search_enabled != ddg_search:
         st.session_state["ddg_search_enabled"] = ddg_search
         ddg_search_enabled = ddg_search
-        restart_assistant()
-
-    # Enable shell tools
-    if "shell_tools_enabled" not in st.session_state:
-        st.session_state["shell_tools_enabled"] = False
-    # Get shell_tools_enabled from session state if set
-    shell_tools_enabled = st.session_state["shell_tools_enabled"]
-    # Checkbox for enabling shell tools
-    shell_tools = st.sidebar.checkbox("Shell Tools", value=shell_tools_enabled, help="Enable shell tools.")
-    if shell_tools_enabled != shell_tools:
-        st.session_state["shell_tools_enabled"] = shell_tools
-        shell_tools_enabled = shell_tools
-        restart_assistant()
+        restart_assistant()    
+    
 
     # Sidebar checkboxes for selecting team members
     st.sidebar.markdown("### Select Team Members")
 
-    # Enable Data Analyst
-    if "data_analyst_enabled" not in st.session_state:
-        st.session_state["data_analyst_enabled"] = False
-    # Get data_analyst_enabled from session state if set
-    data_analyst_enabled = st.session_state["data_analyst_enabled"]
-    # Checkbox for enabling web search
-    data_analyst = st.sidebar.checkbox(
-        "Data Analyst",
-        value=data_analyst_enabled,
-        help="Enable the Data Analyst assistant for data related queries.",
-    )
-    if data_analyst_enabled != data_analyst:
-        st.session_state["data_analyst_enabled"] = data_analyst
-        data_analyst_enabled = data_analyst
-        restart_assistant()
+    # # Enable Data Analyst
+    # if "data_analyst_enabled" not in st.session_state:
+    #     st.session_state["data_analyst_enabled"] = False
+    # # Get data_analyst_enabled from session state if set
+    # data_analyst_enabled = st.session_state["data_analyst_enabled"]
+    # # Checkbox for enabling web search
+    # data_analyst = st.sidebar.checkbox(
+    #     "Data Analyst",
+    #     value=data_analyst_enabled,
+    #     help="Enable the Data Analyst assistant for data related queries.",
+    # )
+    # if data_analyst_enabled != data_analyst:
+    #     st.session_state["data_analyst_enabled"] = data_analyst
+    #     data_analyst_enabled = data_analyst
+    #     restart_assistant()
 
     # Enable Research Assistant
     if "research_assistant_enabled" not in st.session_state:
@@ -158,9 +148,8 @@ def main() -> None:
         llm_os = get_llm_os(
             llm_id=llm_id,
             ddg_search=ddg_search_enabled,
-            file_tools=file_tools_enabled,
-            shell_tools=shell_tools_enabled,
-            data_analyst=data_analyst_enabled,
+            file_tools=file_tools_enabled,            
+            # data_analyst=data_analyst_enabled,
             research_assistant=research_assistant_enabled,
             investment_assistant=investment_assistant_enabled,
         )
@@ -272,9 +261,7 @@ def main() -> None:
             st.session_state["llm_os"] = get_llm_os(
                 llm_id=llm_id,                
                 ddg_search=ddg_search_enabled,
-                file_tools=file_tools_enabled,
-                shell_tools=shell_tools_enabled,
-                data_analyst=data_analyst_enabled,                
+                file_tools=file_tools_enabled,                                         
                 research_assistant=research_assistant_enabled,
                 investment_assistant=investment_assistant_enabled,
                 run_id=new_llm_os_run_id,

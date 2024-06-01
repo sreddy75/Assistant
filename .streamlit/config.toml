@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#4CAF50"          # Fresh green for accents
+backgroundColor = "#F0F0F0"       # Light grey background for readability and ease on the eyes
+secondaryBackgroundColor = "#FFFFFF"  # White for secondary elements to keep it clean
+textColor = "#333333"             # Dark grey text for readability
+font = "sans serif"
