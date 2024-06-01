@@ -19,6 +19,35 @@ st.set_page_config(
     page_icon="favicon.png",
 )
 
+# Inject custom CSS to use Comic Sans
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Comic+Sans+MS:wght@400;700&display=swap');
+
+    html, body, [class*="css"]  {
+        font-family: 'Helvetica', cursive, sans-serif;
+        # background-color: #282828;
+        # color: #E0E0E0;
+    }
+
+    .stButton>button {
+        background-color: #1DB954;
+        color: #FFFFFF;
+        border: none;
+        padding: 10px 20px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin: 4px 2px;
+        cursor: pointer;
+        border-radius: 4px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 st.title("Rosy")
 
 def main() -> None:
