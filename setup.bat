@@ -19,6 +19,7 @@ echo Creating .env file...
 echo OPENAI_API_KEY=sk-****
 echo OPENAI_MODEL_NAME=gpt-4o
 echo EXA_API_KEY=a22a2b0b****
+echo PG_VECTOR_INSTANCE=docker
 ) > .env
 
 :: Build and run the Docker containers

@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Optional
 from textwrap import dedent
@@ -20,9 +21,16 @@ from kr8.assistant.python import PythonAssistant
 from kr8.storage.assistant.postgres import PgAssistantStorage
 from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
+from dotenv import load_dotenv
+load_dotenv()
 
-# db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
-db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
+pg_instance = os.getenv('PG_VECTOR_INSTANCE')
+
+if pg_instance == "localhost":
+    db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
+else:
+    db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
+    
 cwd = Path(__file__).parent.resolve()
 scratch_dir = cwd.joinpath("scratch")
 if not scratch_dir.exists():

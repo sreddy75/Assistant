@@ -5,6 +5,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
+import certifi
 
 # Slack configuration
 SLACK_TOKEN = "xoxb-1268836013186-7230300082160-syjqHaSER9KmsYGlAFatkmEj"  # Make sure this is your actual token
@@ -30,7 +31,7 @@ def get_host_info():
 def log_event(event_type, details, response=None):
     event = {"type": event_type, "details": details}
     if response:
-        first_line = response[:75]  # Capture the first 50 characters of the response
+        first_line = response[:75]  # Capture the first 75 characters of the response
         response_length = len(response)
         event["response"] = {
             "first_line": first_line,
@@ -45,7 +46,9 @@ def send_to_slack(message):
     try:
         response = client.chat_postMessage(
             channel=SLACK_CHANNEL,
-            text=message
+            text=message,
+            headers={'User-Agent': 'Slack/1.0'},  # Include this header if you face any issues
+            verify=certifi.where()
         )
         print(f"Message sent to Slack: {message}")  # Debug print
     except SlackApiError as e:
@@ -91,7 +94,7 @@ def initialize_usage_tracking():
 
     if scheduler is None:
         scheduler = BackgroundScheduler()
-        scheduler.add_job(send_usage_data, 'interval', minutes=1)  # Adjust the interval as needed
+        scheduler.add_job(send_usage_data, 'interval', minutes=30)  # Adjust the interval as needed
         scheduler.start()
         print("Scheduler started")  # Debug print
 

@@ -20,6 +20,7 @@ cat <<EOT >> .env
 OPENAI_API_KEY=sk-*****
 OPENAI_MODEL_NAME=gpt-4o
 EXA_API_KEY=****
+PG_VECTOR_INSTANCE=docker
 EOT
 
 # Build and run the Docker containers
