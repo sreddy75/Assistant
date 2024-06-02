@@ -21,8 +21,8 @@ from kr8.storage.assistant.postgres import PgAssistantStorage
 from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
 
-db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
-# db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
+# db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
+db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
 cwd = Path(__file__).parent.resolve()
 scratch_dir = cwd.joinpath("scratch")
 if not scratch_dir.exists():
