@@ -1,0 +1,130 @@
+import streamlit as st
+from kr8.utils.log import logger
+from assistant import get_llm_os
+from kr8.utils.ut import log_event
+from kr8.document.reader.website import WebsiteReader
+from kr8.document.reader.pdf import PDFReader
+
+def render_chat():
+    llm_id = st.session_state["llm_id"]
+    llm_os = initialize_assistant(llm_id)
+
+    try:
+        st.session_state["llm_os_run_id"] = llm_os.create_run()
+    except Exception:
+        st.warning("Could not create LLM OS run, is the database running?")
+        return
+
+    assistant_chat_history = llm_os.memory.get_chat_history()
+    if len(assistant_chat_history) > 0:
+        logger.debug("Loading chat history")
+        st.session_state["messages"] = assistant_chat_history
+    else:
+        logger.debug("No chat history found")
+        st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
+
+    if prompt := st.chat_input():
+        log_event("chat_input", prompt)
+        st.session_state["messages"].append({"role": "user", "content": prompt})
+
+    for message in st.session_state["messages"]:
+        if message["role"] == "system":
+            continue
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+    last_message = st.session_state["messages"][-1]
+    if last_message.get("role") == "user":
+        question = last_message["content"]
+        with st.chat_message("assistant"):
+            response = ""
+            resp_container = st.empty()
+            for delta in llm_os.run(question):
+                response += delta
+                resp_container.markdown(response)
+            st.session_state["messages"].append({"role": "assistant", "content": response})
+            log_event("assistant_response", question, response=response)
+
+    if llm_os.knowledge_base:
+        manage_knowledge_base(llm_os)
+
+def initialize_assistant(llm_id):
+    if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
+        logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
+        llm_os = get_llm_os(
+            llm_id=llm_id,
+            ddg_search=st.session_state.get("ddg_search_enabled", False),
+            file_tools=st.session_state.get("file_tools_enabled", False),
+            research_assistant=st.session_state.get("research_assistant_enabled", False),
+            investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
+        )
+        st.session_state["llm_os"] = llm_os
+    else:
+        llm_os = st.session_state["llm_os"]
+    return llm_os
+
+
+def manage_knowledge_base(llm_os):
+    if "processed_files" not in st.session_state:
+        st.session_state["processed_files"] = []
+
+    if "url_scrape_key" not in st.session_state:
+        st.session_state["url_scrape_key"] = 0
+
+    input_url = st.sidebar.text_input("Add URL to Knowledge Base", type="default", key=st.session_state["url_scrape_key"])
+    add_url_button = st.sidebar.button("Add URL")
+    if add_url_button:
+        log_event("add_url", input_url)
+        if input_url is not None:
+            with st.spinner("Processing URLs..."):  # Corrected spinner usage
+                if f"{input_url}_scraped" not in st.session_state:
+                    scraper = WebsiteReader(max_links=2, max_depth=1)
+                    web_documents = scraper.read(input_url)
+                    if web_documents:
+                        llm_os.knowledge_base.load_documents(web_documents, upsert=True)
+                        st.session_state[f"{input_url}_scraped"] = True
+                        st.session_state["processed_files"].append(input_url)
+                        st.sidebar.success(f"Successfully processed and added: {input_url}")
+                    else:
+                        st.sidebar.error("Could not read website")
+
+    if "file_uploader_key" not in st.session_state:
+        st.session_state["file_uploader_key"] = 100
+
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
+    
+    uploaded_files = st.sidebar.file_uploader(
+        "Add PDFs :page_facing_up:", type="pdf", key=st.session_state["file_uploader_key"], accept_multiple_files=True
+    )
+    if uploaded_files:
+        with st.spinner("Processing PDFs..."):  # Corrected spinner usage
+            for uploaded_file in uploaded_files:
+                log_event("upload_pdf", uploaded_file.name)
+                auto_rag_name = uploaded_file.name.split(".")[0]
+                if f"{auto_rag_name}_uploaded" not in st.session_state:
+                    reader = PDFReader()
+                    auto_rag_documents = reader.read(uploaded_file)
+                    if auto_rag_documents:
+                        llm_os.knowledge_base.load_documents(auto_rag_documents, upsert=True)
+                        st.session_state[f"{auto_rag_name}_uploaded"] = True
+                        st.session_state["processed_files"].append(uploaded_file.name)
+                    else:
+                        st.sidebar.error(f"Could not read PDF: {uploaded_file.name}")
+
+    if st.session_state["processed_files"]:
+        st.sidebar.markdown("### You are chatting with these files:")
+        for file in st.session_state["processed_files"]:
+            st.sidebar.write(file)
+
+    if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
+        if st.sidebar.button("Clear Knowledge Base"):
+            log_event("clear_knowledge_base", "User cleared the knowledge base")
+            llm_os.knowledge_base.vector_db.clear()
+            st.session_state["processed_files"] = []
+            st.sidebar.success("Knowledge base cleared")
+
+    if llm_os.team and len(llm_os.team) > 0:
+        for team_member in llm_os.team:
+            if len(team_member.memory.chat_history) > 0:
+                with st.expander(f"{team_member.name} Memory", expanded=False):
+                    st.container().json(team_member.memory.get_llm_messages())

@@ -37,7 +37,7 @@ def log_event(event_type, details, response=None):
             "first_line": first_line,
             "length": response_length
         }
-    print(f"Logging event: {event}")  # Debug print
+    # print(f"Logging event: {event}")  # Debug print
     events.append(event)
     st.session_state["events"] = events
 
@@ -50,16 +50,17 @@ def send_to_slack(message):
             headers={'User-Agent': 'Slack/1.0'},  # Include this header if you face any issues
             verify=certifi.where()
         )
-        print(f"Message sent to Slack: {message}")  # Debug print
+        # print(f"Message sent to Slack: {message}")  # Debug print
     except SlackApiError as e:
-        print(f"Error sending message to Slack: {e.response['error']}")
+        pass
+        # print(f"Error sending message to Slack: {e.response['error']}")
 
 def send_usage_data():
     global sent_events
     new_events = [event for event in events if event not in sent_events]
     
     if not new_events:
-        print("No new events to send.")
+        # print("No new events to send.")
         return
     
     host_info = get_host_info()
@@ -82,8 +83,7 @@ def send_usage_data():
             =============================\n"""
         )
     
-    message = f"{formatted_host_info}{formatted_events}"
-    print(f"Sending usage data: {message}")  # Debug print
+    message = f"{formatted_host_info}{formatted_events}"    
     send_to_slack(message)
     
     # Update sent_events with the new events
@@ -94,9 +94,9 @@ def initialize_usage_tracking():
 
     if scheduler is None:
         scheduler = BackgroundScheduler()
-        scheduler.add_job(send_usage_data, 'interval', minutes=30)  # Adjust the interval as needed
+        scheduler.add_job(send_usage_data, 'interval', minutes=1)  # Adjust the interval as needed
         scheduler.start()
-        print("Scheduler started")  # Debug print
+        # print("Scheduler started")  # Debug print
 
         atexit.register(lambda: scheduler.shutdown())
 
