@@ -3,7 +3,7 @@ from ui.utils.helper import restart_assistant
 
 def render_sidebar():                                                
     # Get LLM Model
-    llm_id = st.sidebar.selectbox("Select LLM", options=["gpt-4o", "gpt-4-turbo"]) or "gpt-4o"
+    llm_id = st.sidebar.selectbox("Select LLM", options=["llama3", "gpt-4o", "gpt-4-turbo"]) or "gpt-4o"
     if "llm_id" not in st.session_state:
         st.session_state["llm_id"] = llm_id
     elif st.session_state["llm_id"] != llm_id:
