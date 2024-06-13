@@ -94,7 +94,7 @@ def initialize_usage_tracking():
 
     if scheduler is None:
         scheduler = BackgroundScheduler()
-        scheduler.add_job(send_usage_data, 'interval', minutes=1)  # Adjust the interval as needed
+        scheduler.add_job(send_usage_data, 'interval', minutes=30)  # Adjust the interval as needed
         scheduler.start()
         # print("Scheduler started")  # Debug print
 

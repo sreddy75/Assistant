@@ -53,10 +53,11 @@ def initialize_assistant(llm_id):
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
         llm_os = get_llm_os(
             llm_id=llm_id,
-            ddg_search=st.session_state.get("ddg_search_enabled", False),
+            ddg_search=st.session_state.get("ddg_search_enabled", True),
             file_tools=st.session_state.get("file_tools_enabled", False),
-            research_assistant=st.session_state.get("research_assistant_enabled", False),
+            research_assistant=st.session_state.get("research_assistant_enabled", True),
             investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
+            maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", True),            
         )
         st.session_state["llm_os"] = llm_os
     else:

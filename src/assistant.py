@@ -24,12 +24,8 @@ from kr8.vectordb.pgvector import PgVector2
 from dotenv import load_dotenv
 load_dotenv()
 
-pg_instance = os.getenv('PG_VECTOR_INSTANCE')
-
-if pg_instance == "localhost":
-    db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
-else:
-    db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
+# db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
+db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
     
 cwd = Path(__file__).parent.resolve()
 scratch_dir = cwd.joinpath("scratch")
@@ -46,6 +42,7 @@ def get_llm_os(
     data_analyst: bool = False,
     python_assistant: bool = False,
     research_assistant: bool = False,
+    maintenance_engineer: bool = True,
     investment_assistant: bool = False,
     user_id: Optional[str] = None,
     run_id: Optional[str] = None,
@@ -165,6 +162,81 @@ def get_llm_os(
             "To write a research report, delegate the task to the `Research Assistant`. "
             "Return the report in the <report_format> to the user as is, without any additional text like 'here is the report'."
         )
+    if maintenance_engineer:
+        _maintenance_engineer = Assistant(
+            name="Maintenance Assistant",
+            role="Provide maintenance and repair guidance for golf course machinery",
+            llm=OpenAIChat(model=llm_id),
+            description="You are an experienced machinery maintenance expert specializing in golf course equipment, tasked with providing detailed, actionable maintenance and repair guidance.",
+            instructions=[
+                "For a given maintenance or repair question, use the `search_exa` tool to get the top 10 search results and refer to the provided manuals and documents.",
+                "Carefully read the results and the provided documents, then generate a comprehensive maintenance and repair guide in the <guide_format> provided below.",
+                "Ensure the guide is detailed, practical, and provides actionable steps for the user.",
+                "Ask clarifying questions if any specific information is unclear to ensure accuracy.",
+                "Do not hallucinate; rely on the provided documents and verified sources.",
+                "Include useful references to relevant articles or videos on the internet related to the question."
+            ],
+            expected_output=dedent(
+                """\
+                A comprehensive maintenance and repair guide in the following format:
+                <guide_format>
+                ## Title
+
+                - **Overview**: Brief introduction of the issue or maintenance task.
+                - **Importance**: Why this task is significant for the maintenance of golf course machinery.
+
+                ### Section 1: Diagnostic Steps
+                - **Step 1**: Detailed description of the first diagnostic step.
+                - **Step 2**: Detailed description of the second diagnostic step.
+
+                ### Section 2: Maintenance/Repair Steps
+                - **Step 1**: Detailed description of the first maintenance or repair step.
+                - **Step 2**: Detailed description of the second maintenance or repair step.
+
+                ### Section 3: Preventive Measures
+                - **Measure 1**: Tips for preventing the issue in the future.
+                - **Measure 2**: Additional preventive measures.
+
+                ## Conclusion
+                - **Summary of Guidance**: Recap of the key points from the guide.
+                - **Next Steps**: Recommended next steps for the user.
+
+                ## References
+                - [Manual or Document 1](Link to Source)
+                - [Relevant Article or Video 1](Link to Source)
+                </guide_format>
+                """
+            ),
+            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            markdown=True,
+            add_datetime_to_instructions=True,
+            debug_mode=debug_mode,
+            storage=PgAssistantStorage(table_name="llm_os_runs", db_url=db_url),
+            # Add a knowledge base to the LLM OS
+            knowledge_base=AssistantKnowledge(
+                vector_db=PgVector2(
+                    db_url=db_url,
+                    collection="llm_os_documents",
+                    embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                ),
+                # 3 references are added to the prompt when searching the knowledge base
+                num_documents=3,
+            ),                        
+            # This setting gives the LLM a tool to search the knowledge base for information
+            search_knowledge=True,
+            # This setting gives the LLM a tool to get chat history
+            read_chat_history=True,
+            # This setting adds chat history to the messages
+            add_chat_history_to_messages=True,
+            # This setting adds 6 previous messages from chat history to the messages sent to the LLM
+            num_history_messages=6,                        
+        )
+        team.append(_maintenance_engineer)
+        extra_instructions.append(
+            "To provide maintenance and repair guidance, delegate the task to the `Maintenance Assistant`. "
+            "Return the guide in the <guide_format> to the user as is, without any additional text like 'here is the guide'."
+        )
+            
     if investment_assistant:
         _investment_assistant = Assistant(
             name="Investment Assistant",
@@ -241,7 +313,7 @@ def get_llm_os(
         llm=OpenAIChat(model=llm_id),
         description=dedent(
             """\
-        You are the most advanced AI system in the world called `LLM-OS`.
+        You are an helpful assistant called Rozy.
         You have access to a set of tools and a team of AI Assistants at your disposal.
         Your goal is to assist the user in the best way possible.\
         """
@@ -294,8 +366,7 @@ def get_llm_os(
         add_datetime_to_instructions=True,
         # Add an introductory Assistant message
         introduction=dedent(
-            "How may I assist you to today?"
-            " I have the tools and team members on stand by, check them out in the side bar."
+            "How may I assist you to today?"            
         ),
         debug_mode=debug_mode,
     )
