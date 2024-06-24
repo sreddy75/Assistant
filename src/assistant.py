@@ -24,7 +24,7 @@ from kr8.vectordb.pgvector import PgVector2
 from dotenv import load_dotenv
 load_dotenv()
 
-db_url = "postgresql+psycopg://ai:ai@pgvector:5432/ai"
+db_url = "postgresql+psycopg2://ai:ai@pgvector:5432/ai"
 # db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
     
 cwd = Path(__file__).parent.resolve()
