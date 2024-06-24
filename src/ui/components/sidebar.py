@@ -10,7 +10,7 @@ def render_sidebar():
         st.session_state["llm_id"] = llm_id
         restart_assistant()
 
-    # st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
 
     # with st.sidebar.expander("Select Tools", expanded=False):
     #     if "file_tools_enabled" not in st.session_state:
@@ -29,7 +29,7 @@ def render_sidebar():
     #         st.session_state["ddg_search_enabled"] = ddg_search
     #         restart_assistant()
 
-    # with st.sidebar.expander("Select Team Members", expanded=False):
+    with st.sidebar.expander("Select Team Members", expanded=True):
     #     if "research_assistant_enabled" not in st.session_state:
     #         st.session_state["research_assistant_enabled"] = False
     #     research_assistant_enabled = st.session_state["research_assistant_enabled"]
@@ -46,12 +46,21 @@ def render_sidebar():
         #     st.session_state["legal_assistant_enabled"] = legal_assistant
         #     restart_assistant()            
 
-        # if "investment_assistant_enabled" not in st.session_state:
-        #     st.session_state["investment_assistant_enabled"] = False
-        # investment_assistant_enabled = st.session_state["investment_assistant_enabled"]
-        # investment_assistant = st.checkbox("Investment Assistant", value=investment_assistant_enabled, help="Enable the investment assistant. NOTE: This is not financial advice.")
-        # if investment_assistant_enabled != investment_assistant:
-        #     st.session_state["investment_assistant_enabled"] = investment_assistant
-        #     restart_assistant()
+        if "company_analyst_enabled" not in st.session_state:
+            st.session_state["company_analyst_enabled"] = True
+        company_analyst_enabled = st.session_state["company_analyst_enabled"]
+        company_analyst = st.checkbox("Company Analyst", value=company_analyst_enabled, help="Enable the company analyst (uses Exa).")
+        if company_analyst_enabled != company_analyst:
+            st.session_state["company_analyst_enabled"] = company_analyst
+            restart_assistant()
+            
+        if "investment_assistant_enabled" not in st.session_state:
+            st.session_state["investment_assistant_enabled"] = False
+        investment_assistant_enabled = st.session_state["investment_assistant_enabled"]
+        investment_assistant = st.checkbox("Investment Assistant", value=investment_assistant_enabled, help="Enable the investment assistant. NOTE: This is not financial advice.")
+        if investment_assistant_enabled != investment_assistant:
+            st.session_state["investment_assistant_enabled"] = investment_assistant
+            restart_assistant()
+                
             
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            

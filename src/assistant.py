@@ -43,7 +43,8 @@ def get_llm_os(
     python_assistant: bool = False,
     research_assistant: bool = False,
     maintenance_engineer: bool = True,
-    investment_assistant: bool = False,
+    company_analyst: bool = True,
+    investment_assistant: bool = True,
     user_id: Optional[str] = None,
     run_id: Optional[str] = None,
     debug_mode: bool = True,
@@ -162,6 +163,7 @@ def get_llm_os(
             "To write a research report, delegate the task to the `Research Assistant`. "
             "Return the report in the <report_format> to the user as is, without any additional text like 'here is the report'."
         )
+        
     if maintenance_engineer:
         _maintenance_engineer = Assistant(
             name="Maintenance Assistant",
@@ -304,6 +306,104 @@ def get_llm_os(
                 "Never provide investment advise without the investment report.",
             ]
         )
+        
+    if company_analyst:
+        _company_analyst = Assistant(
+            name="Company Analyst",
+            role="Provide an evaluation or comparison of company performance",
+            llm=OpenAIChat(model=llm_id),
+            description="You are a company analyst specializing in conducting comparative analysis, tasked with providing detailed analysis of company performance and insight into any events, organisational structure changes, or market conditions which may be relevant.",
+            instructions=[
+                """ For a given question refer to the provided annual reports or company documents.
+                For any specific incidents or events, use the `search_exa` tool to get the top 10 search results and read these results so you can use them in conjunction with the provided material for a more comprehensive response.
+                Carefully read the provided documents, then generate a comprehensive analysis of the overall performance of the company in the format <guide_format> provided below.
+                Ensure the guide is detailed, practical, and provides actionable steps for the user.
+                Ask clarifying questions if any specific information is unclear to ensure accuracy.
+                Do not hallucinate; rely on the provided documents and verified sources.
+                Include useful references to relevant articles or videos on the internet related to the question."""
+            ],
+            expected_output=dedent(
+                """
+                    A comprehensive maintenance and repair guide in the following format:
+                
+                <guide_format>
+
+                    ## Title
+                    
+                    - **Overview**: Brief introduction of the company's performance during the reporting period.
+
+                    - **Importance**: Why evaluating the company’s performance is significant for stakeholders
+
+                    ### Section 1: Financial Analysis
+
+                        - **Step 1**: Detailed description and analysis of revenue growth by product or division.
+
+                        - **Step 2**: Detailed description and analysis of profitability.
+
+                        - **Step 3**: Detailed description and analysis of operating expenses.
+
+                        - **Step 4**: Detailed description and analysis of assets and liabilities.
+
+                        - **Step 5**: Comparative analysis of historical financial performance.
+
+                    ### Section 2: Operational Assessment
+
+                        - **Step 1**: Detailed description of key staff and board members.
+
+                        - **Step 2**: Identification and assessment of any key staff changes (resignations or new hires).
+
+                        - **Step 3**: Detailed description and analysis of any new product launches.
+
+                        - **Step 4**: Detailed description and analysis of technology platform and any related investments.
+
+                        - **Step 5**: Detailed description and analysis of competitor activity (Competitor list - Income Asset Management ASX:IAM, Fixed Income Solutions, BGC Group, NAB Wealth,  Curve Securities, Transact1, Bell Direct, Trilogy Funds)
+
+                        - **Step 6**: Detailed description and analysis of key achievements
+
+                    ### Section 3: Risk Factors
+
+                        - **Risk 1**: Detailed description of market volatility
+
+                        - **Risk 2**: Detailed description of regulatory changes.
+
+                        - **Risk 3**: Detailed description of cyber security posture and incidents.
+
+                        - **Risk 4**: Detailed description of financial risks and ongoing viability of the company.
+
+                    - **Mitigations**: Detailed list and description of any mitigation measures that relate to the risks identified
+
+                    
+                    ### Section 4: Future Outlook
+                        - **Observation 1**: Detailed description of future growth projection including expected revenue growth
+                        - **Observation 2**: Detailed description of strategic goals.
+
+                    ## Conclusion
+                        - **Summary of Guidance**: Recap of the key points from the report.
+                        - **Next Steps**: Overall statement on the ongoing viability of the company.
+
+                    ## References
+                        - [Manual or Document 1](Link to Source)
+                        - [Relevant Article or Video 1](Link to Source)
+                
+                </guide_format>                
+                """
+            ),
+            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            # This setting tells the LLM to format messages in markdown
+            markdown=True,
+            add_datetime_to_instructions=True,
+            debug_mode=debug_mode,
+            knowledge_base=AssistantKnowledge(
+                vector_db=PgVector2(
+                    db_url=db_url,
+                    collection="llm_os_documents",
+                    embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                ),
+                # 3 references are added to the prompt when searching the knowledge base
+                num_documents=3,
+            ),
+        )        
+        team.append(_company_analyst)                
 
     # Create the LLM OS Assistant
     llm_os = Assistant(

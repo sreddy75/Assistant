@@ -1,9 +1,14 @@
 import streamlit as st
+import html
 from kr8.utils.log import logger
 from assistant import get_llm_os
 from kr8.utils.ut import log_event
 from kr8.document.reader.website import WebsiteReader
 from kr8.document.reader.pdf import PDFReader
+
+def sanitize_content(content):
+    # Escape HTML entities to handle special characters
+    return html.escape(content)
 
 def render_chat():
     llm_id = st.session_state["llm_id"]
@@ -31,7 +36,8 @@ def render_chat():
         if message["role"] == "system":
             continue
         with st.chat_message(message["role"]):
-            st.write(message["content"])
+            sanitized_content = sanitize_content(message["content"])
+            st.markdown(sanitized_content)
 
     last_message = st.session_state["messages"][-1]
     if last_message.get("role") == "user":
@@ -41,7 +47,8 @@ def render_chat():
             resp_container = st.empty()
             for delta in llm_os.run(question):
                 response += delta
-                resp_container.markdown(response)
+                sanitized_response = sanitize_content(response)
+                resp_container.markdown(sanitized_response)
             st.session_state["messages"].append({"role": "assistant", "content": response})
             log_event("assistant_response", question, response=response)
 
@@ -56,14 +63,14 @@ def initialize_assistant(llm_id):
             ddg_search=st.session_state.get("ddg_search_enabled", True),
             file_tools=st.session_state.get("file_tools_enabled", False),
             research_assistant=st.session_state.get("research_assistant_enabled", True),
-            investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
+            investment_assistant=st.session_state.get("investment_assistant_enabled", True),            
+            company_analyst=st.session_state.get("company_analyst_enabled", True),            
             maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", True),            
         )
         st.session_state["llm_os"] = llm_os
     else:
         llm_os = st.session_state["llm_os"]
     return llm_os
-
 
 def manage_knowledge_base(llm_os):
     if "processed_files" not in st.session_state:
@@ -72,33 +79,14 @@ def manage_knowledge_base(llm_os):
     if "url_scrape_key" not in st.session_state:
         st.session_state["url_scrape_key"] = 0
 
-    input_url = st.sidebar.text_input("Add URL to Knowledge Base", type="default", key=st.session_state["url_scrape_key"])
-    add_url_button = st.sidebar.button("Add URL")
-    if add_url_button:
-        log_event("add_url", input_url)
-        if input_url is not None:
-            with st.spinner("Processing URLs..."):  # Corrected spinner usage
-                if f"{input_url}_scraped" not in st.session_state:
-                    scraper = WebsiteReader(max_links=2, max_depth=1)
-                    web_documents = scraper.read(input_url)
-                    if web_documents:
-                        llm_os.knowledge_base.load_documents(web_documents, upsert=True)
-                        st.session_state[f"{input_url}_scraped"] = True
-                        st.session_state["processed_files"].append(input_url)
-                        st.sidebar.success(f"Successfully processed and added: {input_url}")
-                    else:
-                        st.sidebar.error("Could not read website")
-
     if "file_uploader_key" not in st.session_state:
         st.session_state["file_uploader_key"] = 100
 
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
-    
     uploaded_files = st.sidebar.file_uploader(
         "Add PDFs :page_facing_up:", type="pdf", key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
     if uploaded_files:
-        with st.spinner("Processing PDFs..."):  # Corrected spinner usage
+        with st.spinner("Processing PDFs..."):
             for uploaded_file in uploaded_files:
                 log_event("upload_pdf", uploaded_file.name)
                 auto_rag_name = uploaded_file.name.split(".")[0]
