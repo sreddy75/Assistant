@@ -24,8 +24,8 @@ from kr8.vectordb.pgvector import PgVector2
 from dotenv import load_dotenv
 load_dotenv()
 
-db_url = "postgresql+psycopg2://ai:ai@pgvector:5432/ai"
-# db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
+# db_url = "postgresql+psycopg2://ai:ai@pgvector:5432/ai"
+db_url = "postgresql+psycopg://ai:ai@localhost:5532/ai"
     
 cwd = Path(__file__).parent.resolve()
 scratch_dir = cwd.joinpath("scratch")
@@ -310,86 +310,188 @@ def get_llm_os(
     if company_analyst:
         _company_analyst = Assistant(
             name="Company Analyst",
-            role="Provide an evaluation or comparison of company performance",
+            role="Provide comprehensive financial analysis and strategic insights",
             llm=OpenAIChat(model=llm_id),
-            description="You are a company analyst specializing in conducting comparative analysis, tasked with providing detailed analysis of company performance and insight into any events, organisational structure changes, or market conditions which may be relevant.",
+            description="You are a senior financial analyst specializing in comprehensive company evaluations. Your task is to deliver in-depth analysis of financial performance, market positioning, and strategic outlook, with a focus on metrics and insights relevant to C-suite executives and investment professionals.",
             instructions=[
-                """ For a given question refer to the provided annual reports or company documents.
-                For any specific incidents or events, use the `search_exa` tool to get the top 10 search results and read these results so you can use them in conjunction with the provided material for a more comprehensive response.
-                Carefully read the provided documents, then generate a comprehensive analysis of the overall performance of the company in the format <guide_format> provided below.
-                Ensure the guide is detailed, practical, and provides actionable steps for the user.
-                Ask clarifying questions if any specific information is unclear to ensure accuracy.
-                Do not hallucinate; rely on the provided documents and verified sources.
-                Include useful references to relevant articles or videos on the internet related to the question."""
+                """
+                1. Thoroughly review the provided annual reports, financial statements, and company documents.
+                2. Utilize the `search_exa` tool to retrieve and analyze the top 10 search results for any specific incidents, market events, or industry trends relevant to the analysis.
+                3. Use the `yfinance` tools to gather real-time financial data and market information.
+                4. Generate a comprehensive, executive-level analysis of the company's performance, adhering to the <analysis_format> provided below.
+                5. Tailor the analysis to the specific industry of the company, focusing on relevant sector-specific metrics and factors.
+                6. Ensure the analysis is data-driven, incorporating key financial metrics, industry benchmarks, and trend analysis.
+                7. Provide actionable insights and strategic recommendations based on the analysis.
+                8. Maintain a professional, objective tone throughout the report.
+                9. Include relevant citations and references to authoritative sources, industry reports, and market data.
+                10. If any critical information is missing or unclear, note it as an area for further investigation.
+                11. Avoid speculation; base all conclusions on verifiable data and reliable sources.
+                12. Conclude with a concise executive summary highlighting key findings and strategic implications.
+                13. When appropriate, collaborate with the Investment Assistant for additional financial insights.
+                """
             ],
             expected_output=dedent(
                 """
-                    A comprehensive maintenance and repair guide in the following format:
-                
-                <guide_format>
+                A comprehensive financial and strategic analysis in the following format:
 
-                    ## Title
-                    
-                    - **Overview**: Brief introduction of the company's performance during the reporting period.
+                <analysis_format>
 
-                    - **Importance**: Why evaluating the company’s performance is significant for stakeholders
+                # Executive Summary
 
-                    ### Section 1: Financial Analysis
+                - **Key Findings**: Concise overview of critical insights and performance indicators
+                - **Strategic Implications**: High-level summary of strategic positioning and outlook
 
-                        - **Step 1**: Detailed description and analysis of revenue growth by product or division.
+                ## 1. Company Overview
 
-                        - **Step 2**: Detailed description and analysis of profitability.
+                - Brief history and background
+                - Core business model and revenue streams
+                - Key markets and geographies
 
-                        - **Step 3**: Detailed description and analysis of operating expenses.
+                ## 2. Financial Performance Analysis
 
-                        - **Step 4**: Detailed description and analysis of assets and liabilities.
+                ### 2.1 Revenue Analysis
+                - Detailed breakdown of revenue streams
+                - Year-over-year growth analysis
+                - Segment performance and contribution margins
 
-                        - **Step 5**: Comparative analysis of historical financial performance.
+                ### 2.2 Profitability Assessment
+                - Gross, operating, and net profit margins
+                - EBITDA analysis and trends
+                - Return on Equity (ROE) and Return on Assets (ROA)
 
-                    ### Section 2: Operational Assessment
+                ### 2.3 Cost Structure Evaluation
+                - Operating expense analysis
+                - Cost optimization opportunities
+                - Efficiency ratios (e.g., Asset Turnover, Inventory Turnover)
 
-                        - **Step 1**: Detailed description of key staff and board members.
+                ### 2.4 Balance Sheet Analysis
+                - Liquidity ratios (Current Ratio, Quick Ratio)
+                - Solvency assessment (Debt-to-Equity, Interest Coverage)
+                - Working capital management
 
-                        - **Step 2**: Identification and assessment of any key staff changes (resignations or new hires).
+                ### 2.5 Cash Flow Analysis
+                - Operating cash flow trends
+                - Free cash flow generation
+                - Cash conversion cycle
 
-                        - **Step 3**: Detailed description and analysis of any new product launches.
+                ### 2.6 Historical Performance
+                - 5-year trend analysis of key financial metrics
+                - Comparison to industry averages over time
 
-                        - **Step 4**: Detailed description and analysis of technology platform and any related investments.
+                ## 3. Market Position and Competitive Landscape
 
-                        - **Step 5**: Detailed description and analysis of competitor activity (Competitor list - Income Asset Management ASX:IAM, Fixed Income Solutions, BGC Group, NAB Wealth,  Curve Securities, Transact1, Bell Direct, Trilogy Funds)
+                ### 3.1 Market Share Analysis
+                - Current market position
+                - Market share trends and growth potential
 
-                        - **Step 6**: Detailed description and analysis of key achievements
+                ### 3.2 Competitor Benchmarking
+                - Identification of key competitors in the industry
+                - Comparative performance metrics
+                - Competitive advantages and disadvantages
 
-                    ### Section 3: Risk Factors
+                ### 3.3 Industry Trends and Disruptions
+                - Emerging technologies impacting the sector
+                - Regulatory changes and their potential effects
+                - Macroeconomic factors influencing the industry
 
-                        - **Risk 1**: Detailed description of market volatility
+                ## 4. Operational Excellence
 
-                        - **Risk 2**: Detailed description of regulatory changes.
+                ### 4.1 Management and Governance
+                - Key executive profiles and recent changes
+                - Board composition and effectiveness
+                - Corporate governance practices
 
-                        - **Risk 3**: Detailed description of cyber security posture and incidents.
+                ### 4.2 Technology and Innovation
+                - IT infrastructure and digital capabilities
+                - R&D investments and innovation pipeline
+                - Technology-driven efficiency gains
 
-                        - **Risk 4**: Detailed description of financial risks and ongoing viability of the company.
+                ### 4.3 Risk Management
+                - Market risk exposure and mitigation strategies
+                - Operational risk assessment
+                - Compliance and regulatory risk management
+                - Cybersecurity posture and incident history
 
-                    - **Mitigations**: Detailed list and description of any mitigation measures that relate to the risks identified
+                ## 5. ESG Analysis
 
-                    
-                    ### Section 4: Future Outlook
-                        - **Observation 1**: Detailed description of future growth projection including expected revenue growth
-                        - **Observation 2**: Detailed description of strategic goals.
+                ### 5.1 Environmental Factors
+                - Sustainability initiatives and their impact
+                - Carbon footprint and reduction strategies
+                - Compliance with environmental regulations
 
-                    ## Conclusion
-                        - **Summary of Guidance**: Recap of the key points from the report.
-                        - **Next Steps**: Overall statement on the ongoing viability of the company.
+                ### 5.2 Social Factors
+                - Labor practices and employee relations
+                - Diversity and inclusion initiatives
+                - Community engagement and social impact
 
-                    ## References
-                        - [Manual or Document 1](Link to Source)
-                        - [Relevant Article or Video 1](Link to Source)
-                
-                </guide_format>                
+                ### 5.3 Governance Factors
+                - Board diversity and independence
+                - Executive compensation structure
+                - Shareholder rights and transparency
+
+                ## 6. Strategic Outlook
+
+                ### 6.1 Growth Strategy
+                - Organic growth initiatives
+                - M&A opportunities and integration plans
+                - New market entry strategies
+
+                ### 6.2 Financial Projections
+                - Revenue and earnings forecasts
+                - Capital expenditure plans
+                - Dividend policy and shareholder returns
+
+                ### 6.3 Key Performance Indicators (KPIs)
+                - Critical metrics for monitoring future performance
+                - Alignment with long-term strategic goals
+
+                ### 6.4 Scenario Analysis
+                - Best-case, base-case, and worst-case scenarios
+                - Potential impact on financial performance and strategy
+
+                ## 7. Risk Factors and Mitigation
+
+                - Detailed analysis of key risks (market, operational, financial, regulatory)
+                - Potential impact quantification
+                - Mitigation strategies and contingency plans
+
+                ## 8. Peer Comparison
+
+                - Detailed comparison with 3-5 key industry peers
+                - Relative valuation metrics
+                - Performance benchmarking across key financial and operational metrics
+
+                ## 9. Conclusion and Recommendations
+
+                - Synthesis of key findings
+                - Strategic recommendations for value creation
+                - Areas requiring further analysis or monitoring
+
+                ## References
+
+                - [Annual Report FY20XX](Link to Source)
+                - [Industry Report: Sector Outlook](Link to Source)
+                - [Regulatory Framework Update](Link to Source)
+                - [Competitor Analysis by Research Firm](Link to Source)
+                - [ESG Report](Link to Source)
+
+                </analysis_format>
                 """
             ),
-            tools=[ExaTools(num_results=10, text_length_limit=2000)],
-            # This setting tells the LLM to format messages in markdown
+            tools=[
+                ExaTools(num_results=10, text_length_limit=2500),
+                YFinanceTools(
+                    stock_price = True,
+                    company_info = True,
+                    stock_fundamentals = True,
+                    income_statements = True,
+                    key_financial_ratios = True,
+                    analyst_recommendations = True,
+                    company_news = True,
+                    technical_indicators = True,
+                    historical_prices = True
+                )
+            ],
             markdown=True,
             add_datetime_to_instructions=True,
             debug_mode=debug_mode,
@@ -399,11 +501,10 @@ def get_llm_os(
                     collection="llm_os_documents",
                     embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
                 ),
-                # 3 references are added to the prompt when searching the knowledge base
-                num_documents=3,
+                num_documents=5,
             ),
-        )        
-        team.append(_company_analyst)                
+        )
+        team.append(_company_analyst)             
 
     # Create the LLM OS Assistant
     llm_os = Assistant(
@@ -420,10 +521,9 @@ def get_llm_os(
         ),
         instructions=[
             "When the user sends a message, first **think** and determine if:\n"
-            " - You can answer by using a tool available to you\n"
             " - You need to search the knowledge base\n"
             " - You need to search the internet\n"
-            " - You need to delegate the task to a team member\n"
+            " - You need to delegate the task to team members\n"
             " - You need to ask a clarifying question",
             "If the user asks about a topic, first ALWAYS search your knowledge base using the `search_knowledge_base` tool.",
             "If you dont find relevant information in your knowledge base, use the `duckduckgo_search` tool to search the internet.",
