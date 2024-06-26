@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import html
 from kr8.utils.log import logger
@@ -72,12 +73,27 @@ def initialize_assistant(llm_id):
         llm_os = st.session_state["llm_os"]
     return llm_os
 
+def process_pdf(uploaded_file, llm_os):
+    reader = PDFReader()
+    auto_rag_documents = reader.read(uploaded_file)
+    if not auto_rag_documents:
+        return False, f"Could not read PDF: {uploaded_file.name}"
+    
+    total_docs = len(auto_rag_documents)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for i, doc in enumerate(auto_rag_documents):
+        status_text.text(f"Processing document {i+1} of {total_docs}")
+        llm_os.knowledge_base.load_document(doc, upsert=True)
+        progress_bar.progress((i + 1) / total_docs)
+        # time.sleep(0.1)  # To make the progress visible
+    
+    return True, f"Successfully processed {uploaded_file.name}"
+
 def manage_knowledge_base(llm_os):
     if "processed_files" not in st.session_state:
         st.session_state["processed_files"] = []
-
-    if "url_scrape_key" not in st.session_state:
-        st.session_state["url_scrape_key"] = 0
 
     if "file_uploader_key" not in st.session_state:
         st.session_state["file_uploader_key"] = 100
@@ -85,20 +101,24 @@ def manage_knowledge_base(llm_os):
     uploaded_files = st.sidebar.file_uploader(
         "Add PDFs :page_facing_up:", type="pdf", key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
+    
     if uploaded_files:
-        with st.spinner("Processing PDFs..."):
-            for uploaded_file in uploaded_files:
+        for uploaded_file in uploaded_files:
+            if uploaded_file.name not in st.session_state["processed_files"]:
                 log_event("upload_pdf", uploaded_file.name)
                 auto_rag_name = uploaded_file.name.split(".")[0]
-                if f"{auto_rag_name}_uploaded" not in st.session_state:
-                    reader = PDFReader()
-                    auto_rag_documents = reader.read(uploaded_file)
-                    if auto_rag_documents:
-                        llm_os.knowledge_base.load_documents(auto_rag_documents, upsert=True)
-                        st.session_state[f"{auto_rag_name}_uploaded"] = True
-                        st.session_state["processed_files"].append(uploaded_file.name)
-                    else:
-                        st.sidebar.error(f"Could not read PDF: {uploaded_file.name}")
+                
+                with st.spinner(f"Processing {uploaded_file.name}..."):
+                    success, message = process_pdf(uploaded_file, llm_os)
+                    
+                if success:
+                    st.success(message)
+                    st.session_state["processed_files"].append(uploaded_file.name)
+                else:
+                    st.error(message)
+                    
+                # Increment the file uploader key to force a refresh
+                st.session_state["file_uploader_key"] += 1
 
     if st.session_state["processed_files"]:
         st.sidebar.markdown("### You are chatting with these files:")

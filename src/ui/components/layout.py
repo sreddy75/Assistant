@@ -55,30 +55,30 @@ def set_page_layout():
         unsafe_allow_html=True
     )
 
-    image_path = "rozy.png"
+    image_path = "rozy_transparent.png"
     icon_image = Image.open(image_path)
     # Convert the image to base64
     buffered = io.BytesIO()
     icon_image.save(buffered, format="PNG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
-    # Create a custom title with an icon using markdown and HTML
     st.markdown(
         f"""
         <style>
-        .title-with-icon {{
+        .centered-image {{
             display: flex;
+            justify-content: left;
             align-items: center;
+            width: 100%;
         }}
-        .title-with-icon img {{
-            margin-right: 10px;
+        .centered-image img {{
+            max-width: 100px;
+            height: auto;
         }}
-        
         </style>
-        <div class="title-with-icon">
-            <img src="data:image/png;base64,{img_str}" width="75" height="75">        
-            <H3> Assistant</H3>
-        </div>    
+        <div class="centered-image">
+            <img src="data:image/png;base64,{img_str}" alt="Centered Icon">
+        </div>
         """,
         unsafe_allow_html=True
     )
