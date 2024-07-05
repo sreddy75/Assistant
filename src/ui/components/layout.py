@@ -55,13 +55,14 @@ def set_page_layout():
         unsafe_allow_html=True
     )
 
-    image_path = "rozy_transparent.png"
-    icon_image = Image.open(image_path)
-    # Convert the image to base64
-    buffered = io.BytesIO()
-    icon_image.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
+   # Load the GIF
+    image_path = "meerkat.gif"
+    file_ = open(image_path, "rb")
+    contents = file_.read()
+    data_url = base64.b64encode(contents).decode("utf-8")
+    file_.close()
 
+    # Display the GIF
     st.markdown(
         f"""
         <style>
@@ -77,7 +78,7 @@ def set_page_layout():
         }}
         </style>
         <div class="centered-image">
-            <img src="data:image/png;base64,{img_str}" alt="Centered Icon">
+            <img src="data:image/gif;base64,{data_url}" alt="Centered Icon">
         </div>
         """,
         unsafe_allow_html=True

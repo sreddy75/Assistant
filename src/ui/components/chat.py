@@ -63,10 +63,13 @@ def initialize_assistant(llm_id):
             llm_id=llm_id,
             ddg_search=st.session_state.get("ddg_search_enabled", True),
             file_tools=st.session_state.get("file_tools_enabled", True),
-            research_assistant=st.session_state.get("research_assistant_enabled", True),
-            investment_assistant=st.session_state.get("investment_assistant_enabled", True),            
-            company_analyst=st.session_state.get("company_analyst_enabled", True),            
-            maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", True),            
+            research_assistant=st.session_state.get("research_assistant_enabled", False),
+            investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
+            company_analyst=st.session_state.get("company_analyst_enabled", False),            
+            maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
+             product_owner=st.session_state.get("product_owner_enabled", True),
+            business_analyst=st.session_state.get("business_analyst_enabled", True),
+            quality_analyst=st.session_state.get("quality_analyst_enabled", True),
         )
         st.session_state["llm_os"] = llm_os
     else:
