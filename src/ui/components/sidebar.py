@@ -12,7 +12,7 @@ def render_sidebar():
 
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
 
-    # with st.sidebar.expander("Select Tools", expanded=False):
+    with st.sidebar.expander("Select Tools", expanded=False):
     #     if "file_tools_enabled" not in st.session_state:
     #         st.session_state["file_tools_enabled"] = False
     #     file_tools_enabled = st.session_state["file_tools_enabled"]
@@ -21,15 +21,15 @@ def render_sidebar():
     #         st.session_state["file_tools_enabled"] = file_tools
     #         restart_assistant()
 
-    #     if "ddg_search_enabled" not in st.session_state:
-    #         st.session_state["ddg_search_enabled"] = False
-    #     ddg_search_enabled = st.session_state["ddg_search_enabled"]
-    #     ddg_search = st.checkbox("Web Search", value=ddg_search_enabled, help="Enable web search using DuckDuckGo.")
-    #     if ddg_search_enabled != ddg_search:
-    #         st.session_state["ddg_search_enabled"] = ddg_search
-    #         restart_assistant()
+        # if "ddg_search_enabled" not in st.session_state:
+        #     st.session_state["ddg_search_enabled"] = True
+        #     ddg_search_enabled = st.session_state["ddg_search_enabled"]
+        #     ddg_search = st.checkbox("Web Search", value=ddg_search_enabled, help="Enable web search using DuckDuckGo.")
+        # if ddg_search_enabled != ddg_search:
+        #     st.session_state["ddg_search_enabled"] = ddg_search
+        #     restart_assistant()
 
-    with st.sidebar.expander("Select Team Members", expanded=True):
+    # with st.sidebar.expander("Select Team Members", expanded=True):
     #     if "research_assistant_enabled" not in st.session_state:
     #         st.session_state["research_assistant_enabled"] = False
     #     research_assistant_enabled = st.session_state["research_assistant_enabled"]

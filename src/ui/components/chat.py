@@ -62,7 +62,7 @@ def initialize_assistant(llm_id):
         llm_os = get_llm_os(
             llm_id=llm_id,
             ddg_search=st.session_state.get("ddg_search_enabled", True),
-            file_tools=st.session_state.get("file_tools_enabled", False),
+            file_tools=st.session_state.get("file_tools_enabled", True),
             research_assistant=st.session_state.get("research_assistant_enabled", True),
             investment_assistant=st.session_state.get("investment_assistant_enabled", True),            
             company_analyst=st.session_state.get("company_analyst_enabled", True),            
@@ -94,6 +94,26 @@ def process_pdf(uploaded_file, llm_os):
 def manage_knowledge_base(llm_os):
     if "processed_files" not in st.session_state:
         st.session_state["processed_files"] = []
+
+    if "url_scrape_key" not in st.session_state:
+        st.session_state["url_scrape_key"] = 0
+
+    input_url = st.sidebar.text_input("Add URL to Knowledge Base", type="default", key=st.session_state["url_scrape_key"])
+    add_url_button = st.sidebar.button("Add URL")
+    if add_url_button:
+        log_event("add_url", input_url)
+        if input_url is not None:
+            with st.spinner("Processing URLs..."):  # Corrected spinner usage
+                if f"{input_url}_scraped" not in st.session_state:
+                    scraper = WebsiteReader(max_links=2, max_depth=1)
+                    web_documents = scraper.read(input_url)
+                    if web_documents:
+                        llm_os.knowledge_base.load_documents(web_documents, upsert=True)
+                        st.session_state[f"{input_url}_scraped"] = True
+                        st.session_state["processed_files"].append(input_url)
+                        st.sidebar.success(f"Successfully processed and added: {input_url}")
+                    else:
+                        st.sidebar.error("Could not read website")
 
     if "file_uploader_key" not in st.session_state:
         st.session_state["file_uploader_key"] = 100

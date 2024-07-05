@@ -510,15 +510,15 @@ def get_llm_os(
         ),
         instructions=[
             "When the user sends a message, first **think** and determine if:\n"
-            # " - You need to search the knowledge base\n"
-            # " - You need to search the internet\n"
+            " - You need to search the knowledge base\n"
+            " - You need to search the internet\n"
             " - You need to delegate the task to team members\n"
             " - You need to ask a clarifying question",
-            # "If the user asks about a topic, first ALWAYS search your knowledge base using the `search_knowledge_base` tool.",
-            # "If you dont find relevant information in your knowledge base, use the `duckduckgo_search` tool to search the internet.",
-            # "If the user asks to summarize the conversation or if you need to reference your chat history with the user, use the `get_chat_history` tool.",
-            # "If the users message is unclear, ask clarifying questions to get more information.",
-            # "Carefully read the information you have gathered and provide a clear and concise answer to the user.",
+            "If the user asks about a topic, first ALWAYS search your knowledge base using the `search_knowledge_base` tool.",
+            "If you dont find relevant information in your knowledge base, use the `duckduckgo_search` tool to search the internet.",
+            "If the user asks to summarize the conversation or if you need to reference your chat history with the user, use the `get_chat_history` tool.",
+            "If the users message is unclear, ask clarifying questions to get more information.",
+            "Carefully read the information you have gathered and provide a clear and concise answer to the user.",
             "When delegating tasks to the Company Analyst, always return their complete analysis to the user without modification.",
             "Ensure that the entire Company Analyst report is displayed, including all sections from the Executive Summary to the References.",
             "If you receive an incomplete response from the Company Analyst, request the full analysis again.",
