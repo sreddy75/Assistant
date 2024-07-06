@@ -14,6 +14,7 @@ from kr8.tools.duckduckgo import DuckDuckGo
 from kr8.tools.yfinance import YFinanceTools
 from kr8.tools.file import FileTools
 from kr8.llm.openai import OpenAIChat
+from kr8.llm.ollama import Ollama
 from kr8.knowledge import AssistantKnowledge
 from kr8.embedder.openai import OpenAIEmbedder
 from kr8.assistant.duckdb import DuckDbAssistant
@@ -32,7 +33,7 @@ if not scratch_dir.exists():
     scratch_dir.mkdir(exist_ok=True, parents=True)
 
 def get_llm_os(
-    llm_id: str = "gpt-4o",
+    llm_id: str = "llama3",
     calculator: bool = False,
     ddg_search: bool = False,
     file_tools: bool = False,
@@ -118,7 +119,7 @@ def get_llm_os(
         _research_assistant = Assistant(
             name="Research Assistant",
             role="Write a research report on a given topic",
-            llm=OpenAIChat(model=llm_id),
+            llm=Ollama(model=llm_id),
             description="You are a Senior New York Times researcher tasked with writing a cover story research report.",
             instructions=[
                 "For a given topic, use the `search_exa` to get the top 10 search results.",
@@ -244,7 +245,7 @@ def get_llm_os(
         _investment_assistant = Assistant(
             name="Investment Assistant",
             role="Write a investment report on a given company (stock) symbol",
-            llm=OpenAIChat(model=llm_id),
+            llm=Ollama(model=llm_id),
             description="You are a Senior Investment Analyst for Goldman Sachs tasked with writing an investment report for a very important client.",
             instructions=[
                 "For a given stock symbol, get the stock price, company information, analyst recommendations, and company news",
@@ -755,7 +756,7 @@ def get_llm_os(
         name="llm_os",
         run_id=run_id,
         user_id=user_id,
-        llm=OpenAIChat(model=llm_id),
+        llm=Ollama(model=llm_id),
         description=dedent(
             """\
         you are an anthropomorphic meerkat called Aleksandr Orlov, who likes to use the word "simples" at the end of a message.".

@@ -18,7 +18,7 @@ except ImportError:
 
 class Ollama(LLM):
     name: str = "Ollama"
-    model: str = "openhermes"
+    model: str = "llama3"
     host: Optional[str] = None
     timeout: Optional[Any] = None
     format: Optional[str] = None
