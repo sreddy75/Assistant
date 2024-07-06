@@ -46,13 +46,13 @@ def render_sidebar():
         #     st.session_state["legal_assistant_enabled"] = legal_assistant
         #     restart_assistant()            
 
-        # if "company_analyst_enabled" not in st.session_state:
-        #     st.session_state["company_analyst_enabled"] = False
-        # company_analyst_enabled = st.session_state["company_analyst_enabled"]
-        # company_analyst = st.checkbox("Company Analyst", value=company_analyst_enabled, help="Enable the company analyst (uses Exa).")
-        # if company_analyst_enabled != company_analyst:
-        #     st.session_state["company_analyst_enabled"] = company_analyst
-        #     restart_assistant()
+        if "company_analyst_enabled" not in st.session_state:
+            st.session_state["company_analyst_enabled"] = True
+        company_analyst_enabled = st.session_state["company_analyst_enabled"]
+        company_analyst = st.checkbox("Company Analyst", value=company_analyst_enabled, help="Enable the company analyst (uses Exa).")
+        if company_analyst_enabled != company_analyst:
+            st.session_state["company_analyst_enabled"] = company_analyst
+            restart_assistant()
             
         # if "investment_assistant_enabled" not in st.session_state:
         #     st.session_state["investment_assistant_enabled"] = False
