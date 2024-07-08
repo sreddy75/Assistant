@@ -44,7 +44,7 @@ def get_llm_os(
     research_assistant: bool = False,
     maintenance_engineer: bool = True,
     company_analyst: bool = True,
-     product_owner: bool = True,
+    product_owner: bool = True,
     business_analyst: bool = True,
     quality_analyst: bool = True,
     investment_assistant: bool = True,
@@ -752,12 +752,21 @@ def get_llm_os(
                 "Return the output in the <quality_analyst_output> format to the user without additional text."
             )
     
+    from kr8.llm.offline_llm import OfflineLLM
+    import httpx
+    
+    try:
+        llm = Ollama(model=llm_id)
+    except httpx.ConnectError:
+        logger.warning("Failed to connect to Ollama service. Using offline mode.")
+        llm = OfflineLLM()
+        
     # Create the LLM OS Assistant
     llm_os = Assistant(
         name="llm_os",
         run_id=run_id,
         user_id=user_id,
-        llm=Ollama(model=llm_id),
+        llm=llm,
         description=dedent(
             """\
         you are an anthropomorphic meerkat called Aleksandr Orlov, who likes to use the word "simples" at the end of a message.".

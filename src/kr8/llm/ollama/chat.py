@@ -8,6 +8,8 @@ from kr8.tools.function import FunctionCall
 from kr8.utils.log import logger
 from kr8.utils.timer import Timer
 from kr8.utils.tools import get_function_call_for_tool_call
+from kr8.llm.offline_llm import OfflineLLM
+import httpx
 
 try:
     from ollama import Client as OllamaClient
@@ -26,11 +28,8 @@ class Ollama(LLM):
     keep_alive: Optional[Union[float, str]] = None
     client_kwargs: Optional[Dict[str, Any]] = None
     ollama_client: Optional[OllamaClient] = None
-    # Maximum number of function calls allowed across all iterations.
     function_call_limit: int = 5
-    # Deactivate tool calls after 1 tool call
     deactivate_tools_after_use: bool = False
-    # After a tool call is run, add the user message as a reminder to the LLM
     add_user_message_after_tool_call: bool = True
 
     @property
@@ -55,8 +54,6 @@ class Ollama(LLM):
         elif self.response_format is not None:
             if self.response_format.get("type") == "json_object":
                 kwargs["format"] = "json"
-        # elif self.functions is not None:
-        #     kwargs["format"] = "json"
         if self.options is not None:
             kwargs["options"] = self.options
         if self.keep_alive is not None:
@@ -84,51 +81,59 @@ class Ollama(LLM):
             msg["images"] = message.model_extra.get("images")
         return msg
 
-    def invoke(self, messages: List[Message]) -> Mapping[str, Any]:
-        return self.client.chat(
-            model=self.model,
-            messages=[self.to_llm_message(m) for m in messages],
-            **self.api_kwargs,
-        )
-
     def invoke_stream(self, messages: List[Message]) -> Iterator[Mapping[str, Any]]:
-        yield from self.client.chat(
-            model=self.model,
-            messages=[self.to_llm_message(m) for m in messages],
-            stream=True,
-            **self.api_kwargs,
-        )  # type: ignore
+        try:
+            yield from self.client.chat(
+                model=self.model,
+                messages=[self.to_llm_message(m) for m in messages],
+                stream=True,
+                **self.api_kwargs,
+            )
+        except httpx.ConnectError:
+            logger.warning("Failed to connect to Ollama service. Switching to offline mode.")
+            offline_llm = OfflineLLM(model=self.model)  # Pass the model here
+            yield from offline_llm.invoke_stream(messages)
+
+    # Similarly, update the 'invoke' method:
+    def invoke(self, messages: List[Message]) -> Mapping[str, Any]:
+        try:
+            return self.client.chat(
+                model=self.model,
+                messages=[self.to_llm_message(m) for m in messages],
+                **self.api_kwargs,
+            )
+        except httpx.ConnectError:
+            logger.warning("Failed to connect to Ollama service. Switching to offline mode.")
+            offline_llm = OfflineLLM(model=self.model)  # Pass the model here
+            return offline_llm.invoke(messages)
 
     def deactivate_function_calls(self) -> None:
-        # Deactivate tool calls by turning off JSON mode after 1 tool call
-        # This is triggered when the function call limit is reached.
         self.format = ""
 
     def response(self, messages: List[Message]) -> str:
         logger.debug("---------- Ollama Response Start ----------")
-        # -*- Log messages for debugging
         for m in messages:
             m.log()
 
         response_timer = Timer()
         response_timer.start()
-        response: Mapping[str, Any] = self.invoke(messages=messages)
+        try:
+            response: Mapping[str, Any] = self.invoke(messages=messages)
+        except httpx.ConnectError:
+            logger.warning("Failed to connect to Ollama service. Switching to offline mode.")
+            offline_llm = OfflineLLM()
+            return offline_llm.response(messages)
         response_timer.stop()
         logger.debug(f"Time to generate response: {response_timer.elapsed:.4f}s")
-        # logger.debug(f"Ollama response type: {type(response)}")
-        # logger.debug(f"Ollama response: {response}")
 
-        # -*- Parse response
-        response_message: Mapping[str, Any] = response.get("message")  # type: ignore
+        response_message: Mapping[str, Any] = response.get("message", {})
         response_role = response_message.get("role")
         response_content: Optional[str] = response_message.get("content")
 
-        # -*- Create assistant message
         assistant_message = Message(
             role=response_role or "assistant",
             content=response_content,
         )
-        # Check if the response is a tool call
         try:
             if response_content is not None:
                 _tool_call_content = response_content.strip()
@@ -137,7 +142,6 @@ class Ollama(LLM):
                     if "tool_calls" in _tool_call_content_json:
                         assistant_tool_calls = _tool_call_content_json.get("tool_calls")
                         if isinstance(assistant_tool_calls, list):
-                            # Build tool calls
                             tool_calls: List[Dict[str, Any]] = []
                             logger.debug(f"Building tool calls from {assistant_tool_calls}")
                             for tool_call in assistant_tool_calls:
@@ -158,18 +162,14 @@ class Ollama(LLM):
             logger.warning(f"Could not parse tool calls from response: {response_content}")
             pass
 
-        # -*- Update usage metrics
-        # Add response time to metrics
         assistant_message.metrics["time"] = response_timer.elapsed
         if "response_times" not in self.metrics:
             self.metrics["response_times"] = []
         self.metrics["response_times"].append(response_timer.elapsed)
 
-        # -*- Add assistant message to messages
         messages.append(assistant_message)
         assistant_message.log()
 
-        # -*- Parse and run function call
         if assistant_message.tool_calls is not None and self.run_tools:
             final_response = ""
             function_calls_to_run: List[FunctionCall] = []
@@ -195,26 +195,20 @@ class Ollama(LLM):
             function_call_results = self.run_function_calls(function_calls_to_run, role="user")
             if len(function_call_results) > 0:
                 messages.extend(function_call_results)
-                # Reconfigure messages so the LLM is reminded of the original task
                 if self.add_user_message_after_tool_call:
                     messages = self.add_original_user_message(messages)
 
-            # Deactivate tool calls by turning off JSON mode after 1 tool call
             if self.deactivate_tools_after_use:
                 self.deactivate_function_calls()
 
-            # -*- Yield new response using results of tool calls
             final_response += self.response(messages=messages)
             return final_response
         logger.debug("---------- Ollama Response End ----------")
-        # -*- Return content if no function calls are present
         if assistant_message.content is not None:
             return assistant_message.get_content_string()
         return "Something went wrong, please try again."
-
     def response_stream(self, messages: List[Message]) -> Iterator[str]:
         logger.debug("---------- Ollama Response Start ----------")
-        # -*- Log messages for debugging
         for m in messages:
             m.log()
 
@@ -226,50 +220,42 @@ class Ollama(LLM):
         time_to_first_token = None
         response_timer = Timer()
         response_timer.start()
-        for response in self.invoke_stream(messages=messages):
-            completion_tokens += 1
-            if completion_tokens == 1:
-                time_to_first_token = response_timer.elapsed
-                logger.debug(f"Time to first token: {time_to_first_token:.4f}s")
+        try:
+            for response in self.invoke_stream(messages=messages):
+                completion_tokens += 1
+                if completion_tokens == 1:
+                    time_to_first_token = response_timer.elapsed
+                    logger.debug(f"Time to first token: {time_to_first_token:.4f}s")
 
-            # -*- Parse response
-            # logger.info(f"Ollama partial response: {response}")
-            # logger.info(f"Ollama partial response type: {type(response)}")
-            response_message: Optional[dict] = response.get("message")
-            response_content = response_message.get("content") if response_message else None
-            # logger.info(f"Ollama partial response content: {response_content}")
+                response_message: Optional[dict] = response.get("message")
+                response_content = response_message.get("content") if response_message else None
 
-            # Add response content to assistant message
-            if response_content is not None:
-                assistant_message_content += response_content
+                if response_content is not None:
+                    assistant_message_content += response_content
 
-            # Strip out tool calls from the response
-            # If the response is a tool call, it will start with a {
-            if not response_is_tool_call and assistant_message_content.strip().startswith("{"):
-                response_is_tool_call = True
+                if not response_is_tool_call and assistant_message_content.strip().startswith("{"):
+                    response_is_tool_call = True
 
-            # If the response is a tool call, count the number of brackets
-            if response_is_tool_call and response_content is not None:
-                if "{" in response_content.strip():
-                    # Add the number of opening brackets to the count
-                    tool_call_bracket_count += response_content.strip().count("{")
-                    # logger.debug(f"Tool call bracket count: {tool_call_bracket_count}")
-                if "}" in response_content.strip():
-                    # Subtract the number of closing brackets from the count
-                    tool_call_bracket_count -= response_content.strip().count("}")
-                    # Check if the response is the last bracket
-                    if tool_call_bracket_count == 0:
-                        response_is_tool_call = False
-                        is_last_tool_call_bracket = True
-                    # logger.debug(f"Tool call bracket count: {tool_call_bracket_count}")
+                if response_is_tool_call and response_content is not None:
+                    if "{" in response_content.strip():
+                        tool_call_bracket_count += response_content.strip().count("{")
+                    if "}" in response_content.strip():
+                        tool_call_bracket_count -= response_content.strip().count("}")
+                        if tool_call_bracket_count == 0:
+                            response_is_tool_call = False
+                            is_last_tool_call_bracket = True
 
-            # -*- Yield content if not a tool call and content is not None
-            if not response_is_tool_call and response_content is not None:
-                if is_last_tool_call_bracket and response_content.strip().endswith("}"):
-                    is_last_tool_call_bracket = False
-                    continue
+                if not response_is_tool_call and response_content is not None:
+                    if is_last_tool_call_bracket and response_content.strip().endswith("}"):
+                        is_last_tool_call_bracket = False
+                        continue
 
-                yield response_content
+                    yield response_content
+        except httpx.ConnectError:
+            logger.warning("Failed to connect to Ollama service. Switching to offline mode.")
+            offline_llm = OfflineLLM()
+            yield from offline_llm.response_stream(messages)
+            return
 
         response_timer.stop()
         logger.debug(f"Tokens generated: {completion_tokens}")
@@ -278,12 +264,10 @@ class Ollama(LLM):
             logger.debug(f"Throughput: {completion_tokens / response_timer.elapsed:.4f} tokens/s")
         logger.debug(f"Time to generate response: {response_timer.elapsed:.4f}s")
 
-        # -*- Create assistant message
         assistant_message = Message(
             role="assistant",
             content=assistant_message_content,
         )
-        # Check if the response is a tool call
         try:
             if response_is_tool_call and assistant_message_content != "":
                 _tool_call_content = assistant_message_content.strip()
@@ -292,7 +276,6 @@ class Ollama(LLM):
                     if "tool_calls" in _tool_call_content_json:
                         assistant_tool_calls = _tool_call_content_json.get("tool_calls")
                         if isinstance(assistant_tool_calls, list):
-                            # Build tool calls
                             tool_calls: List[Dict[str, Any]] = []
                             logger.debug(f"Building tool calls from {assistant_tool_calls}")
                             for tool_call in assistant_tool_calls:
@@ -312,8 +295,6 @@ class Ollama(LLM):
             logger.warning(f"Could not parse tool calls from response: {assistant_message_content}")
             pass
 
-        # -*- Update usage metrics
-        # Add response time to metrics
         assistant_message.metrics["time"] = f"{response_timer.elapsed:.4f}"
         if time_to_first_token is not None:
             assistant_message.metrics["time_to_first_token"] = f"{time_to_first_token:.4f}s"
@@ -331,11 +312,9 @@ class Ollama(LLM):
                 self.metrics["tokens_per_second"] = []
             self.metrics["tokens_per_second"].append(f"{completion_tokens / response_timer.elapsed:.4f}")
 
-        # -*- Add assistant message to messages
         messages.append(assistant_message)
         assistant_message.log()
 
-        # -*- Parse and run function call
         if assistant_message.tool_calls is not None and self.run_tools:
             function_calls_to_run: List[FunctionCall] = []
             for tool_call in assistant_message.tool_calls:
@@ -358,23 +337,18 @@ class Ollama(LLM):
                     yield "\n\n"
 
             function_call_results = self.run_function_calls(function_calls_to_run, role="user")
-            # Add results of the function calls to the messages
             if len(function_call_results) > 0:
                 messages.extend(function_call_results)
-                # Reconfigure messages so the LLM is reminded of the original task
                 if self.add_user_message_after_tool_call:
                     messages = self.add_original_user_message(messages)
 
-            # Deactivate tool calls by turning off JSON mode after 1 tool call
             if self.deactivate_tools_after_use:
                 self.deactivate_function_calls()
 
-            # -*- Yield new response using results of tool calls
             yield from self.response_stream(messages=messages)
         logger.debug("---------- Ollama Response End ----------")
 
     def add_original_user_message(self, messages: List[Message]) -> List[Message]:
-        # Add the original user message to the messages to remind the LLM of the original task
         original_user_message_content = None
         for m in messages:
             if m.role == "user":

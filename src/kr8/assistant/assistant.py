@@ -17,7 +17,10 @@ from typing import (
     AsyncIterator,
 )
 
+import httpx
+from psycopg import OperationalError
 from pydantic import BaseModel, ConfigDict, field_validator, Field, ValidationError
+from sqlalchemy import create_engine
 
 from kr8.document import Document
 from kr8.assistant.run import AssistantRun
@@ -38,6 +41,9 @@ from kr8.utils.timer import Timer
 
 class Assistant(BaseModel):
     # -*- Assistant settings
+    
+    offline_mode: bool = False
+    
     # LLM to use for this Assistant
     llm: Optional[LLM] = None
     # Assistant introduction. This is added to the chat history when a run is started.
@@ -277,6 +283,13 @@ class Assistant(BaseModel):
 
             self.llm = OpenAIChat()
 
+            # Check if we're in offline mode
+        if self.offline_mode:
+            from kr8.llm.offline_llm import OfflineLLM
+            self.llm = OfflineLLM()
+            logger.warning("Running in offline mode. Functionality will be limited.")
+            return
+    
         # Set response_format if it is not set on the llm
         if self.output_model is not None and self.llm.response_format is None:
             self.llm.response_format = {"type": "json_object"}
@@ -489,7 +502,49 @@ class Assistant(BaseModel):
                 logger.debug(f"-*- Created assistant run: {self.db_row.run_id}")
                 self.from_database_row(row=self.db_row)
                 self._api_log_assistant_run()
+                
+              # Check connection and set offline mode if necessary
+            try:
+                self.check_connection()
+            except ConnectionError:
+                logger.warning("Connection failed. Switching to offline mode.")
+                self.offline_mode = True
+                    
         return self.run_id
+    
+    def check_connection(self) -> None:
+        """
+        Check connections to necessary services.
+        Raises ConnectionError if all connections fail.
+        """
+        connection_errors = []
+
+        # Check connection to Ollama service
+        try:
+            if self.llm and hasattr(self.llm, 'base_url'):
+                ollama_url = self.llm.base_url
+                response = httpx.get(f"{ollama_url}/health", timeout=5.0)
+                if response.status_code == 200:
+                    logger.info("Successfully connected to Ollama service")
+                    return  # If Ollama is available, we're good to go
+        except (httpx.ConnectError, httpx.ReadTimeout) as e:
+            connection_errors.append(f"Failed to connect to Ollama service: {str(e)}")
+
+        # Check connection to database
+        try:
+            if self.storage and hasattr(self.storage, 'db_url'):
+                engine = create_engine(self.storage.db_url)
+                with engine.connect():
+                    logger.info("Successfully connected to database")
+                    return  # If database is available, we're good to go
+        except OperationalError as e:
+            connection_errors.append(f"Failed to connect to database: {str(e)}")
+
+        # If we've made it this far, all connections failed
+        if connection_errors:
+            raise ConnectionError("\n".join(connection_errors))
+
+        logger.info("All connections successful")
 
     def get_json_output_prompt(self) -> str:
         json_output_prompt = "\nProvide your output as a JSON containing the following fields:"
@@ -819,8 +874,24 @@ class Assistant(BaseModel):
         # Load run from storage
         self.read_from_storage()
 
+        # Check connection and update offline_mode
+        try:
+            self.check_connection()
+            self.offline_mode = False  # Reset offline_mode if connection is successful
+        except ConnectionError as e:
+            logger.warning(f"Connection failed: {str(e)}. Switching to offline mode.")
+            self.offline_mode = True
+
         # Update the LLM (set defaults, add tools, etc.)
         self.update_llm()
+
+        # Check if we're in offline mode
+        if self.offline_mode:
+            offline_response = "I'm currently in offline mode. I can engage in general conversation, but I can't access real-time data or perform complex tasks. How can I assist you within these limitations? Simples!"
+            yield offline_response
+            return
+
+    
 
         # -*- Prepare the List of messages sent to the LLM
         llm_messages: List[Message] = []
@@ -1015,9 +1086,23 @@ class Assistant(BaseModel):
         # Load run from storage
         self.read_from_storage()
 
+        # Check connection and update offline_mode
+        try:
+            self.check_connection()
+            self.offline_mode = False  # Reset offline_mode if connection is successful
+        except ConnectionError as e:
+            logger.warning(f"Connection failed: {str(e)}. Switching to offline mode.")
+            self.offline_mode = True
+
         # Update the LLM (set defaults, add tools, etc.)
         self.update_llm()
 
+        # Check if we're in offline mode
+        if self.offline_mode:
+            offline_response = "I'm currently in offline mode. I can engage in general conversation, but I can't access real-time data or perform complex tasks. How can I assist you within these limitations? Simples!"
+            yield offline_response
+            return
+        
         # -*- Prepare the List of messages sent to the LLM
         llm_messages: List[Message] = []
 

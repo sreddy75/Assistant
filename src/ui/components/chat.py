@@ -1,4 +1,5 @@
 import time
+import httpx
 import streamlit as st
 import html
 from kr8.utils.log import logger
@@ -43,17 +44,24 @@ def render_chat():
             st.markdown(sanitized_content)
 
     last_message = st.session_state["messages"][-1]
+    
     if last_message.get("role") == "user":
         question = last_message["content"]
         with st.chat_message("assistant"):
             response = ""
             resp_container = st.empty()
-            for delta in llm_os.run(question):
-                response += delta
-                sanitized_response = sanitize_content(response)
-                resp_container.markdown(sanitized_response)
+            try:
+                for delta in llm_os.run(question):
+                    response += delta
+                    sanitized_response = sanitize_content(response)
+                    resp_container.markdown(sanitized_response)
+            except httpx.ConnectError:
+                logger.error("Failed to connect to Ollama service. Working in offline mode.")
+                offline_response = "I'm sorry, but I'm currently offline. I can't process your request at the moment, but I'm here to chat about general topics that don't require real-time data or external connections. How else can I assist you? Simples!"
+                resp_container.markdown(offline_response)
+                response = offline_response
             st.session_state["messages"].append({"role": "assistant", "content": response})
-            # log_event("assistant_response", question, response=response)
+            
 
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)

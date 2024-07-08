@@ -56,7 +56,7 @@ def set_page_layout():
     )
 
    # Load the GIF
-    image_path = "meerkat.gif"
+    image_path = "meerkat_transparent.gif"
     file_ = open(image_path, "rb")
     contents = file_.read()
     data_url = base64.b64encode(contents).decode("utf-8")
