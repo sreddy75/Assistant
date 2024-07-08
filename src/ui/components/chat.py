@@ -3,12 +3,14 @@ import streamlit as st
 import html
 from kr8.utils.log import logger
 from assistant import get_llm_os
-from kr8.utils.ut import log_event
+# from kr8.utils.ut import log_event
 from kr8.document.reader.website import WebsiteReader
 from kr8.document.reader.pdf import PDFReader
+from multiprocessing import Pool
+import asyncio
+from kr8.document import Document
 
 def sanitize_content(content):
-    # Escape HTML entities to handle special characters
     return html.escape(content)
 
 def render_chat():
@@ -30,7 +32,7 @@ def render_chat():
         st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
 
     if prompt := st.chat_input():
-        log_event("chat_input", prompt)
+        # log_event("chat_input", prompt)
         st.session_state["messages"].append({"role": "user", "content": prompt})
 
     for message in st.session_state["messages"]:
@@ -51,7 +53,7 @@ def render_chat():
                 sanitized_response = sanitize_content(response)
                 resp_container.markdown(sanitized_response)
             st.session_state["messages"].append({"role": "assistant", "content": response})
-            log_event("assistant_response", question, response=response)
+            # log_event("assistant_response", question, response=response)
 
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
@@ -67,7 +69,7 @@ def initialize_assistant(llm_id):
             investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
             company_analyst=st.session_state.get("company_analyst_enabled", False),            
             maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
-             product_owner=st.session_state.get("product_owner_enabled", True),
+            product_owner=st.session_state.get("product_owner_enabled", True),
             business_analyst=st.session_state.get("business_analyst_enabled", True),
             quality_analyst=st.session_state.get("quality_analyst_enabled", True),
         )
@@ -76,23 +78,50 @@ def initialize_assistant(llm_id):
         llm_os = st.session_state["llm_os"]
     return llm_os
 
-def process_pdf(uploaded_file, llm_os):
+def chunk_pdf(pdf_content, chunk_size=1000):
+    words = pdf_content.split()
+    for i in range(0, len(words), chunk_size):
+        yield ' '.join(words[i:i+chunk_size])
+
+async def process_pdf_async(uploaded_file, llm_os):
     reader = PDFReader()
     auto_rag_documents = reader.read(uploaded_file)
     if not auto_rag_documents:
         return False, f"Could not read PDF: {uploaded_file.name}"
     
-    total_docs = len(auto_rag_documents)
+    total_chunks = 0
+    chunks = []
+    for doc in auto_rag_documents:
+        doc_chunks = list(chunk_pdf(doc.content))
+        chunks.extend(doc_chunks)
+        total_chunks += len(doc_chunks)
+    
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    for i, doc in enumerate(auto_rag_documents):
-        status_text.text(f"Processing document {i+1} of {total_docs}")
-        llm_os.knowledge_base.load_document(doc, upsert=True)
-        progress_bar.progress((i + 1) / total_docs)
-        # time.sleep(0.1)  # To make the progress visible
+    start_time = time.time()  # Define start_time here
+    
+    for i, chunk in enumerate(chunks):
+        status_text.text(f"Processing chunk {i+1} of {total_chunks}")
+        await asyncio.to_thread(llm_os.knowledge_base.load_documents, [Document(content=chunk)], upsert=True)
+        progress = (i + 1) / total_chunks
+        progress_bar.progress(progress)
+        
+        # Estimate time remaining
+        time_elapsed = time.time() - start_time
+        time_per_chunk = time_elapsed / (i + 1)
+        eta = time_per_chunk * (total_chunks - i - 1)
+        status_text.text(f"Processing chunk {i+1} of {total_chunks}. ETA: {eta:.2f} seconds")
     
     return True, f"Successfully processed {uploaded_file.name}"
+
+
+def process_pdfs_parallel(uploaded_files, llm_os):
+    with Pool() as pool:
+        results = pool.starmap(PDFReader().read, [(file,) for file in uploaded_files])
+    all_documents = [doc for result in results for doc in result]
+    llm_os.knowledge_base.load_documents(all_documents, upsert=True)
+    return True, f"Successfully processed {len(uploaded_files)} files"
 
 def manage_knowledge_base(llm_os):
     if "processed_files" not in st.session_state:
@@ -104,9 +133,9 @@ def manage_knowledge_base(llm_os):
     input_url = st.sidebar.text_input("Add URL to Knowledge Base", type="default", key=st.session_state["url_scrape_key"])
     add_url_button = st.sidebar.button("Add URL")
     if add_url_button:
-        log_event("add_url", input_url)
+        # log_event("add_url", input_url)
         if input_url is not None:
-            with st.spinner("Processing URLs..."):  # Corrected spinner usage
+            with st.spinner("Processing URLs..."):
                 if f"{input_url}_scraped" not in st.session_state:
                     scraper = WebsiteReader(max_links=2, max_depth=1)
                     web_documents = scraper.read(input_url)
@@ -126,22 +155,20 @@ def manage_knowledge_base(llm_os):
     )
     
     if uploaded_files:
+        # log_event("upload_pdfs", [file.name for file in uploaded_files])
+        
         for uploaded_file in uploaded_files:
-            if uploaded_file.name not in st.session_state["processed_files"]:
-                log_event("upload_pdf", uploaded_file.name)
-                auto_rag_name = uploaded_file.name.split(".")[0]
-                
-                with st.spinner(f"Processing {uploaded_file.name}..."):
-                    success, message = process_pdf(uploaded_file, llm_os)
-                    
-                if success:
-                    st.success(message)
-                    st.session_state["processed_files"].append(uploaded_file.name)
-                else:
-                    st.error(message)
-                    
-                # Increment the file uploader key to force a refresh
-                st.session_state["file_uploader_key"] += 1
+            with st.spinner(f"Processing {uploaded_file.name}..."):
+                success, message = asyncio.run(process_pdf_async(uploaded_file, llm_os))
+            
+            if success:
+                st.success(message)
+                st.session_state["processed_files"].append(uploaded_file.name)
+            else:
+                st.error(message)
+        
+        # Increment the file uploader key to force a refresh
+        st.session_state["file_uploader_key"] += 1
 
     if st.session_state["processed_files"]:
         st.sidebar.markdown("### You are chatting with these files:")
@@ -150,7 +177,7 @@ def manage_knowledge_base(llm_os):
 
     if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
         if st.sidebar.button("Clear Knowledge Base"):
-            log_event("clear_knowledge_base", "User cleared the knowledge base")
+            # log_event("clear_knowledge_base", "User cleared the knowledge base")
             llm_os.knowledge_base.vector_db.clear()
             st.session_state["processed_files"] = []
             st.sidebar.success("Knowledge base cleared")

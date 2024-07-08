@@ -1,36 +1,24 @@
 from typing import List, Optional, Iterator, Dict, Any
-
 from pydantic import BaseModel, ConfigDict
-
 from kr8.document import Document
 from kr8.document.reader.base import Reader
 from kr8.vectordb import VectorDb
 from kr8.utils.log import logger
 
-
 class AssistantKnowledge(BaseModel):
-    """Base class for LLM knowledge base"""
-
-    # Reader to read the documents
     reader: Optional[Reader] = None
-    # Vector db to store the knowledge base
     vector_db: Optional[VectorDb] = None
-    # Number of relevant documents to return on search
     num_documents: int = 2
-    # Number of documents to optimize the vector db on
     optimize_on: Optional[int] = 1000
+    cache: Dict[str, Any] = {}  # Simple cache implementation
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @property
     def document_lists(self) -> Iterator[List[Document]]:
-        """Iterator that yields lists of documents in the knowledge base
-        Each object yielded by the iterator is a list of documents.
-        """
         raise NotImplementedError
 
     def search(self, query: str, num_documents: Optional[int] = None) -> List[Document]:
-        """Returns relevant documents matching the query"""
         try:
             if self.vector_db is None:
                 logger.warning("No vector db provided")
@@ -44,14 +32,6 @@ class AssistantKnowledge(BaseModel):
             return []
 
     def load(self, recreate: bool = False, upsert: bool = False, skip_existing: bool = True) -> None:
-        """Load the knowledge base to the vector db
-
-        Args:
-            recreate (bool): If True, recreates the collection in the vector db. Defaults to False.
-            upsert (bool): If True, upserts documents to the vector db. Defaults to False.
-            skip_existing (bool): If True, skips documents which already exist in the vector db when inserting. Defaults to True.
-        """
-
         if self.vector_db is None:
             logger.warning("No vector db provided")
             return
@@ -67,12 +47,9 @@ class AssistantKnowledge(BaseModel):
         num_documents = 0
         for document_list in self.document_lists:
             documents_to_load = document_list
-            # Upsert documents if upsert is True and vector db supports upsert
             if upsert and self.vector_db.upsert_available():
                 self.vector_db.upsert(documents=documents_to_load)
-            # Insert documents
             else:
-                # Filter out documents which already exist in the vector db
                 if skip_existing:
                     documents_to_load = [
                         document for document in document_list if not self.vector_db.doc_exists(document)
@@ -86,14 +63,6 @@ class AssistantKnowledge(BaseModel):
             self.vector_db.optimize()
 
     def load_documents(self, documents: List[Document], upsert: bool = False, skip_existing: bool = True) -> None:
-        """Load documents to the knowledge base
-
-        Args:
-            documents (List[Document]): List of documents to load
-            upsert (bool): If True, upserts documents to the vector db. Defaults to False.
-            skip_existing (bool): If True, skips documents which already exist in the vector db when inserting. Defaults to True.
-        """
-
         logger.info("Loading knowledge base")
         if self.vector_db is None:
             logger.warning("No vector db provided")
@@ -102,77 +71,47 @@ class AssistantKnowledge(BaseModel):
         logger.debug("Creating collection")
         self.vector_db.create()
 
-        # Upsert documents if upsert is True
+        documents_to_load = []
+        for document in documents:
+            cache_key = hash(document.content)
+            if cache_key not in self.cache:
+                documents_to_load.append(document)
+                self.cache[cache_key] = True
+
         if upsert and self.vector_db.upsert_available():
-            self.vector_db.upsert(documents=documents)
-            logger.info(f"Loaded {len(documents)} documents to knowledge base")
-            return
-
-        # Filter out documents which already exist in the vector db
-        documents_to_load = (
-            [document for document in documents if not self.vector_db.doc_exists(document)]
-            if skip_existing
-            else documents
-        )
-
-        # Insert documents
-        if len(documents_to_load) > 0:
+            self.vector_db.upsert(documents=documents_to_load)
+        elif skip_existing:
+            documents_to_load = [doc for doc in documents_to_load if not self.vector_db.doc_exists(doc)]
             self.vector_db.insert(documents=documents_to_load)
-            logger.info(f"Loaded {len(documents_to_load)} documents to knowledge base")
         else:
-            logger.info("No new documents to load")
+            self.vector_db.insert(documents=documents_to_load)
+
+        logger.info(f"Loaded {len(documents_to_load)} documents to knowledge base")
+
+        if self.optimize_on is not None and len(documents_to_load) > self.optimize_on:
+            logger.info("Optimizing Vector DB")
+            self.vector_db.optimize()
 
     def load_document(self, document: Document, upsert: bool = False, skip_existing: bool = True) -> None:
-        """Load a document to the knowledge base
-
-        Args:
-            document (Document): Document to load
-            upsert (bool): If True, upserts documents to the vector db. Defaults to False.
-            skip_existing (bool): If True, skips documents which already exist in the vector db. Defaults to True.
-        """
         self.load_documents(documents=[document], upsert=upsert, skip_existing=skip_existing)
 
     def load_dict(self, document: Dict[str, Any], upsert: bool = False, skip_existing: bool = True) -> None:
-        """Load a dictionary representation of a document to the knowledge base
-
-        Args:
-            document (Dict[str, Any]): Dictionary representation of a document
-            upsert (bool): If True, upserts documents to the vector db. Defaults to False.
-            skip_existing (bool): If True, skips documents which already exist in the vector db. Defaults to True.
-        """
         self.load_documents(documents=[Document.from_dict(document)], upsert=upsert, skip_existing=skip_existing)
 
     def load_json(self, document: str, upsert: bool = False, skip_existing: bool = True) -> None:
-        """Load a json representation of a document to the knowledge base
-
-        Args:
-            document (str): Json representation of a document
-            upsert (bool): If True, upserts documents to the vector db. Defaults to False.
-            skip_existing (bool): If True, skips documents which already exist in the vector db. Defaults to True.
-        """
         self.load_documents(documents=[Document.from_json(document)], upsert=upsert, skip_existing=skip_existing)
 
     def load_text(self, text: str, upsert: bool = False, skip_existing: bool = True) -> None:
-        """Load a text to the knowledge base
-
-        Args:
-            text (str): Text to load to the knowledge base
-            upsert (bool): If True, upserts documents to the vector db. Defaults to False.
-            skip_existing (bool): If True, skips documents which already exist in the vector db. Defaults to True.
-        """
         self.load_documents(documents=[Document(content=text)], upsert=upsert, skip_existing=skip_existing)
 
     def exists(self) -> bool:
-        """Returns True if the knowledge base exists"""
         if self.vector_db is None:
             logger.warning("No vector db provided")
             return False
         return self.vector_db.exists()
 
     def clear(self) -> bool:
-        """Clear the knowledge base"""
         if self.vector_db is None:
             logger.warning("No vector db available")
             return True
-
         return self.vector_db.clear()

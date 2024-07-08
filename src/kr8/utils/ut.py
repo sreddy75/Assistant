@@ -16,7 +16,7 @@ if "events" not in st.session_state:
     st.session_state["events"] = []
 
 # Global variables to store events, sent events, and scheduler
-events = st.session_state["events"]
+# events = st.session_state["events"]
 sent_events = []
 scheduler = None
 

@@ -3,6 +3,8 @@
 # Use a base image, for example, Ubuntu
 FROM ubuntu:20.04
 
+RUN apt-get update && apt-get install -y curl
+
 # Install necessary packages
 RUN apt-get update && apt-get install -y \
     python3.12 \

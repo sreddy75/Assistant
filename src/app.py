@@ -1,6 +1,6 @@
 import nest_asyncio
 import streamlit as st
-from kr8.utils.ut import initialize_usage_tracking
+# from kr8.utils.ut import initialize_usage_tracking
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat
@@ -14,7 +14,7 @@ def main() -> None:
     )
 
     set_page_layout()
-    initialize_usage_tracking()
+    # initialize_usage_tracking()
     render_sidebar()
     render_chat()
 
