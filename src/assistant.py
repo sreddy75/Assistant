@@ -17,6 +17,7 @@ from kr8.llm.openai import OpenAIChat
 from kr8.llm.ollama import Ollama
 from kr8.knowledge import AssistantKnowledge
 from kr8.embedder.openai import OpenAIEmbedder
+from kr8.embedder.sentence_transformer import SentenceTransformerEmbedder
 from kr8.assistant.duckdb import DuckDbAssistant
 from kr8.assistant.python import PythonAssistant
 from kr8.storage.assistant.postgres import PgAssistantStorage
@@ -25,7 +26,7 @@ from kr8.vectordb.pgvector import PgVector2
 from dotenv import load_dotenv
 load_dotenv()
 
-db_url = os.getenv("DB_URL")
+db_url = os.getenv("DB_URL", "postgresql+psycopg://ai:ai@pgvector:5432/ai")
     
 cwd = Path(__file__).parent.resolve()
 scratch_dir = cwd.joinpath("scratch")
@@ -221,7 +222,7 @@ def get_llm_os(
                 vector_db=PgVector2(
                     db_url=db_url,
                     collection="llm_os_documents",
-                    embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                    embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
                 ),
                 # 3 references are added to the prompt when searching the knowledge base
                 num_documents=3,
@@ -486,7 +487,7 @@ def get_llm_os(
                 vector_db=PgVector2(
                     db_url=db_url,
                     collection="llm_os_documents",
-                    embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                    embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
                 ),
                 num_documents=15,
             )            
@@ -566,7 +567,7 @@ def get_llm_os(
                     vector_db=PgVector2(
                         db_url=db_url,
                         collection="llm_os_documents",
-                        embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                        embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
                     ),
                     num_documents=5,
                 )
@@ -650,7 +651,7 @@ def get_llm_os(
                     vector_db=PgVector2(
                         db_url=db_url,
                         collection="llm_os_documents",
-                        embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                        embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
                     ),
                     num_documents=5,
                 )
@@ -740,7 +741,7 @@ def get_llm_os(
                     vector_db=PgVector2(
                         db_url=db_url,
                         collection="llm_os_documents",
-                        embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                        embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
                     ),
                     num_documents=5,
                 )
@@ -767,8 +768,7 @@ def get_llm_os(
         instructions=[
             "When the user sends a message, first **think** and determine if:\n"
             " - You need to search the knowledge base\n"
-            " - You need to search the internet\n"
-            " - You need to delegate the task to team members\n"
+            " - You need to search the internet\n"            
             " - You need to ask a clarifying question",
             "If the user asks about a topic, first ALWAYS search your knowledge base using the `search_knowledge_base` tool.",
             "If you dont find relevant information in your knowledge base, use the `duckduckgo_search` tool to search the internet.",
@@ -791,7 +791,7 @@ def get_llm_os(
             vector_db=PgVector2(
                 db_url=db_url,
                 collection="llm_os_documents",
-                embedder=OpenAIEmbedder(model="text-embedding-3-small", dimensions=1536),
+                embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
             ),
             # 3 references are added to the prompt when searching the knowledge base
             num_documents=3,

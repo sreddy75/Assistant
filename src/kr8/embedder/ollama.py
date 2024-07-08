@@ -1,7 +1,7 @@
 from typing import Optional, Dict, List, Tuple, Any
-
 from kr8.embedder.base import Embedder
 from kr8.utils.log import logger
+from functools import lru_cache
 
 try:
     from ollama import Client as OllamaClient
@@ -9,9 +9,8 @@ except ImportError:
     logger.error("`ollama` not installed")
     raise
 
-
 class OllamaEmbedder(Embedder):
-    model: str = "openhermes"
+    model: str = "openhermes" 
     dimensions: int = 4096
     host: Optional[str] = None
     timeout: Optional[Any] = None
@@ -40,14 +39,19 @@ class OllamaEmbedder(Embedder):
 
         return self.client.embeddings(prompt=text, model=self.model, **kwargs)  # type: ignore
 
+    @lru_cache(maxsize=1000)  # Adjust maxsize as needed
     def get_embedding(self, text: str) -> List[float]:
         try:
             response = self._response(text=text)
             if response is None:
+                logger.warning("Null response from Ollama client")
                 return []
-            return response.get("embedding", [])
+            embedding = response.get("embedding", [])
+            if len(embedding) != self.dimensions:
+                logger.warning(f"Unexpected embedding dimension: got {len(embedding)}, expected {self.dimensions}")
+            return embedding
         except Exception as e:
-            logger.warning(e)
+            logger.error(f"Error getting embedding: {str(e)}")
             return []
 
     def get_embedding_and_usage(self, text: str) -> Tuple[List[float], Optional[Dict]]:
@@ -57,6 +61,9 @@ class OllamaEmbedder(Embedder):
             response = self._response(text=text)
             if response is not None:
                 embedding = response.get("embedding", [])
+                usage = response.get("usage")  # Capture usage if available
+            else:
+                logger.warning("Null response from Ollama client")
         except Exception as e:
-            logger.warning(e)
+            logger.error(f"Error getting embedding and usage: {str(e)}")
         return embedding, usage

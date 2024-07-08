@@ -1,20 +1,17 @@
 # Dockerfile.ollama
 
-# Use a base image, for example, Ubuntu
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
-RUN apt-get update && apt-get install -y curl
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install necessary packages
 RUN apt-get update && apt-get install -y \
-    python3.12 \
-    python3-pip
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Ollama (replace with actual installation command)
-RUN pip install ollama 
+# Install Ollama
+RUN curl https://ollama.ai/install.sh | sh
 
 # Expose the default port for Ollama
-EXPOSE 8000
+EXPOSE 11434
 
-# Run Ollama when the container launches
-CMD ["ollama", "start"]  # Adjust this command based on how Ollama is started
+# The CMD is now in docker-compose.yml
