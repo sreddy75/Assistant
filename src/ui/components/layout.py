@@ -68,7 +68,7 @@ def set_page_layout():
         <style>
         .centered-image {{
             display: flex;
-            justify-content: left;
+            justify-content: right;
             align-items: center;
             width: 100%;
         }}

@@ -54,15 +54,15 @@ def render_sidebar():
             st.session_state["company_analyst_enabled"] = company_analyst
             restart_assistant()
             
-        # if "investment_assistant_enabled" not in st.session_state:
-        #     st.session_state["investment_assistant_enabled"] = False
-        # investment_assistant_enabled = st.session_state["investment_assistant_enabled"]
-        # investment_assistant = st.checkbox("Investment Assistant", value=investment_assistant_enabled, help="Enable the investment assistant. NOTE: This is not financial advice.")
-        # if investment_assistant_enabled != investment_assistant:
-        #     st.session_state["investment_assistant_enabled"] = investment_assistant
-        #     restart_assistant()        
+        if "investment_assistant_enabled" not in st.session_state:
+            st.session_state["investment_assistant_enabled"] = False
+        investment_assistant_enabled = st.session_state["investment_assistant_enabled"]
+        investment_assistant = st.checkbox("Investment Assistant", value=investment_assistant_enabled, help="Enable the investment assistant. NOTE: This is not financial advice.")
+        if investment_assistant_enabled != investment_assistant:
+            st.session_state["investment_assistant_enabled"] = investment_assistant
+            restart_assistant()        
 
-        # st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
+        st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
 
         if "product_owner_enabled" not in st.session_state:
             st.session_state["product_owner_enabled"] = True
