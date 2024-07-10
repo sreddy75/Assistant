@@ -50,6 +50,17 @@ def verify_token(token):
     except:
         return False
 
+def verify_email(token: str) -> Tuple[bool, str]:
+    response = requests.get(f"{BACKEND_URL}/verify-email/{token}")
+    if response.status_code == 200:
+        return True, "Email verified successfully"
+    elif response.status_code == 400:
+        return False, "Invalid or expired verification link. Please request a new one."
+    elif response.status_code == 404:
+        return False, "User not found. Please register again."
+    else:
+        return False, "An error occurred during verification. Please try again later."
+        
 def request_password_reset(email: str) -> Tuple[bool, str]:
     response = requests.post(f"{BACKEND_URL}/request-password-reset", json={"email": email})
     if response.status_code == 200:

@@ -4,7 +4,7 @@ import base64
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat
-from utils.auth import login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email
+from utils.auth import login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
 
 def login_form():
     st.title("Welcome to Compare the Meerkat!")
@@ -85,6 +85,26 @@ def reset_password_form():
                 st.rerun()  # Rerun the app to show the login form
             else:
                 st.error(message)
+                
+def verify_email_form():
+    st.title("Email Verification")
+
+    token = st.query_params.get("token", "")
+    
+    if token:
+        success, message = verify_email(token)
+        if success:
+            st.success(message)
+            st.info("Your email has been verified. You can now log in to your account.")
+            # Clear the token from query params
+            st.query_params.clear()
+            # Add a button to go to login page
+            if st.button("Go to Login"):
+                st.rerun()
+        else:
+            st.error(message)
+    else:
+        st.error("Invalid verification link. Please check your email and try again.")                            
 
 def main_app():
     set_page_layout()
@@ -115,7 +135,12 @@ def main():
         st.query_params.clear()
 
     if "token" in st.query_params:
-        reset_password_form()
+        if "verify" in st.query_params:
+            verify_email_form()
+        elif "reset" in st.query_params:
+            reset_password_form()
+        else:
+            st.error("Invalid link. Please check your email and try again.")
     elif is_authenticated():
         main_app()
     else:
