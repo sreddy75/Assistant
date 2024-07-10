@@ -1,8 +1,9 @@
-from typing import Tuple
 import streamlit as st
 import requests
 import jwt
 from functools import wraps
+from typing import Tuple
+import re
 
 BACKEND_URL = "http://localhost:8000"  # Change this to your FastAPI backend URL
 
@@ -48,10 +49,23 @@ def verify_token(token):
         return True
     except:
         return False
-    
+
 def request_password_reset(email: str) -> Tuple[bool, str]:
     response = requests.post(f"{BACKEND_URL}/request-password-reset", json={"email": email})
     if response.status_code == 200:
         return True, "Password reset link sent to your email. Please check your inbox."
     else:
-        return False, response.json().get("detail", "Failed to send reset link. Please try again.")    
+        return False, response.json().get("detail", "Failed to send reset link. Please try again.")
+    
+def reset_password(token: str, new_password: str) -> Tuple[bool, str]:
+    response = requests.post(f"{BACKEND_URL}/reset-password", json={"token": token, "new_password": new_password})
+    if response.status_code == 200:
+        return True, "Password reset successfully"
+    elif response.status_code == 404:
+        return False, "User not found. The reset link may have expired. Please request a new reset link."
+    else:
+        return False, response.json().get("detail", "Failed to reset password. Please try again.")
+
+def is_valid_email(email):
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return re.match(pattern, email) is not None

@@ -1,23 +1,16 @@
-from typing import Tuple
-import requests
+import time
 import streamlit as st
+import base64
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat
-from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_required, register
-import re
-
-def is_valid_email(email):
-    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-    return re.match(pattern, email) is not None
-
-import base64
+from utils.auth import login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email
 
 def login_form():
     st.title("Welcome to Compare the Meerkat!")
 
     # Display the animated meerkat logo
-    file_ = open("images/meerkat_transparent.gif", "rb")
+    file_ = open("images/meerkat_logo.gif", "rb")
     contents = file_.read()
     data_url = base64.b64encode(contents).decode("utf-8")
     file_.close()
@@ -86,27 +79,23 @@ def reset_password_form():
             if success:
                 st.success(message)
                 st.info("You can now log in with your new password")
+                # Clear the token from query params
+                st.query_params.clear()
+                time.sleep(3)  # Give user time to read the message
+                st.rerun()  # Rerun the app to show the login form
             else:
                 st.error(message)
 
-def reset_password(token: str, new_password: str) -> Tuple[bool, str]:
-    response = requests.post(f"{BACKEND_URL}/reset-password", json={"token": token, "new_password": new_password})
-    if response.status_code == 200:
-        return True, "Password reset successfully"
-    else:
-        return False, response.json().get("detail", "Failed to reset password. Please try again.")
-                    
-@login_required
 def main_app():
     set_page_layout()
 
+    st.sidebar.write(f"Welcome, {st.session_state['email']}!")
     
     # Add logout link to sidebar
     if st.sidebar.button("Logout"):
         logout()
         st.rerun()
 
-    st.sidebar.write(f"Welcome, {st.session_state['email']}!")
     render_sidebar()
     render_chat()
 
@@ -131,6 +120,6 @@ def main():
         main_app()
     else:
         login_form()
-        
+
 if __name__ == "__main__":
     main()
