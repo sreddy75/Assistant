@@ -72,11 +72,13 @@ def reset_password(token: str, new_password: str) -> Tuple[bool, str]:
     response = requests.post(f"{BACKEND_URL}/reset-password", json={"token": token, "new_password": new_password})
     if response.status_code == 200:
         return True, "Password reset successfully"
+    elif response.status_code == 400:
+        return False, "Invalid or expired reset link. Please request a new one."
     elif response.status_code == 404:
-        return False, "User not found. The reset link may have expired. Please request a new reset link."
+        return False, "User not found. Please register again."
     else:
-        return False, response.json().get("detail", "Failed to reset password. Please try again.")
-
+        return False, "An error occurred during password reset. Please try again later."
+    
 def is_valid_email(email):
     pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     return re.match(pattern, email) is not None

@@ -214,7 +214,7 @@ def send_verification_email(email: str, token: str):
 
 def send_password_reset_email(email: str, token: str):
     subject = "Reset Your Compare the Meerkat Password"
-    reset_url = f"{FRONTEND_URL}/reset-password?token={token}"
+    reset_url = f"{FRONTEND_URL}?token={token}&reset=true"
     html_content = get_email_html_template(
         header="Password Reset",
         message="You have requested to reset your password for Compare the Meerkat. Click the button below to set a new password. If you didn't request this, please ignore this email.",
