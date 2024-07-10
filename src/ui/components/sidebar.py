@@ -2,16 +2,27 @@ import streamlit as st
 from ui.utils.helper import restart_assistant
 
 def render_sidebar():                                                
-    # Get LLM Model
-    llm_id = st.sidebar.selectbox("Select LLM", options=["llama3", "gpt-4o", "gpt-4-turbo"]) or "gpt-4o"
+    # Model Type Selection
+    model_type = st.sidebar.radio("Select Model Type", ["Open Source", "Closed Source"])
+
+    # Model Selection based on type
+    if model_type == "Open Source":
+        llm_options = ["llama3"]
+        llm_id = st.sidebar.selectbox("Select Open Source Model", options=llm_options)
+    else:  # Closed Source
+        llm_options = ["gpt-4o", "gpt-3.5-turbo"]
+        llm_id = st.sidebar.selectbox("Select Closed Source Model", options=llm_options)
+
+    # Update session state and restart assistant if necessary
     if "llm_id" not in st.session_state:
         st.session_state["llm_id"] = llm_id
     elif st.session_state["llm_id"] != llm_id:
         st.session_state["llm_id"] = llm_id
         restart_assistant()
 
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
+    # Rest of your existing sidebar code...
     with st.sidebar.expander("Select Team Members", expanded=True):
     #     if "file_tools_enabled" not in st.session_state:
     #         st.session_state["file_tools_enabled"] = False
@@ -47,7 +58,7 @@ def render_sidebar():
         #     restart_assistant()            
 
         if "company_analyst_enabled" not in st.session_state:
-            st.session_state["company_analyst_enabled"] = True
+            st.session_state["company_analyst_enabled"] = False
         company_analyst_enabled = st.session_state["company_analyst_enabled"]
         company_analyst = st.checkbox("Company Analyst", value=company_analyst_enabled, help="Enable the company analyst (uses Exa).")
         if company_analyst_enabled != company_analyst:
@@ -65,7 +76,7 @@ def render_sidebar():
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
 
         if "product_owner_enabled" not in st.session_state:
-            st.session_state["product_owner_enabled"] = True
+            st.session_state["product_owner_enabled"] = False
         product_owner_enabled = st.session_state["product_owner_enabled"]
         product_owner = st.checkbox("Ze Product Tsar", value=product_owner_enabled, help="Enable Ze Great Visionary of Producting.")
         if product_owner_enabled != product_owner:
@@ -73,7 +84,7 @@ def render_sidebar():
             restart_assistant()
 
         if "business_analyst_enabled" not in st.session_state:
-            st.session_state["business_analyst_enabled"] = True
+            st.session_state["business_analyst_enabled"] = False
         business_analyst_enabled = st.session_state["business_analyst_enabled"]
         business_analyst = st.checkbox("Ze analysis Guru", value=business_analyst_enabled, help="Enable Ze Business analysis Solver")
         if business_analyst_enabled != business_analyst:
@@ -81,7 +92,7 @@ def render_sidebar():
             restart_assistant()
 
         if "quality_analyst_enabled" not in st.session_state:
-            st.session_state["quality_analyst_enabled"] = True
+            st.session_state["quality_analyst_enabled"] = False
         quality_analyst_enabled = st.session_state["quality_analyst_enabled"]
         quality_analyst = st.checkbox("Ze Bug Inspector", value=quality_analyst_enabled, help="Enable Ze Finder of Glitches.")
         if quality_analyst_enabled != quality_analyst:

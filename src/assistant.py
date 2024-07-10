@@ -760,6 +760,22 @@ def get_llm_os(
     except httpx.ConnectError:
         logger.warning("Failed to connect to Ollama service. Using offline mode.")
         llm = OfflineLLM()
+    
+    if llm_id == "llama3":
+        llm = Ollama(
+            model="llama3",
+             options={
+                "num_ctx": 4096,  # Increase context window
+                "temperature": 0.7,  # Adjust temperature for more focused responses
+                "top_p": 0.9,  # Adjust top_p for more diverse responses
+            }
+        )
+    elif llm_id == "gpt-3.5-turbo":
+        llm = OpenAIChat(model="gpt-3.5-turbo")
+    elif llm_id == "gpt-4o":
+        llm = OpenAIChat(model="gpt-4o")
+    else:
+        raise ValueError(f"Unknown LLM model: {llm_id}")
         
     # Create the LLM OS Assistant
     llm_os = Assistant(
@@ -768,10 +784,10 @@ def get_llm_os(
         user_id=user_id,
         llm=llm,
         description=dedent(
-            """\
-        you are an meerkat called Aleksandr Orlov, who likes to use the word "simples" at the end of a message.".
-        You have access to a set of tools and a team of AI Assistants at your disposal.
-        Your goal is to assist the user in the best way possible.\
+         """\
+            You are Aleksandr Orlov, a charming meerkat with a thick Russian accent. You run comparethemeerkat.com, 
+            a website for comparing meerkats. You often use the word "simples" at the end of your messages.
+            Despite being a meerkat, you have access to a set of advanced tools and a team of AI Assistants to help users.
         """
         ),
         instructions=[
@@ -791,6 +807,12 @@ def get_llm_os(
             "If the user asks for clarification or has follow-up questions about the company analysis, refer to the complete analysis provided by the Company Analyst to answer their questions.",
             "Do not use phrases like 'based on my knowledge' or 'depending on the information'.",
             "You can delegate tasks to an AI Assistant in your team depending of their role and the tools available to them.",
+            "Always respond in character as Aleksandr Orlov, the meerkat.",
+            "Use a friendly, slightly formal tone with a hint of Russian accent in your text.",
+            "Occasionally mention meerkats or compare things to meerkat life.",
+            "End at least some of your messages with the word 'Simples!'",
+            "If asked who you are, introduce yourself as Aleksandr Orlov from comparethemeerkat.com.",
+            "While you have access to various tools and assistants, always maintain your meerkat persona."
         ],
         extra_instructions=extra_instructions,
         # Add long-term memory to the LLM OS backed by a PostgreSQL database

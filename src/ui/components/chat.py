@@ -4,12 +4,16 @@ import streamlit as st
 import html
 from kr8.utils.log import logger
 from assistant import get_llm_os
-# from kr8.utils.ut import log_event
 from kr8.document.reader.website import WebsiteReader
 from kr8.document.reader.pdf import PDFReader
 from multiprocessing import Pool
 import asyncio
 from kr8.document import Document
+from PIL import Image
+
+# Load the custom icons
+meerkat_icon = Image.open("images/meerkat_icon.png")
+user_icon = Image.open("images/user_icon.png")
 
 def sanitize_content(content):
     return html.escape(content)
@@ -33,21 +37,29 @@ def render_chat():
         st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
 
     if prompt := st.chat_input():
-        # log_event("chat_input", prompt)
         st.session_state["messages"].append({"role": "user", "content": prompt})
 
     for message in st.session_state["messages"]:
         if message["role"] == "system":
             continue
-        with st.chat_message(message["role"]):
-            sanitized_content = sanitize_content(message["content"])
-            st.markdown(sanitized_content)
+        elif message["role"] == "assistant":
+            with st.chat_message(message["role"], avatar=meerkat_icon):
+                sanitized_content = sanitize_content(message["content"])
+                st.markdown(sanitized_content)
+        elif message["role"] == "user":
+            with st.chat_message(message["role"], avatar=user_icon):
+                sanitized_content = sanitize_content(message["content"])
+                st.markdown(sanitized_content)
+        else:
+            with st.chat_message(message["role"]):
+                sanitized_content = sanitize_content(message["content"])
+                st.markdown(sanitized_content)
 
     last_message = st.session_state["messages"][-1]
     
     if last_message.get("role") == "user":
         question = last_message["content"]
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=meerkat_icon):
             response = ""
             resp_container = st.empty()
             try:
@@ -61,7 +73,6 @@ def render_chat():
                 resp_container.markdown(offline_response)
                 response = offline_response
             st.session_state["messages"].append({"role": "assistant", "content": response})
-            
 
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
@@ -70,7 +81,7 @@ def initialize_assistant(llm_id):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
         llm_os = get_llm_os(
-            llm_id=llm_id,
+            llm_id=llm_id,  # Use the selected model
             ddg_search=st.session_state.get("ddg_search_enabled", True),
             file_tools=st.session_state.get("file_tools_enabled", True),
             research_assistant=st.session_state.get("research_assistant_enabled", False),
