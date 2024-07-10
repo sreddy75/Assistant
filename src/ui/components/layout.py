@@ -54,32 +54,3 @@ def set_page_layout():
         """,
         unsafe_allow_html=True
     )
-
-   # Load the GIF
-    image_path = "images/meerkat_transparent.gif"
-    file_ = open(image_path, "rb")
-    contents = file_.read()
-    data_url = base64.b64encode(contents).decode("utf-8")
-    file_.close()
-
-    # Display the GIF
-    st.markdown(
-        f"""
-        <style>
-        .centered-image {{
-            display: flex;
-            justify-content: right;
-            align-items: center;
-            width: 100%;
-        }}
-        .centered-image img {{
-            max-width: 100px;
-            height: auto;
-        }}
-        </style>
-        <div class="centered-image">
-            <img src="data:image/gif;base64,{data_url}" alt="Centered Icon">
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
