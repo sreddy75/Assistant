@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 from textwrap import dedent
 from typing import List
-
+import psutil
 from kr8.assistant import Assistant
 from kr8.tools import Toolkit
 from kr8.tools.exa import ExaTools
@@ -37,15 +37,24 @@ scratch_dir = cwd.joinpath("scratch")
 if not scratch_dir.exists():
     scratch_dir.mkdir(exist_ok=True, parents=True)
 
+import os
+import httpx
+
 def is_ollama_available():
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+    print(f"OLLAMA_BASE_URL: {ollama_url}")  # Log the value of the environment variable
     try:
-        with httpx.Client() as client:
-            response = client.get(f"{ollama_url}/api/tags", timeout=5.0)
+        response = httpx.get(f"{ollama_url}/api/tags", timeout=5.0)
+        print(f"Response status: {response.status_code}")
+        print(f"Response content: {response.text}")
         return response.status_code == 200
-    except httpx.RequestError:
+    except httpx.RequestError as e:
+        print(f"Request error: {e}")
         return False
 
+# if __name__ == "__main__":
+#     availability = is_ollama_available()
+#     print(f"Ollama available: {availability}")
     
 def get_llm_os(
     llm_id: str = "llama3",
@@ -766,30 +775,34 @@ def get_llm_os(
                 "Return the output in the <quality_analyst_output> format to the user without additional text."
             )
     
-    from kr8.llm.offline_llm import OfflineLLM
-    import httpx
-    
-    try:
-        llm = Ollama(model=llm_id)
-    except httpx.ConnectError:
-        logger.warning("Failed to connect to Ollama service. Using offline mode.")
-        llm = OfflineLLM()
-    
+    log_memory_usage()
+
     if llm_id == "llama3":
-        if is_ollama_available():
-            ollama_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        logger.info(f"Attempting to connect to Ollama at: {ollama_base_url}")
+
+        try:
             llm = Ollama(
-                model="llama3",
-                base_url=ollama_url,
+                model=llm_id,
+                base_url=ollama_base_url,
                 options={
                     "num_ctx": 4096,
-                    "temperature": 0.7,
+                    "temperature": 0.5,
                     "top_p": 0.9,
                 }
             )
-        else:
-            logger.warning("Ollama service is not available. Using offline mode.")
-            llm = OfflineLLM()
+            # Perform a simple health check
+            # llm.client.list_models()
+            logger.info("Successfully connected to Ollama service")
+        except httpx.ConnectError as e:
+            logger.warning(f"Failed to connect to Ollama service at {ollama_base_url}: {e}")
+            logger.warning("Switching to offline mode")
+            llm = OfflineLLM(model=llm_id)
+        except Exception as e:
+            logger.error(f"Unexpected error when initializing Ollama: {e}")
+            logger.warning("Switching to offline mode")
+            llm = OfflineLLM(model=llm_id)
+            
     elif llm_id == "gpt-3.5-turbo":
         llm = OpenAIChat(model="gpt-3.5-turbo")
     elif llm_id == "gpt-4o":
@@ -797,7 +810,22 @@ def get_llm_os(
     else:
         raise ValueError(f"Unknown LLM model: {llm_id}")
 
-        
+    try:
+        import psutil
+        def log_system_resources():
+            memory = psutil.virtual_memory()
+            logger.info(f"Total memory: {memory.total / (1024**3):.2f} GiB")
+            logger.info(f"Available memory: {memory.available / (1024**3):.2f} GiB")
+            logger.info(f"Used memory: {memory.used / (1024**3):.2f} GiB")
+            logger.info(f"Memory percent: {memory.percent}%")
+
+            cpu_percent = psutil.cpu_percent(interval=1)
+            logger.info(f"CPU usage: {cpu_percent}%")
+    except ImportError:
+        logger.warning("psutil not installed. System resource logging will be disabled.")
+        def log_system_resources():
+            logger.info("System resource logging is disabled due to missing psutil module.")
+            
     # Create the LLM OS Assistant
     llm_os = Assistant(
         name="llm_os",

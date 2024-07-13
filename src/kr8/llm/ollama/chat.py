@@ -1,7 +1,6 @@
 import json
 from textwrap import dedent
 from typing import Optional, List, Iterator, Dict, Any, Mapping, Union
-
 from kr8.llm.base import LLM
 from kr8.llm.message import Message
 from kr8.tools.function import FunctionCall
@@ -9,6 +8,7 @@ from kr8.utils.log import logger
 from kr8.utils.timer import Timer
 from kr8.utils.tools import get_function_call_for_tool_call
 from kr8.llm.offline_llm import OfflineLLM
+from tenacity import retry, stop_after_attempt, wait_fixed
 import httpx
 
 try:
@@ -20,31 +20,29 @@ except ImportError:
 
 class Ollama(LLM):
     name: str = "Ollama"
-    model: str = "llama3"
+    model: str
+    base_url: str
     host: Optional[str] = None
     timeout: Optional[Any] = None
     format: Optional[str] = None
-    options: Optional[Any] = None
+    options: Optional[Dict[str, Any]] = None
     keep_alive: Optional[Union[float, str]] = None
     client_kwargs: Optional[Dict[str, Any]] = None
     ollama_client: Optional[OllamaClient] = None
     function_call_limit: int = 5
     deactivate_tools_after_use: bool = False
     add_user_message_after_tool_call: bool = True
-
+    
     @property
     def client(self) -> OllamaClient:
-        if self.ollama_client:
-            return self.ollama_client
-
-        _ollama_params: Dict[str, Any] = {}
-        if self.host:
-            _ollama_params["host"] = self.host
-        if self.timeout:
-            _ollama_params["timeout"] = self.timeout
-        if self.client_kwargs:
-            _ollama_params.update(self.client_kwargs)
-        return OllamaClient(**_ollama_params)
+        if self.ollama_client is None:
+            _ollama_params: Dict[str, Any] = {"host": self.base_url}
+            if self.timeout:
+                _ollama_params["timeout"] = self.timeout
+            if self.client_kwargs:
+                _ollama_params.update(self.client_kwargs)
+            self.ollama_client = OllamaClient(**_ollama_params)
+        return self.ollama_client
 
     @property
     def api_kwargs(self) -> Dict[str, Any]:
@@ -81,32 +79,44 @@ class Ollama(LLM):
             msg["images"] = message.model_extra.get("images")
         return msg
 
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     def invoke_stream(self, messages: List[Message]) -> Iterator[Mapping[str, Any]]:
         try:
+            logger.debug(f"Attempting to connect to Ollama service at: {self.base_url}")
             yield from self.client.chat(
                 model=self.model,
                 messages=[self.to_llm_message(m) for m in messages],
                 stream=True,
                 **self.api_kwargs,
             )
-        except httpx.ConnectError:
-            logger.warning("Failed to connect to Ollama service. Switching to offline mode.")
-            offline_llm = OfflineLLM(model=self.model)  # Pass the model here
-            yield from offline_llm.invoke_stream(messages)
+        except httpx.ConnectError as e:
+            logger.warning(f"invoke_stream - Failed to connect to Ollama service: {e}")
+            logger.warning(f"Connection details: Base URL: {self.base_url}, Model: {self.model}")
+            raise  # This will trigger a retry
+        except Exception as e:
+            logger.error(f"Unexpected error in invoke_stream: {e}")
+            raise
 
-    # Similarly, update the 'invoke' method:
+    def offline_stream(self, messages: List[Message]) -> Iterator[Mapping[str, Any]]:
+        offline_llm = OfflineLLM(model=self.model)
+        yield from offline_llm.invoke_stream(messages)
+
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     def invoke(self, messages: List[Message]) -> Mapping[str, Any]:
         try:
+            logger.debug(f"Attempting to connect to Ollama service at: {self.base_url}")
             return self.client.chat(
                 model=self.model,
                 messages=[self.to_llm_message(m) for m in messages],
                 **self.api_kwargs,
             )
-        except httpx.ConnectError:
-            logger.warning("Failed to connect to Ollama service. Switching to offline mode.")
-            offline_llm = OfflineLLM(model=self.model)  # Pass the model here
-            return offline_llm.invoke(messages)
-
+        except httpx.ConnectError as e:
+            logger.warning(f"invoke - Failed to connect to Ollama service: {e}")
+            logger.warning(f"Connection details: Base URL: {self.base_url}, Model: {self.model}")
+            raise  # This will trigger a retry
+        except Exception as e:
+            logger.error(f"Unexpected error in invoke: {e}")
+            raise
     def deactivate_function_calls(self) -> None:
         self.format = ""
 
@@ -119,9 +129,9 @@ class Ollama(LLM):
         response_timer.start()
         try:
             response: Mapping[str, Any] = self.invoke(messages=messages)
-        except httpx.ConnectError:
-            logger.warning("Failed to connect to Ollama service. Switching to offline mode.")
-            offline_llm = OfflineLLM()
+        except Exception:
+            logger.warning("All attempts to connect failed. Switching to offline mode.")
+            offline_llm = OfflineLLM(model=self.model)
             return offline_llm.response(messages)
         response_timer.stop()
         logger.debug(f"Time to generate response: {response_timer.elapsed:.4f}s")

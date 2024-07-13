@@ -22,6 +22,10 @@ def render_chat():
     llm_id = st.session_state["llm_id"]
     llm_os = initialize_assistant(llm_id)
 
+    if llm_os is None:
+        st.warning("The assistant is currently unavailable. Please try again later.")
+        return
+        
     try:
         st.session_state["llm_os_run_id"] = llm_os.create_run()
     except Exception:
@@ -80,19 +84,24 @@ def render_chat():
 def initialize_assistant(llm_id):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
-        llm_os = get_llm_os(
-            llm_id=llm_id,  # Use the selected model
-            ddg_search=st.session_state.get("ddg_search_enabled", True),
-            file_tools=st.session_state.get("file_tools_enabled", True),
-            research_assistant=st.session_state.get("research_assistant_enabled", False),
-            investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
-            company_analyst=st.session_state.get("company_analyst_enabled", False),            
-            maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
-            product_owner=st.session_state.get("product_owner_enabled", True),
-            business_analyst=st.session_state.get("business_analyst_enabled", True),
-            quality_analyst=st.session_state.get("quality_analyst_enabled", True),
-        )
-        st.session_state["llm_os"] = llm_os
+        try:
+            llm_os = get_llm_os(
+                llm_id=llm_id,  # Use the selected model
+                ddg_search=st.session_state.get("ddg_search_enabled", True),
+                file_tools=st.session_state.get("file_tools_enabled", True),
+                research_assistant=st.session_state.get("research_assistant_enabled", False),
+                investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
+                company_analyst=st.session_state.get("company_analyst_enabled", False),            
+                maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
+                product_owner=st.session_state.get("product_owner_enabled", True),
+                business_analyst=st.session_state.get("business_analyst_enabled", True),
+                quality_analyst=st.session_state.get("quality_analyst_enabled", True),
+            )
+            st.session_state["llm_os"] = llm_os
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM OS: {e}")
+            st.error(f"Failed to initialize the assistant. Error: {e}")
+            return None
     else:
         llm_os = st.session_state["llm_os"]
     return llm_os

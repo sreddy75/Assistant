@@ -47,6 +47,10 @@ services:
       - "11434:11434"
     environment:
       - OLLAMA_ORIGINS=http://localhost:3000,http://localhost:8501,http://fastapi:8000,http://streamlit:8501
+    deploy:
+      resources:
+        limits:
+          memory: 8G    #llama3 req
 
   fastapi:
     build:
