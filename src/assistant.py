@@ -23,6 +23,10 @@ from kr8.assistant.python import PythonAssistant
 from kr8.storage.assistant.postgres import PgAssistantStorage
 from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
+import httpx
+from kr8.llm.offline_llm import OfflineLLM
+from kr8.utils.log import logger
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -33,6 +37,16 @@ scratch_dir = cwd.joinpath("scratch")
 if not scratch_dir.exists():
     scratch_dir.mkdir(exist_ok=True, parents=True)
 
+def is_ollama_available():
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+    try:
+        with httpx.Client() as client:
+            response = client.get(f"{ollama_url}/api/tags", timeout=5.0)
+        return response.status_code == 200
+    except httpx.RequestError:
+        return False
+
+    
 def get_llm_os(
     llm_id: str = "llama3",
     calculator: bool = False,
@@ -762,20 +776,27 @@ def get_llm_os(
         llm = OfflineLLM()
     
     if llm_id == "llama3":
-        llm = Ollama(
-            model="llama3",
-             options={
-                "num_ctx": 4096,  # Increase context window
-                "temperature": 0.7,  # Adjust temperature for more focused responses
-                "top_p": 0.9,  # Adjust top_p for more diverse responses
-            }
-        )
+        if is_ollama_available():
+            ollama_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+            llm = Ollama(
+                model="llama3",
+                base_url=ollama_url,
+                options={
+                    "num_ctx": 4096,
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                }
+            )
+        else:
+            logger.warning("Ollama service is not available. Using offline mode.")
+            llm = OfflineLLM()
     elif llm_id == "gpt-3.5-turbo":
         llm = OpenAIChat(model="gpt-3.5-turbo")
     elif llm_id == "gpt-4o":
         llm = OpenAIChat(model="gpt-4o")
     else:
         raise ValueError(f"Unknown LLM model: {llm_id}")
+
         
     # Create the LLM OS Assistant
     llm_os = Assistant(

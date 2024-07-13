@@ -1,7 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, func
+from sqlalchemy.types import DateTime as SQLDateTime
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -10,9 +11,12 @@ from pydantic import BaseModel, EmailStr
 from email_validator import validate_email, EmailNotValidError
 import os
 import yagmail
+from contextlib import asynccontextmanager
 import logging
+from datetime import datetime, timedelta, UTC
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Database setup
@@ -28,8 +32,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
+    
 app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
 
 # Environment variables
 GMAIL_USER = os.getenv("GMAIL_USER")
@@ -39,6 +47,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8501")
 
 if not GMAIL_USER or not GMAIL_PASSWORD:
     raise ValueError("GMAIL_USER and GMAIL_PASSWORD must be set as environment variables")
+
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,7 +60,7 @@ class User(Base):
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
-    trial_end = Column(DateTime)
+    trial_end = Column(SQLDateTime(timezone=True), default=func.now() + timedelta(days=7))
     email_verified = Column(Boolean, default=False)
 
 class Token(BaseModel):
@@ -71,6 +80,9 @@ class UserInDB(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
+
+class EmailSchema(BaseModel):
+    email: str
 
 # Helper functions
 def get_db():
@@ -98,9 +110,9 @@ def authenticate_user(db: Session, email: str, password: str):
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(UTC) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -123,7 +135,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     if user is None:
         raise credentials_exception
     return user
-
 
 def get_email_html_template(header, message, button_text, button_url):
     return f"""
@@ -238,7 +249,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email not verified",
         )
-    if user.trial_end < datetime.utcnow():
+    if user.trial_end.replace(tzinfo=UTC) < datetime.now(UTC):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Trial period has ended",
@@ -268,7 +279,7 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks, db: Sess
     new_user = User(
         email=email, 
         hashed_password=hashed_password,
-        trial_end=datetime.utcnow() + timedelta(days=7)
+        trial_end=datetime.now(UTC) + timedelta(days=7)
     )
     db.add(new_user)
     db.commit()
@@ -299,11 +310,6 @@ async def verify_email(token: str, db: Session = Depends(get_db)):
     user.email_verified = True
     db.commit()
     return {"message": "Email verified successfully"}
-
-from pydantic import BaseModel
-
-class EmailSchema(BaseModel):
-    email: str
 
 @app.post("/request-password-reset")
 async def request_password_reset(email_data: EmailSchema, db: Session = Depends(get_db)):
@@ -350,11 +356,63 @@ async def extend_trial(user_email: str, current_user: User = Depends(get_current
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    user.trial_end = datetime.utcnow() + timedelta(days=7)
+    user.trial_end = datetime.now(UTC) + timedelta(days=7)
     db.commit()
     return {"message": "Trial extended successfully"}
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": str(exc)}
+    )
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred."}
+    )
+
+def init_db():
+    logger.info("Initializing database...")
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created.")
+    db = SessionLocal()
+    try:
+        # Check if admin user exists, if not create one
+        admin_user = db.query(User).filter(User.is_admin == True).first()
+        if not admin_user:
+            hashed_password = get_password_hash("admin_password")  # Change this!
+            admin_user = User(
+                email="suren@kr8it.com",  # Change this!
+                hashed_password=hashed_password,
+                is_active=True,
+                is_admin=True,
+                trial_end=datetime.now(UTC) + timedelta(days=365),
+                email_verified=True
+            )
+            db.add(admin_user)
+            db.commit()
+            logger.info("Admin user created.")
+        else:
+            logger.info("Admin user already exists.")
+    finally:
+        db.close()
+    logger.info("Database initialization complete.")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+        
 if __name__ == "__main__":
     import uvicorn
-    Base.metadata.create_all(bind=engine)
+    init_db()
     uvicorn.run(app, host="0.0.0.0", port=8000)

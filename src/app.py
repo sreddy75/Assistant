@@ -1,10 +1,11 @@
 import time
+import requests
 import streamlit as st
 import base64
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat
-from utils.auth import login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
+from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
 
 
 def login_form():
@@ -108,11 +109,28 @@ def verify_email_form():
     else:
         st.error("Invalid verification link. Please check your email and try again.")                            
 
+def check_token_validity():
+    if 'token' in st.session_state:
+        try:
+            response = requests.get(f"{BACKEND_URL}/users/me", headers={"Authorization": f"Bearer {st.session_state['token']}"})
+            if response.status_code != 200:
+                logout()
+                st.rerun()
+            else:
+                # Update email in session state
+                st.session_state['email'] = response.json().get('email')
+        except requests.exceptions.RequestException:
+            logout()
+            st.rerun()
+            
 def main_app():
     set_page_layout()
 
-    st.sidebar.write(f"Welcome, {st.session_state['email']}!")
-    
+    if 'email' in st.session_state:
+        st.sidebar.write(f"Welcome, {st.session_state['email']}!")
+    else:   
+        st.sidebar.write("Welcome!")
+
     # Add logout link to sidebar
     if st.sidebar.button("Logout"):
         logout()
@@ -144,6 +162,7 @@ def main():
         else:
             st.error("Invalid link. Please check your email and try again.")
     elif is_authenticated():
+        check_token_validity()
         main_app()
     else:
         login_form()

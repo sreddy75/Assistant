@@ -6,15 +6,14 @@ services:
     ports:
       - "8501:8501"
     env_file:
-      - .env
+      - .env      
     depends_on:
-      ollama:
-        condition: service_healthy
-      pgvector:
+      fastapi:
         condition: service_healthy
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - DB_URL=postgresql+psycopg://ai:ai@pgvector:5432/ai
+      - BACKEND_URL=http://fastapi:8000
     volumes:
       - .:/app
     healthcheck:
@@ -40,30 +39,36 @@ services:
       timeout: 5s
       retries: 5
 
-  ollama:
-    build:
-      context: .
-      dockerfile: Dockerfile.ollama
-    ports:
-      - "11434:11434"
+  ollama:    
+    image: ollama/ollama
     volumes:
       - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
     environment:
-      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=http://localhost:3000,http://localhost:8501,http://fastapi:8000,http://streamlit:8501
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_URL=postgresql+psycopg://ai:ai@pgvector:5432/ai
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434 && (ollama list | grep -q 'llama3' || exit 1)"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 10
-      start_period: 5m
-    command: >
-      sh -c "
-        ollama serve &
-        until curl -s http://localhost:11434 > /dev/null; do sleep 1; done;
-        ollama pull llama3 && 
-        touch /tmp/model_ready && 
-        wait
-      "
+      retries: 5
+      start_period: 60s
 
 volumes:
   pgdata:

@@ -1,24 +1,41 @@
+import os
 import streamlit as st
 import requests
 import jwt
 from functools import wraps
 from typing import Tuple
 import re
+from dotenv import load_dotenv
+load_dotenv()
 
-BACKEND_URL = "http://localhost:8000"  # Change this to your FastAPI backend URL
+BACKEND_URL = os.getenv("BACKEND_URL", "http://fastapi:8000")
 
-def login(email, password):
-    response = requests.post(f"{BACKEND_URL}/token", data={"username": email, "password": password})
-    if response.status_code == 200:
-        data = response.json()
-        st.session_state['token'] = data['access_token']
-        st.session_state['email'] = email
-        return True
-    elif response.status_code == 422:  # Validation error
-        st.error("Login failed: Invalid input data")
-    else:
-        st.error(f"Login failed: {response.json().get('detail', 'Unknown error')}")
-    return False
+def login(email: str, password: str) -> bool:
+    try:
+        response = requests.post(f"{BACKEND_URL}/token", data={"username": email, "password": password})
+        response.raise_for_status()
+        
+        if response.status_code == 200:
+            token = response.json().get("access_token")
+            if token:
+                st.session_state["token"] = token
+                st.session_state["email"] = email  # Add this line
+                return True
+                    
+        # If we get here, the login was unsuccessful
+        error_message = "Unknown error"
+        try:
+            error_message = response.json().get("detail", error_message)
+        except requests.exceptions.JSONDecodeError:
+            # If JSON decoding fails, use the raw text of the response
+            error_message = response.text or error_message
+        
+        st.error(f"Login failed: {error_message}")
+        return False
+    
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection error: {str(e)}")
+        return False
 
 def register(email, password):
     response = requests.post(f"{BACKEND_URL}/register", json={"email": email, "password": password})
@@ -27,9 +44,7 @@ def register(email, password):
     return False, response.json()['detail']
 
 def logout():
-    for key in ['token', 'email']:
-        if key in st.session_state:
-            del st.session_state[key]
+    st.session_state.clear()
 
 def is_authenticated():
     return 'token' in st.session_state

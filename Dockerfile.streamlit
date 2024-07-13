@@ -23,5 +23,8 @@ COPY . /app
 # Expose port 8501 to the outside world
 EXPOSE 8501
 
+# Run the backend server and then start the Streamlit app
+CMD streamlit run src/app.py
+
 # Run streamlit when the container launches
-CMD ["streamlit", "run", "src/app.py"]
+#CMD ["streamlit", "run", "src/app.py"]
