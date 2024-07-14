@@ -26,7 +26,6 @@ from kr8.utils.timer import Timer
 
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
-
 class Assistant(BaseModel):
     # -*- Assistant settings
     llm: Optional[LLM] = None
@@ -466,6 +465,13 @@ class Assistant(BaseModel):
             logger.warning(f"Connection failed: {str(e)}. Switching to local-only mode.")
             self.offline_mode = True
 
+        if isinstance(message, str) and "list of documents" in message.lower():
+            search_results = self.search_knowledge_base("list of documents")
+            yield "Certainly! I'll search the knowledge base for a list of documents. Here's what I found:\n\n"
+            yield search_results
+            yield "\n\nIs there anything specific you'd like to know about these documents? Simples!"
+            return
+    
         self.update_llm()
 
         llm_messages: List[Message] = []
@@ -517,9 +523,25 @@ class Assistant(BaseModel):
 
             user_prompt_message = Message(role="user", content=user_prompt, **kwargs) if user_prompt else None
 
+            # Before passing the message to the LLM, perform a knowledge base search
+            if isinstance(message, str):
+                search_results = json.loads(self.search_knowledge_base(message))
+                if "results" in search_results:
+                    context = "Relevant information from the knowledge base:\n"
+                    for doc in search_results["results"]:
+                        context += f"Document: {doc['name']}\nContent: {doc['content']}\n\n"
+                    
+                    enhanced_message = f"{context}\nUser query: {message}\n\nPlease use the information above to answer the following question: {message}"
+                else:
+                    enhanced_message = message
+                
+                user_prompt_message = Message(role="user", content=enhanced_message, **kwargs)
+            else:
+                user_prompt_message = Message(role="user", content=message, **kwargs)
+
             if user_prompt_message is not None:
                 llm_messages += [user_prompt_message]
-
+            
         llm_response = ""
         self.llm = cast(LLM, self.llm)
         try:
@@ -689,6 +711,23 @@ class Assistant(BaseModel):
                 message=message, references=user_prompt_references, chat_history=user_prompt_chat_history
             )
             user_prompt_message = Message(role="user", content=user_prompt, **kwargs) if user_prompt else None
+            
+            # Before passing the message to the LLM, perform a knowledge base search
+            if isinstance(message, str):
+                search_results = json.loads(self.search_knowledge_base(message))
+                if "results" in search_results:
+                    context = "Relevant information from the knowledge base:\n"
+                    for doc in search_results["results"]:
+                        context += f"Document: {doc['name']}\nContent: {doc['content']}\n\n"
+                    
+                    enhanced_message = f"{context}\nUser query: {message}\n\nPlease use the information above to answer the following question: {message}"
+                else:
+                    enhanced_message = message
+                
+                user_prompt_message = Message(role="user", content=enhanced_message, **kwargs)
+            else:
+                user_prompt_message = Message(role="user", content=message, **kwargs)
+
             if user_prompt_message is not None:
                 llm_messages += [user_prompt_message]
 
@@ -977,6 +1016,13 @@ class Assistant(BaseModel):
         if system_prompt_from_llm is not None:
             system_prompt_lines.append(system_prompt_from_llm)
 
+        if self.knowledge_base is not None:
+            system_prompt_lines.append(
+                "You can use the `search_knowledge_base` function to search for relevant documents. "
+                "This function returns a JSON string containing document names and content snippets. "
+                "If you need to list or search for documents, use this function instead of trying to access the knowledge base directly."
+            )
+            
         # Then add instructions to the system prompt
         if len(instructions) > 0:
             system_prompt_lines.append(
@@ -1081,13 +1127,28 @@ class Assistant(BaseModel):
 
     def search_knowledge_base(self, query: str) -> str:
         """Use this function to search the knowledge base for information about a query."""
+        if self.knowledge_base is None:
+            return json.dumps({"error": "Knowledge base not available"})
+        
         reference_timer = Timer()
         reference_timer.start()
-        references = self.get_references_from_knowledge_base(query=query)
+        results = self.knowledge_base.search(query)
         reference_timer.stop()
+        
+        if not results:
+            return json.dumps({"message": "No relevant documents found in the knowledge base."})
+        
+        references = []
+        for doc in results:
+            references.append({
+                "name": doc.name,
+                "content": doc.content[:200] + "..." if len(doc.content) > 200 else doc.content
+            })
+        
         _ref = References(query=query, references=references, time=round(reference_timer.elapsed, 4))
         self.memory.add_references(references=_ref)
-        return references or ""
+        
+        return json.dumps({"results": references}, indent=2)
 
     def add_to_knowledge_base(self, query: str, result: str) -> str:
         """Use this function to add information to the knowledge base for future use."""

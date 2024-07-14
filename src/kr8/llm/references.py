@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 
@@ -8,6 +8,6 @@ class References(BaseModel):
     # The question asked by the user.
     query: str
     # The references from the vector database.
-    references: Optional[str] = None
+    references: List[Dict[str, str]]  
     # Performance in seconds.
     time: Optional[float] = None

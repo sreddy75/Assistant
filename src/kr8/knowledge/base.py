@@ -64,6 +64,8 @@ class AssistantKnowledge(BaseModel):
 
     def load_documents(self, documents: List[Document], upsert: bool = False, skip_existing: bool = True) -> None:
         logger.info("Loading knowledge base")
+        logger.info(f"Attempting to load {len(documents)} documents into knowledge base")
+
         if self.vector_db is None:
             logger.warning("No vector db provided")
             return
@@ -73,6 +75,9 @@ class AssistantKnowledge(BaseModel):
 
         documents_to_load = []
         for document in documents:
+            logger.info(f"Processing document: {document.name}")
+            logger.info(f"  Metadata: {document.meta_data}")
+            logger.info(f"  Content preview: {document.content[:100]}...")
             cache_key = hash(document.content)
             if cache_key not in self.cache:
                 documents_to_load.append(document)

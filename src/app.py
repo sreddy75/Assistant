@@ -4,7 +4,7 @@ import streamlit as st
 import base64
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
-from ui.components.chat import render_chat
+from ui.components.chat import render_chat, debug_knowledge_base
 from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
 
 
@@ -136,8 +136,8 @@ def main_app():
         logout()
         st.rerun()
 
-    render_sidebar()
-    render_chat()
+    render_sidebar()    
+    render_chat()        
 
 def main():
     st.set_page_config(

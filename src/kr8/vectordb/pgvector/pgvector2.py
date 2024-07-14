@@ -1,5 +1,9 @@
 from typing import Optional, List, Union, Dict, Any
 from hashlib import md5
+from datetime import datetime
+from sqlalchemy import update
+
+from src.kr8.document.base import Usage
 
 try:
     from sqlalchemy.dialects import postgresql
@@ -72,7 +76,7 @@ class PgVector2(VectorDb):
 
         # Database table for the collection
         self.table: Table = self.get_table()
-
+    
     def get_table(self) -> Table:
         return Table(
             self.collection,
@@ -158,13 +162,20 @@ class PgVector2(VectorDb):
                 cleaned_content = document.content.replace("\x00", "\ufffd")
                 content_hash = md5(cleaned_content.encode()).hexdigest()
                 _id = document.id or content_hash
+                usage = Usage.from_dict(document.usage)
+                logger.info(f"Inserting document into vector DB:")
+                logger.info(f"  ID: {_id}")
+                logger.info(f"  Name: {document.name}")
+                logger.info(f"  Metadata: {document.meta_data}")
+                logger.info(f"  Usage: {usage.to_dict()}")
+                logger.info(f"  Content preview: {cleaned_content[:100]}...")
                 stmt = postgresql.insert(self.table).values(
                     id=_id,
                     name=document.name,
                     meta_data=document.meta_data,
                     content=cleaned_content,
                     embedding=document.embedding,
-                    usage=document.usage,
+                    usage=usage.to_dict(),
                     content_hash=content_hash,
                 )
                 sess.execute(stmt)
@@ -200,13 +211,20 @@ class PgVector2(VectorDb):
                 cleaned_content = document.content.replace("\x00", "\ufffd")
                 content_hash = md5(cleaned_content.encode()).hexdigest()
                 _id = document.id or content_hash
+                usage = Usage.from_dict(document.usage)
+                logger.info(f"Inserting document into vector DB:")
+                logger.info(f"  ID: {_id}")
+                logger.info(f"  Name: {document.name}")
+                logger.info(f"  Metadata: {document.meta_data}")
+                logger.info(f"  Usage: {usage.to_dict()}")
+                logger.info(f"  Content preview: {cleaned_content[:100]}...")
                 stmt = postgresql.insert(self.table).values(
                     id=_id,
                     name=document.name,
                     meta_data=document.meta_data,
                     content=cleaned_content,
                     embedding=document.embedding,
-                    usage=document.usage,
+                    usage=usage.to_dict(),
                     content_hash=content_hash,
                 )
                 # Update row when id matches but 'content_hash' is different
@@ -217,7 +235,7 @@ class PgVector2(VectorDb):
                         meta_data=stmt.excluded.meta_data,
                         content=stmt.excluded.content,
                         embedding=stmt.excluded.embedding,
-                        usage=stmt.excluded.usage,
+                        usage=usage.dict(),
                         content_hash=stmt.excluded.content_hash,
                     ),
                 )
@@ -286,18 +304,45 @@ class PgVector2(VectorDb):
         # Build search results
         search_results: List[Document] = []
         for neighbor in neighbors:
-            search_results.append(
-                Document(
-                    name=neighbor.name,
-                    meta_data=neighbor.meta_data,
-                    content=neighbor.content,
-                    embedder=self.embedder,
-                    embedding=neighbor.embedding,
-                    usage=neighbor.usage,
-                )
+            usage = Usage.from_dict(neighbor.usage) if neighbor.usage else Usage()
+            usage.update_access()
+
+            doc = Document(
+                name=neighbor.name,
+                meta_data=neighbor.meta_data,
+                content=neighbor.content,
+                embedder=self.embedder,
+                embedding=neighbor.embedding,
+                usage=usage.to_dict(),  # Convert Usage to dict
             )
+            search_results.append(doc)
+
+        # Update usage in the database
+        self.update_document_usage(search_results)
 
         return search_results
+
+    def update_document_usage(self, documents: List[Document]):
+        with self.Session() as sess:
+            for doc in documents:
+                stmt = (
+                    update(self.table)
+                    .where(self.table.c.name == doc.name)
+                    .values(usage=doc.usage)
+                )
+                sess.execute(stmt)
+            sess.commit()
+
+    def update_document_usage(self, documents: List[Document]):
+        with self.Session() as sess:
+            for doc in documents:
+                stmt = (
+                    update(self.table)
+                    .where(self.table.c.name == doc.name)
+                    .values(usage=doc.usage)
+                )
+                sess.execute(stmt)
+            sess.commit()
 
     def delete(self) -> None:
         if self.table_exists():
@@ -387,3 +432,20 @@ class PgVector2(VectorDb):
                 stmt = delete(self.table)
                 sess.execute(stmt)
                 return True
+            
+    def count_documents(self) -> int:
+        """
+        Count the number of documents in the collection.
+        Returns:
+            int: The number of documents in the collection.
+        """
+        logger.info("Counting documents in collection. Is like meerkat counting termites!")
+        try:
+            with self.Session() as sess:
+                with sess.begin():
+                    count = sess.query(func.count(self.table.c.id)).scalar()
+                    logger.info(f"Found {count} documents. Is good haul!")
+                    return count
+        except Exception as e:
+            logger.error(f"Blin! Counting documents failed: {str(e)}")
+            return 0        

@@ -1,6 +1,7 @@
 import streamlit as st
 from ui.utils.helper import restart_assistant
 
+
 def render_sidebar():                                                
     # Model Type Selection
     model_type = st.sidebar.radio("Select Model Type", ["Closed", "Open Source"])

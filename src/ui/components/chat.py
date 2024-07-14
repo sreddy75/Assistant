@@ -1,3 +1,4 @@
+import random
 import time
 import httpx
 import streamlit as st
@@ -14,6 +15,7 @@ from PIL import Image
 # Load the custom icons
 meerkat_icon = Image.open("images/meerkat_icon.png")
 user_icon = Image.open("images/user_icon.png")
+llm_os = None
 
 def sanitize_content(content):
     return html.escape(content)
@@ -21,6 +23,11 @@ def sanitize_content(content):
 def render_chat():
     llm_id = st.session_state["llm_id"]
     llm_os = initialize_assistant(llm_id)
+    # Call this function in your render_chat function, after initializing llm_os
+    test_knowledge_base_search(llm_os)    
+    # Call this function after test_knowledge_base_search
+    inspect_random_documents(llm_os)        
+
 
     if llm_os is None:
         st.warning("The assistant is currently unavailable. Please try again later.")
@@ -115,7 +122,10 @@ async def process_pdf_async(uploaded_file, llm_os):
     reader = PDFReader()
     auto_rag_documents = reader.read(uploaded_file)
     if not auto_rag_documents:
+        logger.error(f"Could not read PDF: {uploaded_file.name}")
         return False, f"Could not read PDF: {uploaded_file.name}"
+    
+    logger.info(f"Successfully read PDF: {uploaded_file.name}. Found {len(auto_rag_documents)} documents.")
     
     total_chunks = 0
     chunks = []
@@ -124,14 +134,31 @@ async def process_pdf_async(uploaded_file, llm_os):
         chunks.extend(doc_chunks)
         total_chunks += len(doc_chunks)
     
+    logger.info(f"Splitting {uploaded_file.name} into {total_chunks} chunks.")
+    
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    start_time = time.time()  # Define start_time here
+    start_time = time.time()
     
     for i, chunk in enumerate(chunks):
         status_text.text(f"Processing chunk {i+1} of {total_chunks}")
-        await asyncio.to_thread(llm_os.knowledge_base.load_documents, [Document(content=chunk)], upsert=True)
+        try:
+            doc = Document(
+                content=chunk, 
+                name=f"{uploaded_file.name}_chunk_{i+1}", 
+                meta_data={"source": uploaded_file.name, "chunk_number": i+1}
+            )
+            logger.info(f"Attempting to add document to knowledge base:")
+            logger.info(f"  Name: {doc.name}")
+            logger.info(f"  Metadata: {doc.meta_data}")
+            logger.info(f"  Content preview: {doc.content[:100]}...")
+            
+            await asyncio.to_thread(llm_os.knowledge_base.load_documents, [doc], upsert=True)
+            
+            logger.info(f"Successfully added chunk {i+1} of {total_chunks} to knowledge base.")
+        except Exception as e:
+            logger.error(f"Error adding chunk {i+1} to knowledge base: {str(e)}")
         progress = (i + 1) / total_chunks
         progress_bar.progress(progress)
         
@@ -141,6 +168,7 @@ async def process_pdf_async(uploaded_file, llm_os):
         eta = time_per_chunk * (total_chunks - i - 1)
         status_text.text(f"Processing chunk {i+1} of {total_chunks}. ETA: {eta:.2f} seconds")
     
+    logger.info(f"Finished processing {uploaded_file.name}. Total time: {time.time() - start_time:.2f} seconds.")
     return True, f"Successfully processed {uploaded_file.name}"
 
 
@@ -210,8 +238,98 @@ def manage_knowledge_base(llm_os):
             st.session_state["processed_files"] = []
             st.sidebar.success("Knowledge base cleared")
 
+     # Add the debug button here
+    debug_knowledge_base(llm_os)
+    
     if llm_os.team and len(llm_os.team) > 0:
         for team_member in llm_os.team:
             if len(team_member.memory.chat_history) > 0:
                 with st.expander(f"{team_member.name} Memory", expanded=False):
                     st.container().json(team_member.memory.get_llm_messages())
+                    
+                    
+def debug_knowledge_base(llm_os):
+    st.sidebar.markdown("### Knowledge Base Debug")
+    if st.sidebar.button("Check Knowledge Base"):
+        try:
+            doc_count = llm_os.knowledge_base.vector_db.count_documents()
+            st.sidebar.write(f"Documents in knowledge base: {doc_count}")
+            logger.info(f"Documents in knowledge base: {doc_count}")
+            
+            if doc_count > 0:
+                sample_query = "test query"
+                results = llm_os.knowledge_base.search(sample_query)
+                st.sidebar.write(f"Sample search results for '{sample_query}': {len(results)} documents")
+                logger.info(f"Sample search results for '{sample_query}': {len(results)} documents")
+                
+                if results:
+                    st.sidebar.write("First document preview:")
+                    logger.info("First document preview:")
+                    for i, doc in enumerate(results):
+                        logger.info(f"Document {i+1}:")
+                        for attr in ['name', 'meta_data', 'content', 'usage']:
+                            if hasattr(doc, attr):
+                                value = getattr(doc, attr)
+                                if isinstance(value, str):
+                                    logger.info(f"  {attr}: {value[:100]}...")
+                                else:
+                                    logger.info(f"  {attr}: {value}")
+                        logger.info("---")
+                    
+                    # Display the content of the first document in the sidebar
+                    if hasattr(results[0], 'content'):
+                        st.sidebar.write(results[0].content[:100] + "...")
+                    else:
+                        st.sidebar.write("No 'content' attribute found in the document.")
+                else:
+                    st.sidebar.write("No documents found in search. Is like empty savannah - very strange!")
+                    logger.info("No documents found in search.")
+            else:
+                st.sidebar.write("Knowledge base is empty. Is like meerkat burrow with no meerkats!")
+                logger.info("Knowledge base is empty.")
+                
+        except Exception as e:
+            st.sidebar.write(f"Error checking knowledge base: {str(e)}")
+            logger.error(f"Knowledge base check failed: {str(e)}", exc_info=True)
+            
+def test_knowledge_base_search(llm_os):
+    logger.info("Testing knowledge base search...")
+    try:
+        results = llm_os.knowledge_base.search("test query")
+        logger.info(f"Search returned {len(results)} results")
+        for i, doc in enumerate(results):
+            logger.info(f"Result {i+1}:")
+            logger.info(f"  Content length: {len(doc.content)}")
+            logger.info(f"  Content preview: {doc.content[:200]}...")
+            if hasattr(doc, 'meta_data'):
+                logger.info(f"  Metadata: {doc.meta_data}")
+            if hasattr(doc, 'name'):
+                logger.info(f"  Name: {doc.name}")
+            if hasattr(doc, 'similarity'):
+                logger.info(f"  Similarity score: {doc.similarity}")
+            logger.info("---")
+    except Exception as e:
+        logger.error(f"Error in knowledge base search: {str(e)}")
+        
+        
+def inspect_random_documents(llm_os, num_docs=10):
+    logger.info(f"Inspecting {num_docs} random documents from the knowledge base...")
+    try:
+        all_docs = llm_os.knowledge_base.vector_db.search("", limit=304)  # Get all documents
+        if all_docs:
+            sample_docs = random.sample(all_docs, min(num_docs, len(all_docs)))
+            for i, doc in enumerate(sample_docs):
+                logger.info(f"Random document {i+1} details:")
+                logger.info(f"  Content length: {len(doc.content)}")
+                logger.info(f"  Content preview: {doc.content[:200]}...")
+                if hasattr(doc, 'meta_data'):
+                    logger.info(f"  Metadata: {doc.meta_data}")
+                if hasattr(doc, 'name'):
+                    logger.info(f"  Name: {doc.name}")
+                logger.info("---")
+        else:
+            logger.info("No documents found in the knowledge base.")
+    except Exception as e:
+        logger.error(f"Error inspecting random documents: {str(e)}")
+        
+                  
