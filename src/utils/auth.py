@@ -8,7 +8,7 @@ import re
 from dotenv import load_dotenv
 load_dotenv()
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://fastapi:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 def login(email: str, password: str) -> bool:
     try:

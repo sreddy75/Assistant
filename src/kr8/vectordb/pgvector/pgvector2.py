@@ -3,7 +3,7 @@ from hashlib import md5
 from datetime import datetime
 from sqlalchemy import update
 
-from src.kr8.document.base import Usage
+from ...document.base import Usage
 
 try:
     from sqlalchemy.dialects import postgresql
