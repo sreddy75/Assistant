@@ -87,7 +87,7 @@ def initialize_assistant(llm_id):
         try:
             llm_os = get_llm_os(
                 llm_id=llm_id,  # Use the selected model
-                ddg_search=st.session_state.get("ddg_search_enabled", True),
+                web_search=st.session_state.get("web_search_enabled", True),
                 file_tools=st.session_state.get("file_tools_enabled", True),
                 research_assistant=st.session_state.get("research_assistant_enabled", False),
                 investment_assistant=st.session_state.get("investment_assistant_enabled", False),            

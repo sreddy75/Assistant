@@ -187,7 +187,7 @@ class Assistant(BaseModel):
         if self.llm is None:
             try:
                 from kr8.llm.ollama import Ollama
-                self.llm = Ollama(model="llama3", base_url="http://localhost:11434")  # Adjust port if necessary
+                self.llm = Ollama(model="tinyllama", base_url="http://localhost:11434")  # Adjust port if necessary
             except ModuleNotFoundError as e:
                 logger.exception(e)
                 logger.error("Could not initialize Ollama LLM. Please check your installation.")

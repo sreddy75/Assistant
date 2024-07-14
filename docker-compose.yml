@@ -50,7 +50,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8G    #llama3 req
+          memory: 10G    #llama3 req
 
   fastapi:
     build:

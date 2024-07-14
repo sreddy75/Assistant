@@ -1,33 +1,33 @@
 import json
 import os
 from pathlib import Path
-from typing import Optional
 from textwrap import dedent
-from typing import List
+from typing import List, Optional
+
+import httpx
 import psutil
+from dotenv import load_dotenv
+
 from kr8.assistant import Assistant
-from kr8.tools import Toolkit
-from kr8.tools.exa import ExaTools
-from kr8.tools.shell import ShellTools
-from kr8.tools.calculator import Calculator
-from kr8.tools.duckduckgo import DuckDuckGo
-from kr8.tools.yfinance import YFinanceTools
-from kr8.tools.file import FileTools
-from kr8.llm.openai import OpenAIChat
-from kr8.llm.ollama import Ollama
-from kr8.knowledge import AssistantKnowledge
-from kr8.embedder.openai import OpenAIEmbedder
-from kr8.embedder.sentence_transformer import SentenceTransformerEmbedder
 from kr8.assistant.duckdb import DuckDbAssistant
 from kr8.assistant.python import PythonAssistant
+from kr8.embedder.openai import OpenAIEmbedder
+from kr8.embedder.sentence_transformer import SentenceTransformerEmbedder
+from kr8.knowledge import AssistantKnowledge
+from kr8.llm.offline_llm import OfflineLLM
+from kr8.llm.ollama import Ollama
+from kr8.llm.openai import OpenAIChat
 from kr8.storage.assistant.postgres import PgAssistantStorage
+from kr8.tools import Toolkit
+from kr8.tools.calculator import Calculator
+from kr8.tools.duckduckgo import DuckDuckGo
+from kr8.tools.exa import ExaTools
+from kr8.tools.file import FileTools
+from kr8.tools.shell import ShellTools
+from kr8.tools.yfinance import YFinanceTools
 from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
-import httpx
-from kr8.llm.offline_llm import OfflineLLM
-from kr8.utils.log import logger
 
-from dotenv import load_dotenv
 load_dotenv()
 
 db_url = os.getenv("DB_URL", "postgresql+psycopg://ai:ai@pgvector:5432/ai")
@@ -51,15 +51,12 @@ def is_ollama_available():
     except httpx.RequestError as e:
         print(f"Request error: {e}")
         return False
-
-# if __name__ == "__main__":
-#     availability = is_ollama_available()
-#     print(f"Ollama available: {availability}")
     
 def get_llm_os(
-    llm_id: str = "llama3",
+    llm_id: str = "gpt-4o",
+    fallback_model: str = "tinyllama",
     calculator: bool = False,
-    ddg_search: bool = False,
+    web_search: bool = True,
     file_tools: bool = False,
     shell_tools: bool = False,
     data_analyst: bool = False,
@@ -73,7 +70,7 @@ def get_llm_os(
     investment_assistant: bool = True,
     user_id: Optional[str] = None,
     run_id: Optional[str] = None,
-    debug_mode: bool = True,
+    debug_mode: bool = True,    
 ) -> Assistant:
     logger.info(f"-*- Creating {llm_id} LLM OS -*-")
 
@@ -93,8 +90,8 @@ def get_llm_os(
                 square_root=True,
             )
         )
-    if ddg_search:
-        tools.append(DuckDuckGo(fixed_max_results=3))
+    if web_search:
+            tools.append(ExaTools(num_results=5, text_length_limit=1000))
     if shell_tools:
         tools.append(ShellTools())
         extra_instructions.append(
@@ -106,6 +103,47 @@ def get_llm_os(
             "You can use the `read_file` tool to read a file, `save_file` to save a file, and `list_files` to list files in the working directory."
         )
 
+    if llm_id == "tinyllama":
+            ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+            logger.info(f"Attempting to connect to Ollama at: {ollama_base_url}")
+
+            try:
+                llm = Ollama(
+                    model=llm_id,
+                    base_url=ollama_base_url,
+                    options={
+                        "num_ctx": 2048,  # Reduce context size
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                    }
+                )            
+                logger.info(f"Successfully connected to Ollama service using model {llm_id}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize {llm_id}: {e}")
+                logger.info(f"Attempting to fall back to {fallback_model}")
+                try:
+                    llm = Ollama(
+                        model=fallback_model,
+                        base_url=ollama_base_url,
+                        options={
+                            "num_ctx": 1024,  # Further reduce context size for smaller model
+                            "temperature": 0.7,
+                            "top_p": 0.9,
+                        }
+                    )
+                    llm.client.list_models()
+                    logger.info(f"Successfully connected to Ollama service using fallback model {fallback_model}")
+                except Exception as fallback_error:
+                    logger.error(f"Failed to initialize Ollama with fallback model: {fallback_error}")
+                    logger.warning("Switching to offline mode")
+                    llm = OfflineLLM(model=fallback_model)                
+    elif llm_id == "gpt-3.5-turbo":
+        llm = OpenAIChat(model="gpt-3.5-turbo")
+    elif llm_id == "gpt-4o":
+        llm = OpenAIChat(model="gpt-4o")
+    else:
+        raise ValueError(f"Unknown LLM model: {llm_id}")
+    
     # Add team members available to the LLM OS
     team: List[Assistant] = []
     if data_analyst:
@@ -143,7 +181,7 @@ def get_llm_os(
         _research_assistant = Assistant(
             name="Research Assistant",
             role="Write a research report on a given topic",
-            llm=Ollama(model=llm_id),
+            llm=llm,
             description="You are a Senior New York Times researcher tasked with writing a cover story research report.",
             instructions=[
                 "For a given topic, use the `search_exa` to get the top 10 search results.",
@@ -188,13 +226,12 @@ def get_llm_os(
         extra_instructions.append(
             "To write a research report, delegate the task to the `Research Assistant`. "
             "Return the report in the <report_format> to the user as is, without any additional text like 'here is the report'."
-        )
-        
+        )        
     if maintenance_engineer:
         _maintenance_engineer = Assistant(
             name="Maintenance Assistant",
             role="Provide maintenance and repair guidance for golf course machinery",
-            llm=OpenAIChat(model=llm_id),
+            llm=llm,
             description="You are an experienced machinery maintenance expert specializing in golf course equipment, tasked with providing detailed, actionable maintenance and repair guidance.",
             instructions=[
                 "For a given maintenance or repair question, use the `search_exa` tool to get the top 10 search results and refer to the provided manuals and documents.",
@@ -269,7 +306,7 @@ def get_llm_os(
         _investment_assistant = Assistant(
             name="Investment Assistant",
             role="Write a investment report on a given company (stock) symbol",
-            llm=Ollama(model=llm_id),
+            llm=llm,
             description="You are a Senior Investment Analyst for Goldman Sachs tasked with writing an investment report for a very important client.",
             instructions=[
                 "For a given stock symbol, get the stock price, company information, analyst recommendations, and company news",
@@ -337,7 +374,7 @@ def get_llm_os(
         _company_analyst = Assistant(
             name="Company Analyst",
             role="Provide comprehensive and detailed financial analysis and strategic insights for a company",
-            llm=OpenAIChat(model=llm_id),
+            llm=llm,
             search_knowledge=True,
             add_references_to_prompt=True,            
             description="You are a senior financial analyst specializing in comprehensive company evaluations. Your analyses should be thorough, data-driven, and provide in-depth insights for each section.",
@@ -527,7 +564,7 @@ def get_llm_os(
             _product_owner = Assistant(
                 name="Product Owner",
                 role="Guide product vision and prioritize product backlog",
-                llm=OpenAIChat(model=llm_id),
+                llm=llm,
                 search_knowledge=True,
                 add_references_to_prompt=True,
                 description="You are an experienced Product Owner in an agile software development team. Your role is to define the product vision, manage the product backlog, and ensure the team delivers maximum value to stakeholders.",
@@ -605,7 +642,7 @@ def get_llm_os(
             _business_analyst = Assistant(
                 name="Business Analyst",
                 role="Analyze business requirements and translate them into functional specifications",
-                llm=OpenAIChat(model=llm_id),
+                llm=llm,
                 search_knowledge=True,
                 add_references_to_prompt=True,
                 description="You are a skilled Business Analyst in an agile software development team. Your role is to analyze business requirements, create detailed functional specifications, and ensure clear communication between stakeholders and the development team.",
@@ -689,7 +726,7 @@ def get_llm_os(
             _quality_analyst = Assistant(
                 name="Quality Analyst",
                 role="Ensure software quality through comprehensive testing strategies",
-                llm=OpenAIChat(model=llm_id),
+                llm=llm,
                 search_knowledge=True,
                 add_references_to_prompt=True,
                 description="You are a meticulous Quality Analyst in an agile software development team. Your role is to design and implement testing strategies, create test cases, and ensure the overall quality of the software product.",
@@ -774,44 +811,8 @@ def get_llm_os(
                 "To get quality assurance insights or testing strategies, delegate the task to the `Quality Analyst`. "
                 "Return the output in the <quality_analyst_output> format to the user without additional text."
             )
-    
-    log_memory_usage()
 
-    if llm_id == "llama3":
-        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-        logger.info(f"Attempting to connect to Ollama at: {ollama_base_url}")
-
-        try:
-            llm = Ollama(
-                model=llm_id,
-                base_url=ollama_base_url,
-                options={
-                    "num_ctx": 4096,
-                    "temperature": 0.5,
-                    "top_p": 0.9,
-                }
-            )
-            # Perform a simple health check
-            # llm.client.list_models()
-            logger.info("Successfully connected to Ollama service")
-        except httpx.ConnectError as e:
-            logger.warning(f"Failed to connect to Ollama service at {ollama_base_url}: {e}")
-            logger.warning("Switching to offline mode")
-            llm = OfflineLLM(model=llm_id)
-        except Exception as e:
-            logger.error(f"Unexpected error when initializing Ollama: {e}")
-            logger.warning("Switching to offline mode")
-            llm = OfflineLLM(model=llm_id)
-            
-    elif llm_id == "gpt-3.5-turbo":
-        llm = OpenAIChat(model="gpt-3.5-turbo")
-    elif llm_id == "gpt-4o":
-        llm = OpenAIChat(model="gpt-4o")
-    else:
-        raise ValueError(f"Unknown LLM model: {llm_id}")
-
-    try:
-        import psutil
+    try:        
         def log_system_resources():
             memory = psutil.virtual_memory()
             logger.info(f"Total memory: {memory.total / (1024**3):.2f} GiB")
@@ -825,6 +826,8 @@ def get_llm_os(
         logger.warning("psutil not installed. System resource logging will be disabled.")
         def log_system_resources():
             logger.info("System resource logging is disabled due to missing psutil module.")
+        
+    log_system_resources()    
             
     # Create the LLM OS Assistant
     llm_os = Assistant(
@@ -842,10 +845,13 @@ def get_llm_os(
         instructions=[
             "When the user sends a message, first **think** and determine if:\n"
             " - You need to search the knowledge base\n"
-            " - You need to search the internet\n"            
+            " - You need to search the internet for specific information related to the user's query\n"            
             " - You need to ask a clarifying question",
             "If the user asks about a topic, first ALWAYS search your knowledge base using the `search_knowledge_base` tool.",
-            "If you dont find relevant information in your knowledge base, use the `duckduckgo_search` tool to search the internet.",
+            "If you don't find relevant information in your knowledge base, use the `search_exa` tool to search the internet for information specific to the user's query.",
+            "Only use the `search_exa` tool when you need specific information that's not in your knowledge base.",
+            "If you've already searched for a topic and didn't find useful information, don't search again. Instead, inform the user that you couldn't find relevant information.",
+            "If you've already searched for a topic and didn't find useful information, don't search again. Instead, inform the user that you couldn't find relevant information.",
             "If the user asks to summarize the conversation or if you need to reference your chat history with the user, use the `get_chat_history` tool.",
             "If the users message is unclear, ask clarifying questions to get more information.",
             "Carefully read the information you have gathered and provide a clear and concise answer to the user.",

@@ -23,7 +23,7 @@ except ImportError:
 
 class OllamaTools(LLM):
     name: str = "OllamaTools"
-    model: str = "llama3"
+    model: str = "tinyllama"
     host: Optional[str] = None
     timeout: Optional[Any] = None
     format: Optional[str] = None
