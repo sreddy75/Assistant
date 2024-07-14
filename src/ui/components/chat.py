@@ -23,11 +23,6 @@ def sanitize_content(content):
 def render_chat():
     llm_id = st.session_state["llm_id"]
     llm_os = initialize_assistant(llm_id)
-    # Call this function in your render_chat function, after initializing llm_os
-    test_knowledge_base_search(llm_os)    
-    # Call this function after test_knowledge_base_search
-    inspect_random_documents(llm_os)        
-
 
     if llm_os is None:
         st.warning("The assistant is currently unavailable. Please try again later.")
@@ -47,47 +42,52 @@ def render_chat():
         logger.debug("No chat history found")
         st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
 
-    if prompt := st.chat_input():
+    # Create a container for chat messages
+    chat_container = st.container()
+
+    # Render chat messages
+    with chat_container:
+        for message in st.session_state["messages"]:
+            if message["role"] == "system":
+                continue
+            elif message["role"] == "assistant":
+                with st.chat_message(message["role"], avatar=meerkat_icon):
+                    sanitized_content = sanitize_content(message["content"])
+                    st.markdown(sanitized_content)
+            elif message["role"] == "user":
+                with st.chat_message(message["role"], avatar=user_icon):
+                    sanitized_content = sanitize_content(message["content"])
+                    st.markdown(sanitized_content)
+            else:
+                with st.chat_message(message["role"]):
+                    sanitized_content = sanitize_content(message["content"])
+                    st.markdown(sanitized_content)
+
+    # Chat input at the bottom
+    if prompt := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": prompt})
+        with chat_container:
+            with st.chat_message("user", avatar=user_icon):
+                st.markdown(prompt)
 
-    for message in st.session_state["messages"]:
-        if message["role"] == "system":
-            continue
-        elif message["role"] == "assistant":
-            with st.chat_message(message["role"], avatar=meerkat_icon):
-                sanitized_content = sanitize_content(message["content"])
-                st.markdown(sanitized_content)
-        elif message["role"] == "user":
-            with st.chat_message(message["role"], avatar=user_icon):
-                sanitized_content = sanitize_content(message["content"])
-                st.markdown(sanitized_content)
-        else:
-            with st.chat_message(message["role"]):
-                sanitized_content = sanitize_content(message["content"])
-                st.markdown(sanitized_content)
-
-    last_message = st.session_state["messages"][-1]
-    
-    if last_message.get("role") == "user":
-        question = last_message["content"]
-        with st.chat_message("assistant", avatar=meerkat_icon):
-            response = ""
-            resp_container = st.empty()
-            try:
-                for delta in llm_os.run(question):
-                    response += delta
-                    sanitized_response = sanitize_content(response)
-                    resp_container.markdown(sanitized_response)
-            except httpx.ConnectError:
-                logger.error("Failed to connect to Ollama service. Working in offline mode.")
-                offline_response = "I'm sorry, but I'm currently offline. I can't process your request at the moment, but I'm here to chat about general topics that don't require real-time data or external connections. How else can I assist you? Simples!"
-                resp_container.markdown(offline_response)
-                response = offline_response
-            st.session_state["messages"].append({"role": "assistant", "content": response})
+            with st.chat_message("assistant", avatar=meerkat_icon):
+                response = ""
+                resp_container = st.empty()
+                try:
+                    for delta in llm_os.run(prompt):
+                        response += delta
+                        sanitized_response = sanitize_content(response)
+                        resp_container.markdown(sanitized_response)
+                except httpx.ConnectError:
+                    logger.error("Failed to connect to Ollama service. Working in offline mode.")
+                    offline_response = "I'm sorry, but I'm currently offline. I can't process your request at the moment, but I'm here to chat about general topics that don't require real-time data or external connections. How else can I assist you? Simples!"
+                    resp_container.markdown(offline_response)
+                    response = offline_response
+                st.session_state["messages"].append({"role": "assistant", "content": response})
 
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
-
+        
 def initialize_assistant(llm_id):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
@@ -331,5 +331,3 @@ def inspect_random_documents(llm_os, num_docs=10):
             logger.info("No documents found in the knowledge base.")
     except Exception as e:
         logger.error(f"Error inspecting random documents: {str(e)}")
-        
-                  

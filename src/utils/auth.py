@@ -19,7 +19,8 @@ def login(email: str, password: str) -> bool:
             token = response.json().get("access_token")
             if token:
                 st.session_state["token"] = token
-                st.session_state["email"] = email  # Add this line
+                st.session_state["email"] = email
+                st.session_state.authenticated = True
                 return True
                     
         # If we get here, the login was unsuccessful
@@ -36,7 +37,7 @@ def login(email: str, password: str) -> bool:
     except requests.exceptions.RequestException as e:
         st.error(f"Connection error: {str(e)}")
         return False
-
+    
 def register(email, password):
     response = requests.post(f"{BACKEND_URL}/register", json={"email": email, "password": password})
     if response.status_code == 200:

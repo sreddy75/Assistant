@@ -9,36 +9,39 @@ from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_requi
 
 
 def login_form():
-    st.title("Welcome to Compare the Meerkat!")
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.title("Welcome to Compare the Meerkat!")
 
-    # Display the animated meerkat logo
-    file_ = open("images/meerkat_logo.gif", "rb")
-    contents = file_.read()
-    data_url = base64.b64encode(contents).decode("utf-8")
-    file_.close()
+        # Display the animated meerkat logo
+        file_ = open("images/meerkat_logo.gif", "rb")
+        contents = file_.read()
+        data_url = base64.b64encode(contents).decode("utf-8")
+        file_.close()
 
-    st.markdown(
-        f'<div style="display: flex; justify-content: center; margin-bottom: 20px;">'
-        f'<img src="data:image/gif;base64,{data_url}" alt="meerkat logo" width="200">'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            f'<div style="display: flex; justify-content: center; margin-bottom: 20px;">'
+            f'<img src="data:image/gif;base64,{data_url}" alt="meerkat logo" width="200">'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
-    tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
-    
-    with tab1:
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Password", type="password", key="login_password")
-        if st.button("Log In"):
-            if is_valid_email(email):
-                if login(email, password):
-                    st.success("Logged in successfully!")
-                    st.rerun()
+        tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
+        
+        with tab1:
+            email = st.text_input("Email", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
+            if st.button("Log In"):
+                if is_valid_email(email):
+                    if login(email, password):
+                        st.session_state.authenticated = True
+                        st.session_state.initialization_complete = False
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password")
                 else:
-                    st.error("Invalid email or password")
-            else:
-                st.error("Please enter a valid email address")
-    
+                    st.error("Please enter a valid email address")
+
     with tab2:
         new_email = st.text_input("Email", key="register_email")
         new_password = st.text_input("Password", type="password", key="register_password")
@@ -63,6 +66,13 @@ def login_form():
                     st.error(message)
             else:
                 st.error("Please enter a valid email address")
+
+def initialize_app():
+    # Simulate initialization process
+    time.sleep(5)  # Adjust this value based on your actual initialization time
+    set_page_layout()
+    render_sidebar()
+    st.session_state.initialization_complete = True
 
 def reset_password_form():
     st.title("Reset Your Password")
@@ -124,8 +134,7 @@ def check_token_validity():
             st.rerun()
             
 def main_app():
-    set_page_layout()
-
+    st.sidebar.title("Compare the Meerkat")
     if 'email' in st.session_state:
         st.sidebar.write(f"Welcome, {st.session_state['email']}!")
     else:   
@@ -136,14 +145,19 @@ def main_app():
         logout()
         st.rerun()
 
-    render_sidebar()    
-    render_chat()        
+    render_chat()
 
 def main():
     st.set_page_config(
         page_title="Compare the Meerkat Assistant",
         page_icon="favicon.png",
     )
+
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if "initialization_complete" not in st.session_state:
+        st.session_state.initialization_complete = False
 
     if "logout" in st.query_params:
         logout()
@@ -161,9 +175,13 @@ def main():
             reset_password_form()
         else:
             st.error("Invalid link. Please check your email and try again.")
-    elif is_authenticated():
-        check_token_validity()
-        main_app()
+    elif st.session_state.authenticated:
+        if not st.session_state.initialization_complete:
+            with st.spinner("Loading the Meerkats...!!!"):
+                initialize_app()
+                st.rerun()
+        else:
+            main_app()
     else:
         login_form()
 
