@@ -21,7 +21,11 @@ def sanitize_content(content):
     return html.escape(content)
 
 def render_chat():
-    llm_id = st.session_state["llm_id"]
+    if "llm_id" not in st.session_state:
+        st.session_state.llm_id = "gpt-4o"  # Set a default value
+        logger.warning("llm_id not found in session state, using default value")
+
+    llm_id = st.session_state.llm_id
     llm_os = initialize_assistant(llm_id)
 
     if llm_os is None:
@@ -87,7 +91,7 @@ def render_chat():
 
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
-        
+
 def initialize_assistant(llm_id):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")

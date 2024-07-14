@@ -6,13 +6,25 @@ from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat, debug_knowledge_base
 from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
+import logging
+from queue import Queue
+from threading import Thread
 
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Create a queue to hold initialization events
+init_queue = Queue()
+
+def log_init_event(event):
+    init_queue.put(event)
+    logger.debug(event)
 
 def login_form():
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        st.title("Welcome to Compare the Meerkat!")
-
+    st.title("Welcome to Compare the Meerkat!")
+    col1, col2, col3 = st.columns([1,8,1])
+    with col2:        
         # Display the animated meerkat logo
         file_ = open("images/meerkat_logo.gif", "rb")
         contents = file_.read()
@@ -36,43 +48,81 @@ def login_form():
                     if login(email, password):
                         st.session_state.authenticated = True
                         st.session_state.initialization_complete = False
+                        logger.debug("User authenticated, initializing app")
                         st.rerun()
                     else:
                         st.error("Invalid email or password")
                 else:
                     st.error("Please enter a valid email address")
 
-    with tab2:
-        new_email = st.text_input("Email", key="register_email")
-        new_password = st.text_input("Password", type="password", key="register_password")
-        if st.button("Register"):
-            if is_valid_email(new_email):
-                success, message = register(new_email, new_password)
-                if success:
-                    st.success(message)
+        with tab2:
+            new_email = st.text_input("Email", key="register_email")
+            new_password = st.text_input("Password", type="password", key="register_password")
+            if st.button("Register"):
+                if is_valid_email(new_email):
+                    success, message = register(new_email, new_password)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
                 else:
-                    st.error(message)
-            else:
-                st.error("Please enter a valid email address")
+                    st.error("Please enter a valid email address")
 
-    with tab3:
-        reset_email = st.text_input("Email", key="reset_email")
-        if st.button("Reset Password"):
-            if is_valid_email(reset_email):
-                success, message = request_password_reset(reset_email)
-                if success:
-                    st.success(message)
+        with tab3:
+            reset_email = st.text_input("Email", key="reset_email")
+            if st.button("Reset Password"):
+                if is_valid_email(reset_email):
+                    success, message = request_password_reset(reset_email)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
                 else:
-                    st.error(message)
-            else:
-                st.error("Please enter a valid email address")
+                    st.error("Please enter a valid email address")
 
 def initialize_app():
-    # Simulate initialization process
-    time.sleep(5)  # Adjust this value based on your actual initialization time
-    set_page_layout()
-    render_sidebar()
-    st.session_state.initialization_complete = True
+    if "app_initialized" not in st.session_state:
+        logger.debug("Starting app initialization")
+        
+        # Initialize llm_id if it's not already set
+        if "llm_id" not in st.session_state:
+            st.session_state.llm_id = "gpt-4o"  
+            logger.debug(f"Initialized llm_id with default value: {st.session_state.llm_id}")
+        
+        # Create a centered column for the spinner and status messages
+        col1, col2, col3 = st.columns([1,6,1])
+        with col2:
+            with st.spinner(""):
+                st.markdown("<h1 style='text-align: center;'>Activating Meerkats...</h1>", unsafe_allow_html=True)
+            
+            status_placeholder = st.empty()
+
+        def run_initialization():
+            log_init_event("Setting up page layout...")
+            set_page_layout()
+            log_init_event("Rendering sidebar...")
+            render_sidebar()
+            log_init_event("Initializing knowledge base...")
+            # Add any other initialization steps here, logging each one
+            log_init_event("Initialization complete!")
+
+        # Start the initialization process in a separate thread
+        init_thread = Thread(target=run_initialization)
+        init_thread.start()
+
+        # Display initialization events as they occur
+        while init_thread.is_alive() or not init_queue.empty():
+            if not init_queue.empty():
+                event = init_queue.get()
+                status_placeholder.markdown(f"<p style='text-align: center;'>{event}</p>", unsafe_allow_html=True)
+            time.sleep(0.5)  # Small delay to prevent excessive updates
+
+        st.session_state.initialization_complete = True
+        st.session_state.app_initialized = True
+        logger.debug("App initialization complete")
+    else:
+        logger.debug("App already initialized, skipping initialization")
+
 
 def reset_password_form():
     st.title("Reset Your Password")
@@ -145,6 +195,9 @@ def main_app():
         logout()
         st.rerun()
 
+    # Render the sidebar (this will handle LLM selection and other options)
+    render_sidebar()
+
     render_chat()
 
 def main():
@@ -153,15 +206,20 @@ def main():
         page_icon="favicon.png",
     )
 
+    logger.debug("Starting Compare the Meerkat app")
+
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
+        logger.debug("Setting initial authenticated state")
 
     if "initialization_complete" not in st.session_state:
         st.session_state.initialization_complete = False
+        logger.debug("Setting initial initialization_complete state")
 
     if "logout" in st.query_params:
         logout()
         st.query_params.clear()
+        logger.debug("User logged out, clearing session")
         st.rerun()
 
     if "message" in st.query_params:
@@ -177,12 +235,14 @@ def main():
             st.error("Invalid link. Please check your email and try again.")
     elif st.session_state.authenticated:
         if not st.session_state.initialization_complete:
-            with st.spinner("Loading the Meerkats...!!!"):
-                initialize_app()
-                st.rerun()
+            logger.debug("Starting app initialization")
+            initialize_app()
+            st.rerun()
         else:
+            logger.debug("Rendering main app")
             main_app()
     else:
+        logger.debug("Showing login form")
         login_form()
 
 if __name__ == "__main__":
