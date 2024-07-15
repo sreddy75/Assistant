@@ -2,7 +2,25 @@ import streamlit as st
 from ui.utils.helper import restart_assistant
 
 
-def render_sidebar():                                                
+def initialize_session_state():
+    if "web_search_enabled" not in st.session_state:
+        st.session_state.web_search_enabled = True
+    if "research_assistant_enabled" not in st.session_state:
+        st.session_state.research_assistant_enabled = True
+    if "company_analyst_enabled" not in st.session_state:
+        st.session_state.company_analyst_enabled = True
+    if "investment_assistant_enabled" not in st.session_state:
+        st.session_state.investment_assistant_enabled = True
+    if "product_owner_enabled" not in st.session_state:
+        st.session_state.product_owner_enabled = True
+    if "business_analyst_enabled" not in st.session_state:
+        st.session_state.business_analyst_enabled = True
+    if "quality_analyst_enabled" not in st.session_state:
+        st.session_state.quality_analyst_enabled = True
+
+def render_sidebar():
+    initialize_session_state()    
+                                               
     # Model Type Selection
     model_type = st.sidebar.radio("Select Model Type", ["Closed", "Open Source"])
 
@@ -33,7 +51,7 @@ def render_sidebar():
     #     if file_tools_enabled != file_tools:
     #         st.session_state["file_tools_enabled"] = file_tools
     #         restart_assistant()
-
+        
         if "web_search_enabled" not in st.session_state:
             st.session_state["web_search_enabled"] = True
         web_search_enabled = st.session_state["web_search_enabled"]

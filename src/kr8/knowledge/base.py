@@ -4,13 +4,15 @@ from kr8.document import Document
 from kr8.document.reader.base import Reader
 from kr8.vectordb import VectorDb
 from kr8.utils.log import logger
+from src.kr8.vectordb.pgvector.pgvector2 import PgVector2
 
 class AssistantKnowledge(BaseModel):
     reader: Optional[Reader] = None
-    vector_db: Optional[VectorDb] = None
+    vector_db: Optional[Any] = None  # Change this to Any
     num_documents: int = 2
     optimize_on: Optional[int] = 1000
     cache: Dict[str, Any] = {}  # Simple cache implementation
+    user_id: Optional[int] = None 
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -18,6 +20,10 @@ class AssistantKnowledge(BaseModel):
     def document_lists(self) -> Iterator[List[Document]]:
         raise NotImplementedError
 
+    def get_collection_name(self):
+        return f"user_{self.user_id}_documents" if self.user_id is not None else "llm_os_documents"
+
+    # Update other methods to use the new collection name
     def search(self, query: str, num_documents: Optional[int] = None) -> List[Document]:
         try:
             if self.vector_db is None:
@@ -26,7 +32,7 @@ class AssistantKnowledge(BaseModel):
 
             _num_documents = num_documents or self.num_documents
             logger.debug(f"Getting {_num_documents} relevant documents for query: {query}")
-            return self.vector_db.search(query=query, limit=_num_documents)
+            return self.vector_db.search(query=query, limit=_num_documents, collection=self.get_collection_name())
         except Exception as e:
             logger.error(f"Error searching for documents: {e}")
             return []
@@ -38,40 +44,24 @@ class AssistantKnowledge(BaseModel):
 
         if recreate:
             logger.info("Deleting collection")
-            self.vector_db.delete()
+            self.vector_db.delete(collection=self.get_collection_name())
 
         logger.info("Creating collection")
-        self.vector_db.create()
-
-        logger.info("Loading knowledge base")
-        num_documents = 0
-        for document_list in self.document_lists:
-            documents_to_load = document_list
-            if upsert and self.vector_db.upsert_available():
-                self.vector_db.upsert(documents=documents_to_load)
-            else:
-                if skip_existing:
-                    documents_to_load = [
-                        document for document in document_list if not self.vector_db.doc_exists(document)
-                    ]
-                self.vector_db.insert(documents=documents_to_load)
-            num_documents += len(documents_to_load)
-            logger.info(f"Added {len(documents_to_load)} documents to knowledge base")
-
-        if self.optimize_on is not None and num_documents > self.optimize_on:
-            logger.info("Optimizing Vector DB")
-            self.vector_db.optimize()
+        self.vector_db.create(collection=self.get_collection_name())
 
     def load_documents(self, documents: List[Document], upsert: bool = False, skip_existing: bool = True) -> None:
         logger.info("Loading knowledge base")
         logger.info(f"Attempting to load {len(documents)} documents into knowledge base")
 
         if self.vector_db is None:
-            logger.warning("No vector db provided")
+            logger.error("No vector db provided")
             return
 
+        logger.debug(f"Vector DB: {self.vector_db}")
+        logger.debug(f"Vector DB type: {type(self.vector_db)}")
+
         logger.debug("Creating collection")
-        self.vector_db.create()
+        self.vector_db.create()  # This will create the table if it doesn't exist
 
         documents_to_load = []
         for document in documents:
@@ -83,19 +73,19 @@ class AssistantKnowledge(BaseModel):
                 documents_to_load.append(document)
                 self.cache[cache_key] = True
 
-        if upsert and self.vector_db.upsert_available():
-            self.vector_db.upsert(documents=documents_to_load)
-        elif skip_existing:
-            documents_to_load = [doc for doc in documents_to_load if not self.vector_db.doc_exists(doc)]
-            self.vector_db.insert(documents=documents_to_load)
+        if documents_to_load:
+            try:
+                logger.debug(f"Attempting to {'upsert' if upsert else 'insert'} {len(documents_to_load)} documents")
+                if upsert:
+                    self.vector_db.upsert(documents=documents_to_load)
+                else:
+                    self.vector_db.insert(documents=documents_to_load)
+                logger.info(f"Loaded {len(documents_to_load)} documents to knowledge base")
+            except Exception as e:
+                logger.error(f"Error loading documents to knowledge base: {e}")
+                logger.exception("Traceback:")
         else:
-            self.vector_db.insert(documents=documents_to_load)
-
-        logger.info(f"Loaded {len(documents_to_load)} documents to knowledge base")
-
-        if self.optimize_on is not None and len(documents_to_load) > self.optimize_on:
-            logger.info("Optimizing Vector DB")
-            self.vector_db.optimize()
+            logger.info("No new documents to load")
 
     def load_document(self, document: Document, upsert: bool = False, skip_existing: bool = True) -> None:
         self.load_documents(documents=[document], upsert=upsert, skip_existing=skip_existing)

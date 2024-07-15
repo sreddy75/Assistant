@@ -39,7 +39,7 @@ class Assistant(BaseModel):
     run_data: Optional[Dict[str, Any]] = None
 
     # -*- User settings
-    user_id: Optional[str] = None
+    user_id: Optional[int] = None
     user_data: Optional[Dict[str, Any]] = None
 
     # -*- Assistant Memory
@@ -1131,8 +1131,10 @@ class Assistant(BaseModel):
             return json.dumps({"error": "Knowledge base not available"})
         
         reference_timer = Timer()
-        reference_timer.start()
+        reference_timer.start()        
         results = self.knowledge_base.search(query)
+
+
         reference_timer.stop()
         
         if not results:

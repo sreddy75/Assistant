@@ -43,9 +43,12 @@ class SentenceTransformerEmbedder(Embedder, BaseModel):
             logger.error(f"Error getting embedding: {str(e)}")
             return [0.0] * self.dimensions
 
-    def get_embedding_and_usage(self, text: str) -> Tuple[List[float], Optional[Dict]]:
+    def get_embedding_and_usage(self, text: str) -> Tuple[List[float], Dict[str, int]]:
         embedding = self.get_embedding(text)
-        return embedding, None
+        # Estimate token count (this is a rough estimate, you might want to use a proper tokenizer)
+        token_count = len(text.split())
+        usage = {"total_tokens": token_count}
+        return embedding, usage
 
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         try:

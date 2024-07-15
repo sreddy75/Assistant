@@ -66,7 +66,8 @@ class User(Base):
 class Token(BaseModel):
     access_token: str
     token_type: str
-
+    user_id: int
+    
 class TokenData(BaseModel):
     email: str | None = None
 
@@ -258,7 +259,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "user_id": user.id}
 
 @app.get("/users/me", response_model=UserInDB)
 async def read_users_me(current_user: User = Depends(get_current_user)):

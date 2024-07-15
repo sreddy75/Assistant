@@ -17,9 +17,11 @@ def login(email: str, password: str) -> bool:
         
         if response.status_code == 200:
             token = response.json().get("access_token")
+            user_id = response.json().get("user_id")
             if token:
                 st.session_state["token"] = token
                 st.session_state["email"] = email
+                st.session_state["user_id"] = user_id 
                 st.session_state.authenticated = True
                 return True
                     

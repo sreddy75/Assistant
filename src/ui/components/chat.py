@@ -96,8 +96,10 @@ def initialize_assistant(llm_id):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
         try:
+            user_id = st.session_state.get('user_id')
             llm_os = get_llm_os(
                 llm_id=llm_id,  # Use the selected model
+                user_id=user_id,
                 web_search=st.session_state.get("web_search_enabled", True),
                 file_tools=st.session_state.get("file_tools_enabled", True),
                 research_assistant=st.session_state.get("research_assistant_enabled", False),
@@ -131,46 +133,37 @@ async def process_pdf_async(uploaded_file, llm_os):
     
     logger.info(f"Successfully read PDF: {uploaded_file.name}. Found {len(auto_rag_documents)} documents.")
     
-    total_chunks = 0
-    chunks = []
-    for doc in auto_rag_documents:
-        doc_chunks = list(chunk_pdf(doc.content))
-        chunks.extend(doc_chunks)
-        total_chunks += len(doc_chunks)
-    
-    logger.info(f"Splitting {uploaded_file.name} into {total_chunks} chunks.")
+    total_chunks = len(auto_rag_documents)
+    logger.info(f"Processing {uploaded_file.name} with {total_chunks} chunks.")
     
     progress_bar = st.progress(0)
     status_text = st.empty()
     
     start_time = time.time()
     
-    for i, chunk in enumerate(chunks):
+    documents_to_load = []
+    for i, doc in enumerate(auto_rag_documents):
         status_text.text(f"Processing chunk {i+1} of {total_chunks}")
         try:
-            doc = Document(
-                content=chunk, 
-                name=f"{uploaded_file.name}_chunk_{i+1}", 
-                meta_data={"source": uploaded_file.name, "chunk_number": i+1}
-            )
-            logger.info(f"Attempting to add document to knowledge base:")
-            logger.info(f"  Name: {doc.name}")
-            logger.info(f"  Metadata: {doc.meta_data}")
-            logger.info(f"  Content preview: {doc.content[:100]}...")
+            doc.meta_data.update({"source": uploaded_file.name, "chunk_number": i+1, "user_id": llm_os.user_id})
+            documents_to_load.append(doc)
             
-            await asyncio.to_thread(llm_os.knowledge_base.load_documents, [doc], upsert=True)
-            
-            logger.info(f"Successfully added chunk {i+1} of {total_chunks} to knowledge base.")
+            logger.info(f"Prepared chunk {i+1} of {total_chunks} for knowledge base.")
         except Exception as e:
-            logger.error(f"Error adding chunk {i+1} to knowledge base: {str(e)}")
+            logger.error(f"Error preparing chunk {i+1} for knowledge base: {str(e)}")
         progress = (i + 1) / total_chunks
         progress_bar.progress(progress)
         
-        # Estimate time remaining
         time_elapsed = time.time() - start_time
         time_per_chunk = time_elapsed / (i + 1)
         eta = time_per_chunk * (total_chunks - i - 1)
         status_text.text(f"Processing chunk {i+1} of {total_chunks}. ETA: {eta:.2f} seconds")
+    
+    try:
+        await asyncio.to_thread(llm_os.knowledge_base.load_documents, documents_to_load, upsert=True)
+        logger.info(f"Successfully added all chunks to knowledge base.")
+    except Exception as e:
+        logger.error(f"Error adding chunks to knowledge base: {str(e)}")
     
     logger.info(f"Finished processing {uploaded_file.name}. Total time: {time.time() - start_time:.2f} seconds.")
     return True, f"Successfully processed {uploaded_file.name}"

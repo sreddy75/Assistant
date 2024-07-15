@@ -1,3 +1,4 @@
+from asyncio.log import logger
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, ConfigDict, Field
 from kr8.embedder import Embedder
@@ -43,15 +44,16 @@ class Document(BaseModel):
             raise ValueError("No embedder provided")
 
         self.embedding, embedding_usage = _embedder.get_embedding_and_usage(self.content)
-        self.usage.token_count = embedding_usage.get('total_tokens')
-        self.usage.updated_at = datetime.now()
+        if embedding_usage:
+            self.usage['token_count'] = embedding_usage.get('total_tokens', 0)
+        self.usage['updated_at'] = datetime.now().isoformat()
 
     def increment_access_count(self, relevance_score: Optional[float] = None):
-        self.usage.access_count += 1
-        self.usage.last_accessed = datetime.now()
+        self.usage['access_count'] = self.usage.get('access_count', 0) + 1
+        self.usage['last_accessed'] = datetime.now().isoformat()
         if relevance_score is not None:
-            self.usage.relevance_scores.append(relevance_score)
-        self.usage.updated_at = datetime.now()
+            self.usage.setdefault('relevance_scores', []).append(relevance_score)
+        self.usage['updated_at'] = datetime.now().isoformat()
 
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump(include={"name", "meta_data", "content", "usage"}, exclude_none=True)

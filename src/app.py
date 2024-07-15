@@ -1,3 +1,4 @@
+import random
 import time
 import requests
 import streamlit as st
@@ -17,10 +18,18 @@ logger = logging.getLogger(__name__)
 # Create a queue to hold initialization events
 init_queue = Queue()
 
+@st.cache_resource
+def load_meerkat_logo():
+    file_ = open("images/meerkat_logo.gif", "rb")
+    contents = file_.read()
+    data_url = base64.b64encode(contents).decode("utf-8")
+    file_.close()
+    return data_url
+
 def log_init_event(event):
     init_queue.put(event)
     logger.debug(event)
-
+    
 def login_form():
     st.title("Welcome to Compare the Meerkat!")
     col1, col2, col3 = st.columns([1,8,1])
@@ -41,8 +50,8 @@ def login_form():
         tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
         
         with tab1:
-            email = st.text_input("Email", key="login_email")
-            password = st.text_input("Password", type="password", key="login_password")
+            email = st.text_input("Email", key="login_email", value="suren@kr8it.com")
+            password = st.text_input("Password", type="password", key="login_password", value="Sur3n#12")
             if st.button("Log In"):
                 if is_valid_email(email):
                     if login(email, password):
@@ -80,6 +89,14 @@ def login_form():
                 else:
                     st.error("Please enter a valid email address")
 
+@st.cache_resource
+def perform_heavy_initialization():
+    log_init_event("Setting up page layout...")
+    set_page_layout()
+    log_init_event("Initializing knowledge base...")
+    # Add any other heavy initialization steps here
+    log_init_event("Initialization complete!")
+
 def initialize_app():
     if "app_initialized" not in st.session_state:
         logger.debug("Starting app initialization")
@@ -92,37 +109,36 @@ def initialize_app():
         # Create a centered column for the spinner and status messages
         col1, col2, col3 = st.columns([1,6,1])
         with col2:
-            with st.spinner(""):
-                st.markdown("<h1 style='text-align: center;'>Activating Meerkats...</h1>", unsafe_allow_html=True)
             
+            st.markdown("<h1 style='text-align: center;'>Activating Meerkats...</h1>", unsafe_allow_html=True)
+        
             status_placeholder = st.empty()
+            
+            initialization_messages = [
+                "Digging burrows...",
+                "Gathering meerkat wisdom...",
+                "Polishing periscopes...",
+                "Arranging sun-bathing spots...",
+                "Teaching meerkats to type...",
+                "Perfecting meerkat accents...",
+                "Stocking up on bug snacks...",
+                "Setting up meerkat alert system..."
+            ]
 
-        def run_initialization():
-            log_init_event("Setting up page layout...")
-            set_page_layout()
-            log_init_event("Rendering sidebar...")
-            render_sidebar()
-            log_init_event("Initializing knowledge base...")
-            # Add any other initialization steps here, logging each one
-            log_init_event("Initialization complete!")
+            perform_heavy_initialization()
 
-        # Start the initialization process in a separate thread
-        init_thread = Thread(target=run_initialization)
-        init_thread.start()
-
-        # Display initialization events as they occur
-        while init_thread.is_alive() or not init_queue.empty():
-            if not init_queue.empty():
-                event = init_queue.get()
-                status_placeholder.markdown(f"<p style='text-align: center;'>{event}</p>", unsafe_allow_html=True)
-            time.sleep(0.5)  # Small delay to prevent excessive updates
+            # Display rotating messages while initialization is happening
+            while not init_queue.empty():
+                event = init_queue.get()                    
+                status_placeholder.markdown(f"<p style='text-align: center;'>{random.choice(initialization_messages)}</p>", unsafe_allow_html=True)
+                time.sleep(10)
 
         st.session_state.initialization_complete = True
         st.session_state.app_initialized = True
         logger.debug("App initialization complete")
     else:
         logger.debug("App already initialized, skipping initialization")
-
+        
 
 def reset_password_form():
     st.title("Reset Your Password")

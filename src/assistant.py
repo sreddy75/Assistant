@@ -54,7 +54,7 @@ def is_ollama_available():
     
 def get_llm_os(
     llm_id: str = "gpt-4o",
-    fallback_model: str = "tinyllama",
+    fallback_model: str = "tinyllama",    
     calculator: bool = False,
     web_search: bool = True,
     file_tools: bool = False,
@@ -68,7 +68,7 @@ def get_llm_os(
     business_analyst: bool = True,
     quality_analyst: bool = True,
     investment_assistant: bool = True,
-    user_id: Optional[str] = None,
+    user_id: Optional[int] = None,
     run_id: Optional[str] = None,
     debug_mode: bool = True,    
 ) -> Assistant:
@@ -77,6 +77,32 @@ def get_llm_os(
     # Add tools available to the LLM OS
     tools: List[Toolkit] = []
     extra_instructions: List[str] = []
+        
+
+    logger.debug(f"Creating PgVector2 instance with db_url: {db_url}")
+    logger.debug(f"User ID: {user_id}")
+    logger.debug(f"Collection name: {f'user_{user_id}_documents' if user_id is not None else 'llm_os_documents'}")
+
+    try:
+        vector_db = PgVector2(
+            db_url=db_url,
+            collection=f"user_{user_id}_documents" if user_id is not None else "llm_os_documents",
+            embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
+        )
+        logger.debug(f"PgVector2 instance created: {vector_db}")
+    except Exception as e:
+        logger.error(f"Error creating PgVector2 instance: {e}")
+        logger.exception("Traceback:")
+        vector_db = None
+
+    knowledge_base = AssistantKnowledge(
+        vector_db=vector_db,
+        num_documents=3,
+        user_id=user_id,
+    )
+
+    logger.debug(f"AssistantKnowledge instance created: {knowledge_base}")
+    
     if calculator:
         tools.append(
             Calculator(
@@ -278,15 +304,7 @@ def get_llm_os(
             debug_mode=debug_mode,
             storage=PgAssistantStorage(table_name="llm_os_runs", db_url=db_url),
             # Add a knowledge base to the LLM OS
-            knowledge_base=AssistantKnowledge(
-                vector_db=PgVector2(
-                    db_url=db_url,
-                    collection="llm_os_documents",
-                    embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
-                ),
-                # 3 references are added to the prompt when searching the knowledge base
-                num_documents=3,
-            ),                        
+            knowledge_base = knowledge_base,         
             # This setting gives the LLM a tool to search the knowledge base for information
             search_knowledge=True,
             # This setting gives the LLM a tool to get chat history
@@ -543,14 +561,7 @@ def get_llm_os(
             markdown=True,
             add_datetime_to_instructions=True,
             debug_mode=debug_mode,
-            knowledge_base=AssistantKnowledge(
-                vector_db=PgVector2(
-                    db_url=db_url,
-                    collection="llm_os_documents",
-                    embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
-                ),
-                num_documents=15,
-            )            
+            knowledge_base = knowledge_base
         )
         team.append(_company_analyst)
         
@@ -623,14 +634,7 @@ def get_llm_os(
                 markdown=True,
                 add_datetime_to_instructions=True,
                 debug_mode=debug_mode,
-                knowledge_base=AssistantKnowledge(
-                    vector_db=PgVector2(
-                        db_url=db_url,
-                        collection="llm_os_documents",
-                        embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
-                    ),
-                    num_documents=5,
-                )
+                knowledge_base = knowledge_base
             )
             team.append(_product_owner)
             extra_instructions.append(
@@ -707,14 +711,7 @@ def get_llm_os(
                 markdown=True,
                 add_datetime_to_instructions=True,
                 debug_mode=debug_mode,
-                knowledge_base=AssistantKnowledge(
-                    vector_db=PgVector2(
-                        db_url=db_url,
-                        collection="llm_os_documents",
-                        embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
-                    ),
-                    num_documents=5,
-                )
+                knowledge_base = knowledge_base
             )
             team.append(_business_analyst)
             extra_instructions.append(
@@ -797,14 +794,7 @@ def get_llm_os(
                 markdown=True,
                 add_datetime_to_instructions=True,
                 debug_mode=debug_mode,
-                knowledge_base=AssistantKnowledge(
-                    vector_db=PgVector2(
-                        db_url=db_url,
-                        collection="llm_os_documents",
-                        embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
-                    ),
-                    num_documents=5,
-                )
+                knowledge_base = knowledge_base
             )
             team.append(_quality_analyst)
             extra_instructions.append(
@@ -826,14 +816,16 @@ def get_llm_os(
         logger.warning("psutil not installed. System resource logging will be disabled.")
         def log_system_resources():
             logger.info("System resource logging is disabled due to missing psutil module.")
-        
-    log_system_resources()    
-            
+    
+    log_system_resources()        
+                
     # Create the LLM OS Assistant
     llm_os = Assistant(
         name="llm_os",
         run_id=run_id,
         user_id=user_id,
+        # Add a knowledge base to the LLM OS
+        knowledge_base = knowledge_base,
         llm=llm,
         description=dedent(
          """\
@@ -861,7 +853,6 @@ def get_llm_os(
             "If you don't find relevant information in your knowledge base, use the `search_exa` tool to search the internet for information specific to the user's query.",
             "Only use the `search_exa` tool when you need specific information that's not in your knowledge base.",
             "If you've already searched for a topic and didn't find useful information, don't search again. Instead, inform the user that you couldn't find relevant information.",
-            "If you've already searched for a topic and didn't find useful information, don't search again. Instead, inform the user that you couldn't find relevant information.",
             "If the user asks to summarize the conversation or if you need to reference your chat history with the user, use the `get_chat_history` tool.",
             "If the users message is unclear, ask clarifying questions to get more information.",            
             "Ensure that all the responses are rendered in full detail in the markdown format",            
@@ -869,24 +860,13 @@ def get_llm_os(
             "You can delegate tasks to an AI Assistant in your team depending of their role and the tools available to them.",
             "Always respond in character as Sergei, the meerkat.",
             "Use a friendly, slightly formal tone with a hint of Russian accent in your text.",
-            "Occasionally mention meerkats or compare things to meerkat life.",
             "End at least some of your messages with the word 'Simples!'",
             "If asked who you are, introduce yourself as Sergei from comparethemeerkat.com.",
             "While you have access to various tools and assistants, always maintain your meerkat persona."
         ],
         extra_instructions=extra_instructions,
         # Add long-term memory to the LLM OS backed by a PostgreSQL database
-        storage=PgAssistantStorage(table_name="llm_os_runs", db_url=db_url),
-        # Add a knowledge base to the LLM OS
-        knowledge_base=AssistantKnowledge(
-            vector_db=PgVector2(
-                db_url=db_url,
-                collection="llm_os_documents",
-                embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
-            ),
-            # 3 references are added to the prompt when searching the knowledge base
-            num_documents=3,
-        ),
+        storage=PgAssistantStorage(table_name="llm_os_runs", db_url=db_url),        
         # Add selected tools to the LLM OS
         tools=tools,
         # Add selected team members to the LLM OS

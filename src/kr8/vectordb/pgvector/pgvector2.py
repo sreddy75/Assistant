@@ -2,7 +2,6 @@ from typing import Optional, List, Union, Dict, Any
 from hashlib import md5
 from datetime import datetime
 from sqlalchemy import update
-
 from ...document.base import Usage
 
 try:
@@ -197,64 +196,62 @@ class PgVector2(VectorDb):
         return True
 
     def upsert(self, documents: List[Document], batch_size: int = 20) -> None:
-        """
-        Upsert documents into the database.
-
-        Args:
-            documents (List[Document]): List of documents to upsert
-            batch_size (int): Batch size for upserting documents
-        """
+        logger.debug(f"Upserting {len(documents)} documents")
         with self.Session() as sess:
             counter = 0
             for document in documents:
-                document.embed(embedder=self.embedder)
-                cleaned_content = document.content.replace("\x00", "\ufffd")
-                content_hash = md5(cleaned_content.encode()).hexdigest()
-                _id = document.id or content_hash
-                usage = Usage.from_dict(document.usage)
-                logger.info(f"Inserting document into vector DB:")
-                logger.info(f"  ID: {_id}")
-                logger.info(f"  Name: {document.name}")
-                logger.info(f"  Metadata: {document.meta_data}")
-                logger.info(f"  Usage: {usage.to_dict()}")
-                logger.info(f"  Content preview: {cleaned_content[:100]}...")
-                stmt = postgresql.insert(self.table).values(
-                    id=_id,
-                    name=document.name,
-                    meta_data=document.meta_data,
-                    content=cleaned_content,
-                    embedding=document.embedding,
-                    usage=usage.to_dict(),
-                    content_hash=content_hash,
-                )
-                # Update row when id matches but 'content_hash' is different
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["id"],
-                    set_=dict(
-                        name=stmt.excluded.name,
-                        meta_data=stmt.excluded.meta_data,
-                        content=stmt.excluded.content,
-                        embedding=stmt.excluded.embedding,
-                        usage=usage.dict(),
-                        content_hash=stmt.excluded.content_hash,
-                    ),
-                )
-                sess.execute(stmt)
-                counter += 1
-                logger.debug(f"Upserted document: {document.id} | {document.name} | {document.meta_data}")
+                try:
+                    document.embed(embedder=self.embedder)
+                    cleaned_content = document.content.replace("\x00", "\ufffd")
+                    content_hash = md5(cleaned_content.encode()).hexdigest()
+                    _id = document.id or content_hash
+                    logger.info(f"Upserting document into vector DB:")
+                    logger.info(f"  ID: {_id}")
+                    logger.info(f"  Name: {document.name}")
+                    logger.info(f"  Metadata: {document.meta_data}")
+                    logger.info(f"  Usage: {document.usage}")
+                    logger.info(f"  Content preview: {cleaned_content[:100]}...")
+                    stmt = postgresql.insert(self.table).values(
+                        id=_id,
+                        name=document.name,
+                        meta_data=document.meta_data,
+                        content=cleaned_content,
+                        embedding=document.embedding,
+                        usage=document.usage,
+                        content_hash=content_hash,
+                    )
+                    # Update row when id matches but 'content_hash' is different
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["id"],
+                        set_=dict(
+                            name=stmt.excluded.name,
+                            meta_data=stmt.excluded.meta_data,
+                            content=stmt.excluded.content,
+                            embedding=stmt.excluded.embedding,
+                            usage=stmt.excluded.usage,
+                            content_hash=stmt.excluded.content_hash,
+                        ),
+                    )
+                    sess.execute(stmt)
+                    counter += 1
+                    logger.debug(f"Upserted document: {document.id} | {document.name} | {document.meta_data}")
 
-                # Commit every `batch_size` documents
-                if counter >= batch_size:
-                    sess.commit()
-                    logger.info(f"Committed {counter} documents")
-                    counter = 0
+                    # Commit every `batch_size` documents
+                    if counter >= batch_size:
+                        sess.commit()
+                        logger.info(f"Committed {counter} documents")
+                        counter = 0
+                except Exception as e:
+                    logger.error(f"Error upserting document: {e}")
+                    logger.exception("Traceback:")
 
             # Commit any remaining documents
             if counter > 0:
                 sess.commit()
                 logger.info(f"Committed {counter} documents")
 
-    def search(self, query: str, limit: int = 5, filters: Optional[Dict[str, Any]] = None) -> List[Document]:
+    def search(self, query: str, limit: int = 5, collection: Optional[str] = None, filters: Optional[Dict[str, Any]] = None) -> List[Document]:
+        collection = collection or self.collection
         query_embedding = self.embedder.get_embedding(query)
         if query_embedding is None:
             logger.error(f"Error getting embedding for Query: {query}")
@@ -270,7 +267,7 @@ class PgVector2(VectorDb):
 
         stmt = select(*columns)
 
-        if filters is not None:
+        if filters:
             for key, value in filters.items():
                 if hasattr(self.table.c, key):
                     stmt = stmt.where(getattr(self.table.c, key) == value)

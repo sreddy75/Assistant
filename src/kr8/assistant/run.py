@@ -13,7 +13,7 @@ class AssistantRun(BaseModel):
     # Run name
     run_name: Optional[str] = None
     # ID of the user participating in this run
-    user_id: Optional[str] = None
+    user_id: Optional[int] = None
     # LLM data (name, model, etc.)
     llm: Optional[Dict[str, Any]] = None
     # Assistant Memory
