@@ -27,6 +27,7 @@ from kr8.tools.shell import ShellTools
 from kr8.tools.yfinance import YFinanceTools
 from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
+from kr8.tools.pandas import PandasTools
 
 load_dotenv()
 
@@ -59,10 +60,11 @@ def get_llm_os(
     web_search: bool = True,
     file_tools: bool = False,
     shell_tools: bool = False,
-    data_analyst: bool = False,
+    data_analyst: bool = True,
     python_assistant: bool = False,
     research_assistant: bool = False,
     maintenance_engineer: bool = True,
+    financial_analyst: bool = True,
     company_analyst: bool = True,
     product_owner: bool = True,
     business_analyst: bool = True,
@@ -73,35 +75,36 @@ def get_llm_os(
     debug_mode: bool = True,    
 ) -> Assistant:
     logger.info(f"-*- Creating {llm_id} LLM OS -*-")
+    logger.debug(f"Initializing LLM OS with financial_analyst={financial_analyst}")
 
     # Add tools available to the LLM OS
     tools: List[Toolkit] = []
     extra_instructions: List[str] = []
         
 
-    logger.debug(f"Creating PgVector2 instance with db_url: {db_url}")
-    logger.debug(f"User ID: {user_id}")
-    logger.debug(f"Collection name: {f'user_{user_id}_documents' if user_id is not None else 'llm_os_documents'}")
-
-    try:
-        vector_db = PgVector2(
+    # Initialize the knowledge base
+    knowledge_base = AssistantKnowledge(
+        vector_db=PgVector2(
             db_url=db_url,
             collection=f"user_{user_id}_documents" if user_id is not None else "llm_os_documents",
             embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
-        )
-        logger.debug(f"PgVector2 instance created: {vector_db}")
-    except Exception as e:
-        logger.error(f"Error creating PgVector2 instance: {e}")
-        logger.exception("Traceback:")
-        vector_db = None
-
-    knowledge_base = AssistantKnowledge(
-        vector_db=vector_db,
+        ),
         num_documents=3,
         user_id=user_id,
     )
 
-    logger.debug(f"AssistantKnowledge instance created: {knowledge_base}")
+    # Add selected tools
+    if calculator:
+        tools.append(Calculator())
+    if web_search:
+        tools.append(ExaTools(num_results=5, text_length_limit=1000))
+    if file_tools:
+        tools.append(FileTools(base_dir=cwd))
+    if shell_tools:
+        tools.append(ShellTools())
+
+    # Add team members available to the LLM OS
+    team: List[Assistant] = []
     
     if calculator:
         tools.append(
@@ -172,26 +175,100 @@ def get_llm_os(
     
     # Add team members available to the LLM OS
     team: List[Assistant] = []
-    if data_analyst:
-        _data_analyst = DuckDbAssistant(
-            name="Data Analyst",
-            role="Analyze movie data and provide insights",
-            semantic_model=json.dumps(
-                {
-                    "tables": [
-                        {
-                            "name": "movies",
-                            "description": "CSV of my favorite movies.",
-                            "path": "https://phidata-public.s3.amazonaws.com/demo_data/IMDB-Movie-Data.csv",
-                        }
-                    ]
-                }
+    
+    if financial_analyst:
+        pandas_tools = PandasTools()
+        _financial_analyst = Assistant(
+            name="Financial Analyst",
+            role="Analyze financial data and provide insights",
+            llm=llm,
+            tools=[pandas_tools],
+            instructions=[
+                "You have access to financial data through PandasTools.",
+                "To list available dataframes, use: pandas_tools.list_dataframes()",
+                "To access a dataframe, use: pandas_tools.dataframes['dataframe_name']",
+                "Analyze the data in these dataframes to answer financial questions.",
+                "If no data is available, inform the user and ask them to upload relevant files.",
+                "Provide clear explanations of your analysis and insights.",
+                "Use financial terminology appropriate for executives and managers.",
+                "When possible, suggest actionable recommendations based on your analysis.",
+                "If you need more information or clarification, don't hesitate to ask the user.",
+            ],
+            expected_output=dedent(
+                """\
+                <financial_analysis>
+                ## Summary of Findings
+                {Provide a brief overview of key insights}
+
+                ## Detailed Analysis
+                {Present your detailed analysis here, using subheadings as appropriate}
+
+                ## Data Visualization
+                {If applicable, describe or provide code for relevant charts or graphs}
+
+                ## Recommendations
+                {Offer actionable recommendations based on the analysis}
+
+                ## Additional Information Needed
+                {If more data is required, specify what information would be helpful}
+                </financial_analysis>
+                """
             ),
-            base_dir=scratch_dir,
+            markdown=True,
+        )
+        team.append(_financial_analyst)
+        logger.info("Financial Analyst added to the team")
+        extra_instructions.append(
+            "To analyze financial data, delegate the task to the `Financial Analyst`. "
+            "The Financial Analyst can access and analyze uploaded CSV and Excel files."
+        )
+    else:
+        logger.info("Financial Analyst not enabled")
+            
+    if data_analyst:
+        tools.append(PandasTools())
+            
+    if data_analyst:
+        _data_analyst = Assistant(
+            name="Data Analyst",
+            role="Analyze financial data from uploaded CSV files",
+            llm=llm,
+            tools=[PandasTools()],
+            instructions=[
+                "Use the PandasTools to analyze financial data from uploaded CSV files.",
+                "You can access DataFrames using their names (e.g., df_financial_data).",
+                "Perform calculations, generate statistics, and create visualizations as needed.",
+                "When asked about financial data, check if there's a relevant DataFrame available.",
+                "Use pandas functions to perform data analysis tasks.",
+                "Provide clear explanations of your findings and any visualizations you create.",
+            ],
+            expected_output=dedent(
+                """\
+                <analysis_output>
+                ## Data Analysis Results
+
+                ### Summary Statistics
+                {Provide summary statistics of the analyzed data}
+
+                ### Key Findings
+                - {Key finding 1}
+                - {Key finding 2}
+                - {Key finding 3}
+
+                ### Visualizations
+                {If applicable, describe or provide code for relevant visualizations}
+
+                ### Recommendations
+                {Provide any recommendations based on the analysis}
+
+                </analysis_output>
+                """
+            ),
         )
         team.append(_data_analyst)
         extra_instructions.append(
-            "To answer questions about my favorite movies, delegate the task to the `Data Analyst`."
+            "To analyze financial data from uploaded CSV files, delegate the task to the `Data Analyst`. "
+            "Return the analysis in the <analysis_output> format to the user without additional text."
         )
     if python_assistant:
         _python_assistant = PythonAssistant(
@@ -818,7 +895,7 @@ def get_llm_os(
             logger.info("System resource logging is disabled due to missing psutil module.")
     
     log_system_resources()        
-                
+
     # Create the LLM OS Assistant
     llm_os = Assistant(
         name="llm_os",
@@ -858,6 +935,9 @@ def get_llm_os(
             "Ensure that all the responses are rendered in full detail in the markdown format",            
             "Do not use phrases like 'based on my knowledge' or 'depending on the information'.",
             "You can delegate tasks to an AI Assistant in your team depending of their role and the tools available to them.",
+            "When dealing with financial data or revenue analysis, delegate to the Financial Analyst.",
+            "For marketing spend analysis or general data insights, delegate to the Data Analyst.",
+            "If a question requires both financial and marketing insights, coordinate between both analysts.",
             "Always respond in character as Sergei, the meerkat.",
             "Use a friendly, slightly formal tone with a hint of Russian accent in your text.",
             "End at least some of your messages with the word 'Simples!'",
@@ -892,3 +972,45 @@ def get_llm_os(
         debug_mode=debug_mode,
     )
     return llm_os
+
+def create_financial_analyst_assistant(llm, tools):
+    return Assistant(
+        name="Financial Analyst",
+        role="Analyze financial data and provide insights",
+        llm=llm,
+        tools=[PandasTools()],
+        instructions=[
+            "You have access to financial data through PandasTools.",
+            "Before analyzing, always check available dataframes using the list_dataframes method.",
+            "Use the available dataframes to answer financial questions.",
+            "If no data is available, inform the user and ask them to upload relevant files.",
+            "Use financial terminology and metrics appropriate for CFOs and CEOs.",
+            "When creating visualizations, focus on clear, impactful charts that convey key information at a glance.",
+            "Be prepared to explain complex financial concepts in simple terms if asked.",
+            "Prioritize confidentiality and handle all data with utmost discretion.",
+        ],
+        expected_output=dedent(
+            """\
+            <financial_analysis>
+            ## Executive Summary
+            {Provide a brief, high-level summary of key findings}
+
+            ## Financial Metrics
+            {List and explain key financial metrics relevant to the analysis}
+
+            ## Trend Analysis
+            {Describe any significant trends observed in the data}
+
+            ## Risk Assessment
+            {Highlight any potential risks or areas of concern}
+
+            ## Strategic Recommendations
+            {Provide actionable recommendations based on the analysis}
+
+            ## Visualizations
+            {Include or describe any relevant charts or graphs}
+
+            </financial_analysis>
+            """
+        ),
+    )

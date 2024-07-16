@@ -1,3 +1,4 @@
+from asyncio.log import logger
 import streamlit as st
 from ui.utils.helper import restart_assistant
 
@@ -68,7 +69,24 @@ def render_sidebar():
         if research_assistant_enabled != research_assistant:
             st.session_state["research_assistant_enabled"] = research_assistant
             restart_assistant()
-            
+        
+        if "data_analyst_enabled" not in st.session_state:
+            st.session_state["data_analyst_enabled"] = True
+        data_analyst_enabled = st.session_state["data_analyst_enabled"]
+        data_analyst = st.checkbox("Data Analyst", value=data_analyst_enabled, help="Enable the Data Analyst for financial data analysis.")
+        if data_analyst_enabled != data_analyst:
+            st.session_state["data_analyst_enabled"] = data_analyst
+            restart_assistant()
+        
+        if "financial_analyst_enabled" not in st.session_state:
+            st.session_state["financial_analyst_enabled"] = True
+        financial_analyst_enabled = st.session_state["financial_analyst_enabled"]
+        financial_analyst = st.checkbox("Financial Analyst", value=financial_analyst_enabled, help="Enable the Financial Analyst for financial data analysis.")
+        if financial_analyst_enabled != financial_analyst:
+            logger.debug(f"Financial Analyst enabled changed from {financial_analyst_enabled} to {financial_analyst}")
+            st.session_state["financial_analyst_enabled"] = financial_analyst
+            restart_assistant()
+                                    
         # if "legal_assistant_enabled" not in st.session_state:
         #     st.session_state["legal_assistant_enabled"] = False
         # legal_assistant_enabled = st.session_state["legal_assistant_enabled"]

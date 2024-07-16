@@ -1,3 +1,5 @@
+import base64
+import io
 from typing import Dict, Any
 
 from kr8.tools import Toolkit
@@ -12,11 +14,40 @@ except ImportError:
 class PandasTools(Toolkit):
     def __init__(self):
         super().__init__(name="pandas_tools")
-
         self.dataframes: Dict[str, pd.DataFrame] = {}
         self.register(self.create_pandas_dataframe)
         self.register(self.run_dataframe_operation)
+        self.register(self.load_csv)
+        self.register(self.load_excel)
+        self.register(self.list_dataframes)
 
+    def load_csv(self, file_name: str, file_content: str) -> str:
+        try:
+            file_bytes = base64.b64decode(file_content)
+            df = pd.read_csv(io.BytesIO(file_bytes))
+            df_name = f"df_{file_name.replace('.csv', '').replace(' ', '_')}"
+            self.dataframes[df_name] = df
+            logger.info(f"Loaded CSV: {df_name}, shape: {df.shape}")
+            return df_name
+        except Exception as e:
+            logger.error(f"Error loading CSV {file_name}: {str(e)}")
+            raise
+
+    def load_excel(self, file_name: str, file_content: str) -> str:
+        try:
+            file_bytes = base64.b64decode(file_content)
+            df = pd.read_excel(io.BytesIO(file_bytes))
+            df_name = f"df_{file_name.replace('.xlsx', '').replace('.xls', '').replace(' ', '_')}"
+            self.dataframes[df_name] = df
+            logger.info(f"Loaded Excel: {df_name}, shape: {df.shape}")
+            return df_name
+        except Exception as e:
+            logger.error(f"Error loading Excel {file_name}: {str(e)}")
+            raise
+
+    def list_dataframes(self) -> str:
+        return "\n".join([f"{name}: {df.shape}" for name, df in self.dataframes.items()])
+            
     def create_pandas_dataframe(
         self, dataframe_name: str, create_using_function: str, function_parameters: Dict[str, Any]
     ) -> str:

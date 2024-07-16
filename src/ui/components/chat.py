@@ -1,3 +1,4 @@
+import base64
 import random
 import time
 import httpx
@@ -11,6 +12,8 @@ from multiprocessing import Pool
 import asyncio
 from kr8.document import Document
 from PIL import Image
+
+from kr8.tools.pandas import PandasTools
 
 # Load the custom icons
 meerkat_icon = Image.open("images/meerkat_icon.png")
@@ -95,6 +98,10 @@ def render_chat():
 def initialize_assistant(llm_id):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
+        
+        financial_analyst_enabled = st.session_state.get("financial_analyst_enabled", True)
+        logger.debug(f"Financial Analyst enabled: {financial_analyst_enabled}")
+        
         try:
             user_id = st.session_state.get('user_id')
             llm_os = get_llm_os(
@@ -103,6 +110,8 @@ def initialize_assistant(llm_id):
                 web_search=st.session_state.get("web_search_enabled", True),
                 file_tools=st.session_state.get("file_tools_enabled", True),
                 research_assistant=st.session_state.get("research_assistant_enabled", False),
+                data_analyst=st.session_state.get("data_analyst_enabled", True),
+                financial_analyst=st.session_state.get("financial_analyst_enabled", True),
                 investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
                 company_analyst=st.session_state.get("company_analyst_enabled", False),            
                 maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
@@ -177,6 +186,10 @@ def process_pdfs_parallel(uploaded_files, llm_os):
     return True, f"Successfully processed {len(uploaded_files)} files"
 
 def manage_knowledge_base(llm_os):
+    
+    if "loaded_dataframes" not in st.session_state:
+        st.session_state["loaded_dataframes"] = {}
+        
     if "processed_files" not in st.session_state:
         st.session_state["processed_files"] = []
 
@@ -186,7 +199,6 @@ def manage_knowledge_base(llm_os):
     input_url = st.sidebar.text_input("Add URL to Knowledge Base", type="default", key=st.session_state["url_scrape_key"])
     add_url_button = st.sidebar.button("Add URL")
     if add_url_button:
-        # log_event("add_url", input_url)
         if input_url is not None:
             with st.spinner("Processing URLs..."):
                 if f"{input_url}_scraped" not in st.session_state:
@@ -197,28 +209,51 @@ def manage_knowledge_base(llm_os):
                         st.session_state[f"{input_url}_scraped"] = True
                         st.session_state["processed_files"].append(input_url)
                         st.sidebar.success(f"Successfully processed and added: {input_url}")
+                        logger.info(f"Successfully processed and added URL: {input_url}")
                     else:
                         st.sidebar.error("Could not read website")
+                        logger.error(f"Could not read website: {input_url}")
 
     if "file_uploader_key" not in st.session_state:
         st.session_state["file_uploader_key"] = 100
 
     uploaded_files = st.sidebar.file_uploader(
-        "Add PDFs :page_facing_up:", type="pdf", key=st.session_state["file_uploader_key"], accept_multiple_files=True
+        "Upload Documents", type=["pdf", "csv", "xlsx", "xls"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
     
     if uploaded_files:
-        # log_event("upload_pdfs", [file.name for file in uploaded_files])
+        financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Financial Analyst"), None)
+        data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Data Analyst"), None)
         
-        for uploaded_file in uploaded_files:
-            with st.spinner(f"Processing {uploaded_file.name}..."):
-                success, message = asyncio.run(process_pdf_async(uploaded_file, llm_os))
-            
-            if success:
-                st.success(message)
-                st.session_state["processed_files"].append(uploaded_file.name)
-            else:
-                st.error(message)
+        for file in uploaded_files:
+            with st.spinner(f"Processing {file.name}..."):
+                try:
+                    if file.name.endswith('.pdf'):
+                        success, message = process_pdf(file, llm_os)
+                        if success:
+                            st.success(message)
+                            st.session_state["processed_files"].append(file.name)
+                        else:
+                            st.error(message)
+                    elif file.name.endswith(('.csv', '.xlsx', '.xls')):
+                        file_content = base64.b64encode(file.read()).decode('utf-8')
+                        if financial_analyst and any(keyword in file.name.lower() for keyword in ['revenue', 'financial', 'profit']):
+                            result = process_file_for_analyst(file, file_content, financial_analyst)
+                            st.success(f"Loaded {file.name} for Financial Analyst: {result}")
+                            st.session_state["loaded_dataframes"][result] = "Financial Analyst"
+                        elif data_analyst and any(keyword in file.name.lower() for keyword in ['marketing', 'spend', 'performance']):
+                            result = process_file_for_analyst(file, file_content, data_analyst)
+                            st.success(f"Loaded {file.name} for Data Analyst: {result}")
+                            st.session_state["loaded_dataframes"][result] = "Data Analyst"
+                        else:
+                            result = process_file_for_analyst(file, file_content, financial_analyst or data_analyst)
+                            st.success(f"Loaded {file.name}: {result}")
+                            st.session_state["loaded_dataframes"][result] = "General"
+                        st.session_state["processed_files"].append(file.name)
+                except Exception as e:
+                    st.error(f"Error processing {file.name}: {str(e)}")
+                    logger.error(f"Error processing {file.name}: {str(e)}")
+                    
         
         # Increment the file uploader key to force a refresh
         st.session_state["file_uploader_key"] += 1
@@ -230,12 +265,16 @@ def manage_knowledge_base(llm_os):
 
     if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
         if st.sidebar.button("Clear Knowledge Base"):
-            # log_event("clear_knowledge_base", "User cleared the knowledge base")
             llm_os.knowledge_base.vector_db.clear()
             st.session_state["processed_files"] = []
             st.sidebar.success("Knowledge base cleared")
+            logger.info("Knowledge base cleared")
 
-     # Add the debug button here
+    # Add a button to list available dataframes
+    if st.sidebar.button("List Available Dataframes"):
+        list_available_dataframes(llm_os)
+
+    # Add the debug button here
     debug_knowledge_base(llm_os)
     
     if llm_os.team and len(llm_os.team) > 0:
@@ -243,8 +282,60 @@ def manage_knowledge_base(llm_os):
             if len(team_member.memory.chat_history) > 0:
                 with st.expander(f"{team_member.name} Memory", expanded=False):
                     st.container().json(team_member.memory.get_llm_messages())
-                    
-                    
+
+def process_pdf(file, llm_os):
+    reader = PDFReader()
+    auto_rag_documents = reader.read(file)
+    if not auto_rag_documents:
+        logger.error(f"Could not read PDF: {file.name}")
+        return False, f"Could not read PDF: {file.name}"
+    
+    logger.info(f"Successfully read PDF: {file.name}. Found {len(auto_rag_documents)} documents.")
+    
+    try:
+        llm_os.knowledge_base.load_documents(auto_rag_documents, upsert=True)
+        logger.info(f"Successfully added PDF content to knowledge base.")
+        return True, f"Successfully processed {file.name}"
+    except Exception as e:
+        logger.error(f"Error adding PDF content to knowledge base: {str(e)}")
+        return False, f"Error processing {file.name}: {str(e)}"
+
+def process_file_for_analyst(file, file_content, analyst):
+    pandas_tools = next((tool for tool in analyst.tools if isinstance(tool, PandasTools)), None)
+    if not pandas_tools:
+        raise ValueError(f"PandasTools not available for {analyst.name}")
+    
+    if file.name.endswith('.csv'):
+        return pandas_tools.load_csv(file.name, file_content)
+    elif file.name.endswith(('.xlsx', '.xls')):
+        return pandas_tools.load_excel(file.name, file_content)
+
+def check_available_data(data_type):
+    available_data = []
+    for df_name, analyst in st.session_state["loaded_dataframes"].items():
+        if data_type.lower() in df_name.lower():
+            available_data.append((df_name, analyst))
+    return available_data
+
+def delegate_task(task_description, analyst_name):
+    analyst = next((assistant for assistant in llm_os.team if assistant.name == analyst_name), None)
+    if analyst:
+        return analyst.run(task_description)
+    else:
+        return f"Error: {analyst_name} not found in the team."
+    
+def list_available_dataframes(llm_os):
+    for assistant in llm_os.team:
+        pandas_tools = next((tool for tool in assistant.tools if isinstance(tool, PandasTools)), None)
+        if pandas_tools:
+            st.sidebar.write(f"{assistant.name}'s Dataframes:")
+            for df_name, df in pandas_tools.dataframes.items():
+                st.sidebar.write(f"- {df_name}: {df.shape[0]} rows, {df.shape[1]} columns")
+            logger.info(f"{assistant.name}'s Dataframes: {list(pandas_tools.dataframes.keys())}")
+        else:
+            st.sidebar.write(f"No PandasTools available for {assistant.name}.")
+            logger.warning(f"No PandasTools available for {assistant.name}.")
+
 def debug_knowledge_base(llm_os):
     st.sidebar.markdown("### Knowledge Base Debug")
     if st.sidebar.button("Check Knowledge Base"):
@@ -273,7 +364,6 @@ def debug_knowledge_base(llm_os):
                                     logger.info(f"  {attr}: {value}")
                         logger.info("---")
                     
-                    # Display the content of the first document in the sidebar
                     if hasattr(results[0], 'content'):
                         st.sidebar.write(results[0].content[:100] + "...")
                     else:

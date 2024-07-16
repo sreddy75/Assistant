@@ -4,7 +4,7 @@ from kr8.document import Document
 from kr8.document.reader.base import Reader
 from kr8.vectordb import VectorDb
 from kr8.utils.log import logger
-from src.kr8.vectordb.pgvector.pgvector2 import PgVector2
+from kr8.vectordb.pgvector.pgvector2 import PgVector2
 
 class AssistantKnowledge(BaseModel):
     reader: Optional[Reader] = None
