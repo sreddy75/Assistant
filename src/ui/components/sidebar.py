@@ -1,5 +1,6 @@
 from asyncio.log import logger
 import streamlit as st
+from kr8.tools.pandas import PandasTools
 from ui.utils.helper import restart_assistant
 
 
@@ -18,6 +19,10 @@ def initialize_session_state():
         st.session_state.business_analyst_enabled = True
     if "quality_analyst_enabled" not in st.session_state:
         st.session_state.quality_analyst_enabled = True
+    if 'pandas_tools' not in st.session_state:
+        st.session_state.pandas_tools = PandasTools()
+    pandas_tools = st.session_state.pandas_tools
+        
 
 def render_sidebar():
     initialize_session_state()    

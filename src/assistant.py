@@ -41,6 +41,8 @@ if not scratch_dir.exists():
 import os
 import httpx
 
+pandas_tools = PandasTools()
+
 def is_ollama_available():
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
     print(f"OLLAMA_BASE_URL: {ollama_url}")  # Log the value of the environment variable
@@ -97,7 +99,7 @@ def get_llm_os(
     if calculator:
         tools.append(Calculator())
     if web_search:
-        tools.append(ExaTools(num_results=5, text_length_limit=1000))
+        tools.append(ExaTools(num_results=5, text_length_limit=2000))
     if file_tools:
         tools.append(FileTools(base_dir=cwd))
     if shell_tools:
@@ -176,8 +178,7 @@ def get_llm_os(
     # Add team members available to the LLM OS
     team: List[Assistant] = []
     
-    if financial_analyst:
-        pandas_tools = PandasTools()
+    if financial_analyst:        
         _financial_analyst = Assistant(
             name="Financial Analyst",
             role="Analyze financial data and provide insights",
@@ -223,17 +224,14 @@ def get_llm_os(
             "The Financial Analyst can access and analyze uploaded CSV and Excel files."
         )
     else:
-        logger.info("Financial Analyst not enabled")
-            
-    if data_analyst:
-        tools.append(PandasTools())
+        logger.info("Financial Analyst not enabled")            
             
     if data_analyst:
         _data_analyst = Assistant(
             name="Data Analyst",
             role="Analyze financial data from uploaded CSV files",
             llm=llm,
-            tools=[PandasTools()],
+            tools=[pandas_tools],
             instructions=[
                 "Use the PandasTools to analyze financial data from uploaded CSV files.",
                 "You can access DataFrames using their names (e.g., df_financial_data).",
@@ -951,7 +949,7 @@ def get_llm_os(
         # Add long-term memory to the LLM OS backed by a PostgreSQL database
         storage=PgAssistantStorage(table_name="llm_os_runs", db_url=db_url),        
         # Add selected tools to the LLM OS
-        tools=tools,
+        tools=flatten_tools([pandas_tools] + tools),
         # Add selected team members to the LLM OS
         team=team,
         # Show tool calls in the chat
@@ -976,12 +974,30 @@ def get_llm_os(
     )
     return llm_os
 
+def flatten_tools(tool_list):
+    flattened = []
+    for item in tool_list:
+        if isinstance(item, list):
+            flattened.extend(flatten_tools(item))
+        else:
+            flattened.append(item)
+    return flattened
+
+def get_dataframe(self, name: str):
+    pandas_tools = next(tool for tool in self.tools if isinstance(tool, PandasTools))
+    return pandas_tools.dataframes.get(name)
+
+def delegate_to_analyst(self, analyst_name: str, task: str):
+    analyst = next(member for member in self.team if member.name == analyst_name)
+    result = analyst.run(task)
+    return result
+
 def create_financial_analyst_assistant(llm, tools):
     return Assistant(
         name="Financial Analyst",
         role="Analyze financial data and provide insights",
         llm=llm,
-        tools=[PandasTools()],
+        tools=[pandas_tools],
         instructions=[
             "You have access to financial data through PandasTools.",
             "Before analyzing, always check available dataframes using the list_dataframes method.",
