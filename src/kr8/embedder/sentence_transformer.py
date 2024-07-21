@@ -29,7 +29,9 @@ class SentenceTransformerEmbedder(Embedder, BaseModel):
 
     def _initialize_model(self):
         try:
-            self._sentence_transformer = SentenceTransformer(self.model)
+            # Specify the local path to the model
+            local_model_path = "models/sentence_transformers/all-MiniLM-L6-v2"
+            self._sentence_transformer = SentenceTransformer(local_model_path)
             model_dimensions = self._sentence_transformer.get_sentence_embedding_dimension()
             logger.info(f"Loaded model with {model_dimensions} dimensions. Padding to {self.dimensions} dimensions.")
         except Exception as e:
