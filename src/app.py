@@ -10,6 +10,7 @@ from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_requi
 import logging
 from queue import Queue
 from threading import Thread
+from streamlit_autorefresh import st_autorefresh
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -97,6 +98,7 @@ def perform_heavy_initialization():
     # Add any other heavy initialization steps here
     log_init_event("Initialization complete!")
 
+
 def initialize_app():
     if "app_initialized" not in st.session_state:
         logger.debug("Starting app initialization")
@@ -107,31 +109,48 @@ def initialize_app():
             logger.debug(f"Initialized llm_id with default value: {st.session_state.llm_id}")
         
         # Create a centered column for the spinner and status messages
-        col1, col2, col3 = st.columns([1,6,1])
+        col1, col2, col3 = st.columns([1, 6, 1])
         with col2:
-            
             st.markdown("<h1 style='text-align: center;'>Activating Meerkats...</h1>", unsafe_allow_html=True)
-        
+            
             status_placeholder = st.empty()
             
             initialization_messages = [
                 "Digging burrows...",
-                "Gathering meerkat wisdom...",
-                "Polishing periscopes...",
-                "Arranging sun-bathing spots...",
+                "Gathering meerkat wisdom...",                
                 "Teaching meerkats to type...",
                 "Perfecting meerkat accents...",
                 "Stocking up on bug snacks...",
                 "Setting up meerkat alert system..."
             ]
 
+            # Insert CSS for animation
+            css = """
+            <style>
+            @keyframes fadeInOut {
+                0% { opacity: 0; }
+                50% { opacity: 1; }
+                100% { opacity: 0; }
+            }
+
+            .fade {
+                animation: fadeInOut 3s infinite;
+            }
+            </style>
+            """
+            st.markdown(css, unsafe_allow_html=True)
+
+            # Ensure the user sees multiple messages before initialization completes
+            for _ in range(5):
+                status_message = f"<h3 class='fade' style='text-align: center;'>{random.choice(initialization_messages)}</h3>"
+                status_placeholder.markdown(status_message, unsafe_allow_html=True)
+                time.sleep(3)  # Delay to allow users to see the message
+
             perform_heavy_initialization()
 
-            # Display rotating messages while initialization is happening
-            while not init_queue.empty():
-                event = init_queue.get()                    
-                status_placeholder.markdown(f"<p style='text-align: center;'>{random.choice(initialization_messages)}</p>", unsafe_allow_html=True)
-                time.sleep(10)
+            # Final status message
+            status_placeholder.markdown("<h3 style='text-align: center;'>Initialization complete!</h3>", unsafe_allow_html=True)
+            time.sleep(2)
 
         st.session_state.initialization_complete = True
         st.session_state.app_initialized = True
@@ -139,7 +158,6 @@ def initialize_app():
     else:
         logger.debug("App already initialized, skipping initialization")
         
-
 def reset_password_form():
     st.title("Reset Your Password")
 
