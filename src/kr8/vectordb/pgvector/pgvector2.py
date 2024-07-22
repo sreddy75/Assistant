@@ -1,8 +1,9 @@
 from typing import Optional, List, Union, Dict, Any
 from hashlib import md5
 from datetime import datetime
-from sqlalchemy import update
+from sqlalchemy import Integer, delete, update
 from ...document.base import Usage
+from kr8.embedder.openai import OpenAIEmbedder
 
 try:
     from sqlalchemy.dialects import postgresql
@@ -38,16 +39,19 @@ class PgVector2(VectorDb):
         embedder: Optional[Embedder] = None,
         distance: Distance = Distance.cosine,
         index: Optional[Union[Ivfflat, HNSW]] = HNSW(),
+        user_id: Optional[int] = None
     ):
+        self.user_id = user_id
+        # Collection attributes
+        self.collection = f"user_{user_id}_{collection}" if user_id else collection
+        
         _engine: Optional[Engine] = db_engine
         if _engine is None and db_url is not None:
             _engine = create_engine(db_url)
 
         if _engine is None:
             raise ValueError("Must provide either db_url or db_engine")
-
-        # Collection attributes
-        self.collection: str = collection
+                                
         self.schema: Optional[str] = schema
 
         # Database attributes
@@ -57,8 +61,7 @@ class PgVector2(VectorDb):
 
         # Embedder for embedding the document contents
         _embedder = embedder
-        if _embedder is None:
-            from kr8.embedder.openai import OpenAIEmbedder
+        if _embedder is None:            
 
             _embedder = OpenAIEmbedder()
         self.embedder: Embedder = _embedder
@@ -89,6 +92,7 @@ class PgVector2(VectorDb):
             Column("created_at", DateTime(timezone=True), server_default=text("now()")),
             Column("updated_at", DateTime(timezone=True), onupdate=text("now()")),
             Column("content_hash", String),
+            Column("user_id", Integer),
             extend_existing=True,
         )
 
@@ -126,6 +130,24 @@ class PgVector2(VectorDb):
                 stmt = select(*columns).where(self.table.c.content_hash == md5(cleaned_content.encode()).hexdigest())
                 result = sess.execute(stmt).first()
                 return result is not None
+
+    def get_document_by_name(self, name: str) -> Optional[Document]:
+        with self.Session() as sess:
+            with sess.begin():
+                stmt = select(self.table).where(self.table.c.name == name)
+                if self.user_id:
+                    stmt = stmt.where(self.table.c.user_id == self.user_id)
+                result = sess.execute(stmt).first()
+                if result:
+                    return Document(
+                        name=result.name,
+                        meta_data=result.meta_data,
+                        content=result.content,
+                        embedder=self.embedder,
+                        embedding=result.embedding,
+                        usage=Usage.from_dict(result.usage),
+                    )
+        return None
 
     def name_exists(self, name: str) -> bool:
         """
@@ -176,6 +198,7 @@ class PgVector2(VectorDb):
                     embedding=document.embedding,
                     usage=usage.to_dict(),
                     content_hash=content_hash,
+                    user_id=self.user_id,
                 )
                 sess.execute(stmt)
                 counter += 1
@@ -219,6 +242,7 @@ class PgVector2(VectorDb):
                         embedding=document.embedding,
                         usage=document.usage,
                         content_hash=content_hash,
+                        user_id=self.user_id,
                     )
                     # Update row when id matches but 'content_hash' is different
                     stmt = stmt.on_conflict_do_update(
@@ -258,6 +282,7 @@ class PgVector2(VectorDb):
             return []
 
         columns = [
+            self.table.c.id,  
             self.table.c.name,
             self.table.c.meta_data,
             self.table.c.content,
@@ -272,6 +297,9 @@ class PgVector2(VectorDb):
                 if hasattr(self.table.c, key):
                     stmt = stmt.where(getattr(self.table.c, key) == value)
 
+        if self.user_id:
+            stmt = stmt.where(self.table.c.user_id == self.user_id)
+            
         if self.distance == Distance.l2:
             stmt = stmt.order_by(self.table.c.embedding.max_inner_product(query_embedding))
         if self.distance == Distance.cosine:
@@ -305,6 +333,7 @@ class PgVector2(VectorDb):
             usage.update_access()
 
             doc = Document(
+                id=neighbor.id, 
                 name=neighbor.name,
                 meta_data=neighbor.meta_data,
                 content=neighbor.content,
@@ -319,6 +348,15 @@ class PgVector2(VectorDb):
 
         return search_results
 
+    def delete_document_by_name(self, name: str) -> bool:
+        with self.Session() as sess:
+            with sess.begin():
+                stmt = delete(self.table).where(self.table.c.name == name)
+                if self.user_id:
+                    stmt = stmt.where(self.table.c.user_id == self.user_id)
+                result = sess.execute(stmt)
+                return result.rowcount > 0
+            
     def update_document_usage(self, documents: List[Document]):
         with self.Session() as sess:
             for doc in documents:
@@ -421,15 +459,24 @@ class PgVector2(VectorDb):
                     )
         logger.debug("==== Optimized Vector DB ====")
 
-    def clear(self) -> bool:
-        from sqlalchemy import delete
-
+    def clear(self) -> bool:    
         with self.Session() as sess:
             with sess.begin():
                 stmt = delete(self.table)
+                if self.user_id:
+                    stmt = stmt.where(self.table.c.user_id == self.user_id)
                 sess.execute(stmt)
                 return True
-            
+    
+    def list_document_names(self) -> List[str]:
+        with self.Session() as sess:
+            with sess.begin():
+                stmt = select(self.table.c.name)
+                if self.user_id:
+                    stmt = stmt.where(self.table.c.user_id == self.user_id)
+                results = sess.execute(stmt).fetchall()
+                return [result[0] for result in results]
+                        
     def count_documents(self) -> int:
         """
         Count the number of documents in the collection.

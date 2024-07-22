@@ -2,6 +2,7 @@ import base64
 import random
 import time
 import httpx
+from openai import OpenAIError
 import streamlit as st
 import html
 from kr8.utils.log import logger
@@ -12,6 +13,9 @@ from multiprocessing import Pool
 import asyncio
 from kr8.document import Document
 from PIL import Image
+import plotly.io as pio
+from plotly.subplots import make_subplots
+import json
 
 from kr8.tools.pandas import PandasTools
 
@@ -23,13 +27,14 @@ llm_os = None
 def sanitize_content(content):
     return html.escape(content)
 
-def render_chat():
+def render_chat(user_id=None):
     if "llm_id" not in st.session_state:
         st.session_state.llm_id = "gpt-4o"  # Set a default value
         logger.warning("llm_id not found in session state, using default value")
 
     llm_id = st.session_state.llm_id
-    llm_os = initialize_assistant(llm_id)
+    llm_os = initialize_assistant(llm_id, user_id)
+
 
     if llm_os is None:
         st.warning("The assistant is currently unavailable. Please try again later.")
@@ -85,33 +90,65 @@ def render_chat():
                         response += delta
                         sanitized_response = sanitize_content(response)
                         resp_container.markdown(sanitized_response)
+
+                        # Check if the response contains a Plotly chart JSON
+                        if '{"data":' in response and '"layout":' in response:
+                            try:
+                                # Find the start and end of the JSON object
+                                start_index = response.index('{"data":')
+                                end_index = response.rindex('}') + 1
+                                chart_json = response[start_index:end_index]
+                                
+                                # Unescape the JSON string
+                                chart_json = chart_json.replace('&quot;', '"')
+                                
+                                # Parse the JSON
+                                fig_dict = json.loads(chart_json)
+                                
+                                # Create a Plotly figure from the dictionary
+                                fig = pio.from_json(json.dumps(fig_dict))
+                                
+                                # Display the figure
+                                st.plotly_chart(fig)
+                            except Exception as e:
+                                st.error(f"Error rendering chart: {e}")
+                
+                except OpenAIError as e:
+                    st.error(f"An error occurred while generating the response: {str(e)}")
+                    logger.error(f"OpenAI API error: {str(e)}")                
                 except httpx.ConnectError:
                     logger.error("Failed to connect to Ollama service. Working in offline mode.")
                     offline_response = "I'm sorry, but I'm currently offline. I can't process your request at the moment, but I'm here to chat about general topics that don't require real-time data or external connections. How else can I assist you? Simples!"
                     resp_container.markdown(offline_response)
                     response = offline_response
+                except Exception as e:
+                    st.error(f"An unexpected error occurred: {str(e)}")
+                    logger.error(f"Unexpected error: {str(e)}")                                    
+                    
                 st.session_state["messages"].append({"role": "assistant", "content": response})
 
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
 
-def initialize_assistant(llm_id):
+def initialize_assistant(llm_id, user_id=None):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
         
         financial_analyst_enabled = st.session_state.get("financial_analyst_enabled", True)
+        data_analyst_enabled = st.session_state.get("data_analyst_enabled", True)
         logger.debug(f"Financial Analyst enabled: {financial_analyst_enabled}")
+        logger.debug(f"Data Analyst enabled: {data_analyst_enabled}")
         
         try:
-            user_id = st.session_state.get('user_id')
+            # user_id = st.session_state.get('user_id')
             llm_os = get_llm_os(
                 llm_id=llm_id,  # Use the selected model
                 user_id=user_id,
                 web_search=st.session_state.get("web_search_enabled", True),
                 file_tools=st.session_state.get("file_tools_enabled", True),
                 research_assistant=st.session_state.get("research_assistant_enabled", False),
-                data_analyst=st.session_state.get("data_analyst_enabled", True),
-                financial_analyst=st.session_state.get("financial_analyst_enabled", True),
+                financial_analyst=financial_analyst_enabled,
+                data_analyst=data_analyst_enabled,
                 investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
                 company_analyst=st.session_state.get("company_analyst_enabled", False),            
                 maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
@@ -120,12 +157,16 @@ def initialize_assistant(llm_id):
                 quality_analyst=st.session_state.get("quality_analyst_enabled", True),
             )
             st.session_state["llm_os"] = llm_os
+            logger.info(f"Initialized LLM OS with team: {[assistant.name for assistant in llm_os.team]}")
+
         except Exception as e:
             logger.error(f"Failed to initialize LLM OS: {e}")
             st.error(f"Failed to initialize the assistant. Error: {e}")
             return None
     else:
         llm_os = st.session_state["llm_os"]
+        logger.info(f"Using existing LLM OS with team: {[assistant.name for assistant in llm_os.team]}")
+
     return llm_os
 
 def chunk_pdf(pdf_content, chunk_size=1000):
@@ -222,9 +263,18 @@ def manage_knowledge_base(llm_os):
     )
     
     if uploaded_files:
-        financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Financial Analyst"), None)
-        data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Data Analyst"), None)
+        financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Financial Analyst"), None)
+        data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Data Analyst"), None)
         
+        logger.debug(f"Team members: {[assistant.name for assistant in llm_os.team]}")
+        logger.debug(f"Financial Analyst: {financial_analyst}")
+        logger.debug(f"Data Analyst: {data_analyst}")
+
+        if financial_analyst is None and data_analyst is None:
+            st.error("No Financial Analyst or Data Analyst available. Please check your configuration.")
+            logger.error("No Financial Analyst or Data Analyst found in the team.")
+            return
+
         for file in uploaded_files:
             with st.spinner(f"Processing {file.name}..."):
                 try:
@@ -239,22 +289,21 @@ def manage_knowledge_base(llm_os):
                         file_content = base64.b64encode(file.read()).decode('utf-8')
                         if financial_analyst and any(keyword in file.name.lower() for keyword in ['revenue', 'financial', 'profit']):
                             result = process_file_for_analyst(file, file_content, financial_analyst)
-                            st.success(f"Loaded {file.name} for Financial Analyst: {result}")
-                            st.session_state["loaded_dataframes"][result] = "Financial Analyst"
                         elif data_analyst and any(keyword in file.name.lower() for keyword in ['marketing', 'spend', 'performance']):
                             result = process_file_for_analyst(file, file_content, data_analyst)
-                            st.success(f"Loaded {file.name} for Data Analyst: {result}")
-                            st.session_state["loaded_dataframes"][result] = "Data Analyst"
                         else:
                             result = process_file_for_analyst(file, file_content, financial_analyst or data_analyst)
+                        
+                        if result.startswith("Error:"):
+                            st.error(result)
+                        else:
                             st.success(f"Loaded {file.name}: {result}")
-                            st.session_state["loaded_dataframes"][result] = "General"
-                        st.session_state["processed_files"].append(file.name)
+                            st.session_state["loaded_dataframes"][result] = "Financial Analyst" if financial_analyst else "Data Analyst"
+                            st.session_state["processed_files"].append(file.name)
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
                     logger.error(f"Error processing {file.name}: {str(e)}")
-                    
-        
+                            
         # Increment the file uploader key to force a refresh
         st.session_state["file_uploader_key"] += 1
 
@@ -301,14 +350,30 @@ def process_pdf(file, llm_os):
         return False, f"Error processing {file.name}: {str(e)}"
 
 def process_file_for_analyst(file, file_content, analyst):
+    if analyst is None:
+        logger.error(f"Analyst is None when processing file: {file.name}")
+        return f"Error: Unable to process {file.name} due to missing analyst"
+
+    if not hasattr(analyst, 'tools'):
+        logger.error(f"Analyst {analyst.name if hasattr(analyst, 'name') else 'Unknown'} has no 'tools' attribute")
+        return f"Error: Unable to process {file.name} due to misconfigured analyst"
+
     pandas_tools = next((tool for tool in analyst.tools if isinstance(tool, PandasTools)), None)
     if not pandas_tools:
-        raise ValueError(f"PandasTools not available for {analyst.name}")
+        logger.error(f"PandasTools not available for {analyst.name if hasattr(analyst, 'name') else 'Unknown'}")
+        return f"Error: Unable to process {file.name} due to missing PandasTools"
     
-    if file.name.endswith('.csv'):
-        return pandas_tools.load_csv(file.name, file_content)
-    elif file.name.endswith(('.xlsx', '.xls')):
-        return pandas_tools.load_excel(file.name, file_content)
+    try:
+        if file.name.endswith('.csv'):
+            return pandas_tools.load_csv(file.name, file_content)
+        elif file.name.endswith(('.xlsx', '.xls')):
+            return pandas_tools.load_excel(file.name, file_content)
+        else:
+            logger.error(f"Unsupported file type: {file.name}")
+            return f"Error: Unsupported file type for {file.name}"
+    except Exception as e:
+        logger.error(f"Error processing {file.name}: {str(e)}")
+        return f"Error processing {file.name}: {str(e)}"
 
 def check_available_data(data_type):
     available_data = []

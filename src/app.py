@@ -11,6 +11,7 @@ import logging
 from queue import Queue
 from threading import Thread
 from streamlit_autorefresh import st_autorefresh
+from utils.auth import get_user_id
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -58,6 +59,7 @@ def login_form():
                     if login(email, password):
                         st.session_state.authenticated = True
                         st.session_state.initialization_complete = False
+                        st.session_state.user_id = get_user_id(email) 
                         logger.debug("User authenticated, initializing app")
                         st.rerun()
                     else:
@@ -227,12 +229,16 @@ def main_app():
     # Add logout link to sidebar
     if st.sidebar.button("Logout"):
         logout()
-        st.rerun()
+        st.session_state.pop('user_id', None)
+        st.session_state.pop('email', None)
+        st.rerun()        
 
     # Render the sidebar (this will handle LLM selection and other options)
     render_sidebar()
 
-    render_chat()
+    render_chat(user_id=st.session_state.get('user_id'))
+
+
 
 def main():
     st.set_page_config(
@@ -253,6 +259,9 @@ def main():
     if "logout" in st.query_params:
         logout()
         st.query_params.clear()
+        # Clear user-specific session state
+        st.session_state.pop('user_id', None)
+        st.session_state.pop('email', None)
         logger.debug("User logged out, clearing session")
         st.rerun()
 

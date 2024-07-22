@@ -1,9 +1,10 @@
 import base64
 import io
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from kr8.tools import Toolkit
 from kr8.utils.log import logger
+from kr8.document import Document
 
 try:
     import pandas as pd
@@ -12,9 +13,11 @@ except ImportError:
 
 
 class PandasTools(Toolkit):
-    def __init__(self):
+    def __init__(self, user_id: Optional[int] = None, knowledge_base: Optional['AssistantKnowledge'] = None):
         super().__init__(name="pandas_tools")
+        self.user_id = user_id
         self.dataframes: Dict[str, pd.DataFrame] = {}
+        self.knowledge_base = knowledge_base
         self.register(self.create_pandas_dataframe)
         self.register(self.run_dataframe_operation)
         self.register(self.load_csv)
@@ -26,18 +29,47 @@ class PandasTools(Toolkit):
             file_bytes = base64.b64decode(file_content)
             df = pd.read_csv(io.BytesIO(file_bytes))
             df_name = f"df_{file_name.replace('.csv', '').replace(' ', '_')}"
+            df_name = f"user_{self.user_id}_{df_name}" if self.user_id else df_name
             self.dataframes[df_name] = df
             logger.info(f"Loaded CSV: {df_name}, shape: {df.shape}")
+            
+             # Save to pgvector
+            self.save_to_pgvector(df_name, df)
+            
             return df_name
         except Exception as e:
             logger.error(f"Error loading CSV {file_name}: {str(e)}")
             raise
+    
+    def save_to_pgvector(self, df_name: str, df: pd.DataFrame):
+        if self.knowledge_base is None:
+            logger.error("Knowledge base not available. Cannot save to pgvector.")
+            return
 
+        # Convert DataFrame to string representation
+        df_string = df.to_string()
+
+        # Create a Document object
+        doc = Document(
+            content=df_string,
+            name=df_name,
+            meta_data={"type": "dataframe", "shape": str(df.shape)}
+        )
+
+        # Save to knowledge base
+        try:
+            self.knowledge_base.load_document(doc)
+            logger.info(f"Saved dataframe {df_name} to pgvector")
+        except Exception as e:
+            logger.error(f"Error saving dataframe {df_name} to pgvector: {str(e)}")
+            logger.exception("Traceback:")
+            
     def load_excel(self, file_name: str, file_content: str) -> str:
         try:
             file_bytes = base64.b64decode(file_content)
             df = pd.read_excel(io.BytesIO(file_bytes))
             df_name = f"df_{file_name.replace('.xlsx', '').replace('.xls', '').replace(' ', '_')}"
+            df_name = f"user_{self.user_id}_{df_name}" if self.user_id else df_name
             self.dataframes[df_name] = df
             logger.info(f"Loaded Excel: {df_name}, shape: {df.shape}")
             return df_name
@@ -46,8 +78,32 @@ class PandasTools(Toolkit):
             raise
 
     def list_dataframes(self) -> str:
-        return "\n".join([f"{name}: {df.shape}" for name, df in self.dataframes.items()])
-            
+        if self.user_id:
+            user_dfs = {name: df for name, df in self.dataframes.items() if name.startswith(f"user_{self.user_id}_")}
+        else:
+            user_dfs = self.dataframes
+        return "\n".join([f"{name}: {df.shape}" for name, df in user_dfs.items()])
+
+    def create_visualization(self, df_name: str, chart_type: str, x: str, y: str, title: str) -> str:
+        df = self.dataframes.get(df_name)
+        if df is None:
+            return "Dataframe not found"
+
+        try:
+            if chart_type == "line":
+                fig = px.line(df, x=x, y=y, title=title)
+            elif chart_type == "bar":
+                fig = px.bar(df, x=x, y=y, title=title)
+            elif chart_type == "scatter":
+                fig = px.scatter(df, x=x, y=y, title=title)
+            else:
+                return "Unsupported chart type"
+
+            return fig.to_json()
+        except Exception as e:
+            logger.error(f"Error creating visualization: {str(e)}")
+            return f"Error creating visualization: {str(e)}"
+                    
     def create_pandas_dataframe(
         self, dataframe_name: str, create_using_function: str, function_parameters: Dict[str, Any]
     ) -> str:

@@ -1,4 +1,6 @@
+import io
 from typing import List, Optional, Iterator, Dict, Any
+import pandas as pd
 from pydantic import BaseModel, ConfigDict
 from kr8.document import Document
 from kr8.document.reader.base import Reader
@@ -49,6 +51,9 @@ class AssistantKnowledge(BaseModel):
         logger.info("Creating collection")
         self.vector_db.create(collection=self.get_collection_name())
 
+    def load_document(self, document: Document, upsert: bool = False, skip_existing: bool = True) -> None:
+        self.load_documents(documents=[document], upsert=upsert, skip_existing=skip_existing)
+
     def load_documents(self, documents: List[Document], upsert: bool = False, skip_existing: bool = True) -> None:
         logger.info("Loading knowledge base")
         logger.info(f"Attempting to load {len(documents)} documents into knowledge base")
@@ -61,7 +66,7 @@ class AssistantKnowledge(BaseModel):
         logger.debug(f"Vector DB type: {type(self.vector_db)}")
 
         logger.debug("Creating collection")
-        self.vector_db.create()  # This will create the table if it doesn't exist
+        self.vector_db.create()  # Remove the collection argument
 
         documents_to_load = []
         for document in documents:
@@ -87,9 +92,6 @@ class AssistantKnowledge(BaseModel):
         else:
             logger.info("No new documents to load")
 
-    def load_document(self, document: Document, upsert: bool = False, skip_existing: bool = True) -> None:
-        self.load_documents(documents=[document], upsert=upsert, skip_existing=skip_existing)
-
     def load_dict(self, document: Dict[str, Any], upsert: bool = False, skip_existing: bool = True) -> None:
         self.load_documents(documents=[Document.from_dict(document)], upsert=upsert, skip_existing=skip_existing)
 
@@ -99,6 +101,15 @@ class AssistantKnowledge(BaseModel):
     def load_text(self, text: str, upsert: bool = False, skip_existing: bool = True) -> None:
         self.load_documents(documents=[Document(content=text)], upsert=upsert, skip_existing=skip_existing)
 
+    def get_dataframe(self, df_name: str) -> Optional[pd.DataFrame]:
+        documents = self.search(df_name, num_documents=1)
+        if documents:
+            doc = documents[0]
+            if doc.meta_data.get("type") == "dataframe":
+                # Convert string representation back to DataFrame
+                return pd.read_csv(io.StringIO(doc.content), sep="\s+")
+        return None
+    
     def exists(self) -> bool:
         if self.vector_db is None:
             logger.warning("No vector db provided")
@@ -109,4 +120,4 @@ class AssistantKnowledge(BaseModel):
         if self.vector_db is None:
             logger.warning("No vector db available")
             return True
-        return self.vector_db.clear()
+        return self.vector_db.clear(collection=self.get_collection_name())

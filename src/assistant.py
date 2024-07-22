@@ -18,7 +18,7 @@ from kr8.llm.offline_llm import OfflineLLM
 from kr8.llm.ollama import Ollama
 from kr8.llm.openai import OpenAIChat
 from kr8.storage.assistant.postgres import PgAssistantStorage
-from kr8.tools import Toolkit
+from kr8.tools import Toolkit, Function
 from kr8.tools.calculator import Calculator
 from kr8.tools.duckduckgo import DuckDuckGo
 from kr8.tools.exa import ExaTools
@@ -28,6 +28,9 @@ from kr8.tools.yfinance import YFinanceTools
 from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
 from kr8.tools.pandas import PandasTools
+
+import plotly.express as px
+import plotly.graph_objects as go
 
 load_dotenv()
 
@@ -54,6 +57,83 @@ def is_ollama_available():
     except httpx.RequestError as e:
         print(f"Request error: {e}")
         return False
+
+class EnhancedFinancialAnalyst(Assistant):
+    def __init__(self, llm, tools):
+        super().__init__(
+            name="Enhanced Financial Analyst",
+            role="Analyze financial data and provide insights with visualizations",
+            llm=llm,
+            tools=tools,
+            instructions=[
+                # ... existing instructions ...
+                "Create visualizations using Plotly when appropriate to illustrate financial trends and insights.",
+                "Use the create_visualization method from PandasTools to generate charts and graphs.",
+            ],
+            expected_output=dedent(
+                """\
+                <financial_analysis>
+                ## Summary of Findings
+                {Provide a brief overview of key insights}
+
+                ## Detailed Analysis
+                {Present your detailed analysis here, using subheadings as appropriate}
+
+                ## Data Visualization
+                {Include Plotly chart JSON here if a visualization was created}
+
+                ## Recommendations
+                {Offer actionable recommendations based on the analysis}
+
+                ## Additional Information Needed
+                {If more data is required, specify what information would be helpful}
+                </financial_analysis>
+                """
+            ),
+            markdown=True,
+        )
+
+# Add this new class
+class EnhancedDataAnalyst(Assistant):
+    def __init__(self, llm, tools):
+        super().__init__(
+            name="Enhanced Data Analyst",
+            role="Analyze data from uploaded CSV files with visualizations",
+            llm=llm,
+            tools=tools,
+            instructions=[
+                # ... existing instructions ...
+                "Create visualizations using Plotly when appropriate to illustrate data trends and insights.",
+                "Use the create_visualization method from PandasTools to generate charts and graphs.",
+            ],
+            expected_output=dedent(
+                """\
+                <analysis_output>
+                ## Data Analysis Results
+
+                ### Summary Statistics
+                {Provide summary statistics of the analyzed data}
+
+                ### Key Findings
+                - {Key finding 1}
+                - {Key finding 2}
+                - {Key finding 3}
+
+                ### Data Visualization
+                {Include Plotly chart JSON here if a visualization was created}
+
+                ### Recommendations
+                {Provide any recommendations based on the analysis}
+
+                </analysis_output>
+                """
+            ),
+        )
+
+
+def create_pandas_tools(user_id):
+    pandas_tools = PandasTools(user_id=user_id)
+    return pandas_tools
     
 def get_llm_os(
     llm_id: str = "gpt-4o",
@@ -89,11 +169,18 @@ def get_llm_os(
         vector_db=PgVector2(
             db_url=db_url,
             collection=f"user_{user_id}_documents" if user_id is not None else "llm_os_documents",
-            embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2", dimensions=1536),
+            embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2"),
         ),
         num_documents=3,
         user_id=user_id,
     )
+
+    pandas_tools = PandasTools(user_id=user_id, knowledge_base=knowledge_base)
+    tools = [
+        create_pandas_tools(user_id),
+        Calculator(),
+        ExaTools(num_results=5, text_length_limit=2000),        
+    ]
 
     # Add selected tools
     if calculator:
@@ -173,101 +260,33 @@ def get_llm_os(
     elif llm_id == "gpt-4o":
         llm = OpenAIChat(model="gpt-4o")
     else:
-        raise ValueError(f"Unknown LLM model: {llm_id}")
-    
-    # Add team members available to the LLM OS
-    team: List[Assistant] = []
+        raise ValueError(f"Unknown LLM model: {llm_id}")    
     
     if financial_analyst:        
-        _financial_analyst = Assistant(
-            name="Financial Analyst",
-            role="Analyze financial data and provide insights",
+        _financial_analyst = EnhancedFinancialAnalyst(
             llm=llm,
             tools=[pandas_tools],
-            instructions=[
-                "You have access to financial data through PandasTools.",
-                "To list available dataframes, use: pandas_tools.list_dataframes()",
-                "To access a dataframe, use: pandas_tools.dataframes['dataframe_name']",
-                "Analyze the data in these dataframes to answer financial questions.",
-                "If no data is available, inform the user and ask them to upload relevant files.",
-                "Provide clear explanations of your analysis and insights.",
-                "Use financial terminology appropriate for executives and managers.",
-                "When possible, suggest actionable recommendations based on your analysis.",
-                "If you need more information or clarification, don't hesitate to ask the user.",
-            ],
-            expected_output=dedent(
-                """\
-                <financial_analysis>
-                ## Summary of Findings
-                {Provide a brief overview of key insights}
-
-                ## Detailed Analysis
-                {Present your detailed analysis here, using subheadings as appropriate}
-
-                ## Data Visualization
-                {If applicable, describe or provide code for relevant charts or graphs}
-
-                ## Recommendations
-                {Offer actionable recommendations based on the analysis}
-
-                ## Additional Information Needed
-                {If more data is required, specify what information would be helpful}
-                </financial_analysis>
-                """
-            ),
-            markdown=True,
         )
         team.append(_financial_analyst)
-        logger.info("Financial Analyst added to the team")
+        logger.info("Enhanced Financial Analyst added to the team")
         extra_instructions.append(
-            "To analyze financial data, delegate the task to the `Financial Analyst`. "
-            "The Financial Analyst can access and analyze uploaded CSV and Excel files."
+            "To analyze financial data with visualizations, delegate the task to the `Enhanced Financial Analyst`. "
+            "The Enhanced Financial Analyst can access and analyze uploaded CSV and Excel files, and create visualizations."
         )
     else:
-        logger.info("Financial Analyst not enabled")            
+        logger.info("Financial Analyst not enabled")
             
     if data_analyst:
-        _data_analyst = Assistant(
-            name="Data Analyst",
-            role="Analyze financial data from uploaded CSV files",
+        _data_analyst = EnhancedDataAnalyst(
             llm=llm,
             tools=[pandas_tools],
-            instructions=[
-                "Use the PandasTools to analyze financial data from uploaded CSV files.",
-                "You can access DataFrames using their names (e.g., df_financial_data).",
-                "Perform calculations, generate statistics, and create visualizations as needed.",
-                "When asked about financial data, check if there's a relevant DataFrame available.",
-                "Use pandas functions to perform data analysis tasks.",
-                "Provide clear explanations of your findings and any visualizations you create.",
-            ],
-            expected_output=dedent(
-                """\
-                <analysis_output>
-                ## Data Analysis Results
-
-                ### Summary Statistics
-                {Provide summary statistics of the analyzed data}
-
-                ### Key Findings
-                - {Key finding 1}
-                - {Key finding 2}
-                - {Key finding 3}
-
-                ### Visualizations
-                {If applicable, describe or provide code for relevant visualizations}
-
-                ### Recommendations
-                {Provide any recommendations based on the analysis}
-
-                </analysis_output>
-                """
-            ),
         )
         team.append(_data_analyst)
         extra_instructions.append(
-            "To analyze financial data from uploaded CSV files, delegate the task to the `Data Analyst`. "
+            "To analyze data from uploaded CSV files with visualizations, delegate the task to the `Enhanced Data Analyst`. "
             "Return the analysis in the <analysis_output> format to the user without additional text."
         )
+        
     if python_assistant:
         _python_assistant = PythonAssistant(
             name="Python Assistant",
@@ -278,6 +297,7 @@ def get_llm_os(
         )
         team.append(_python_assistant)
         extra_instructions.append("To write and run python code, delegate the task to the `Python Assistant`.")
+        
     if research_assistant:
         _research_assistant = Assistant(
             name="Research Assistant",
@@ -328,6 +348,7 @@ def get_llm_os(
             "To write a research report, delegate the task to the `Research Assistant`. "
             "Return the report in the <report_format> to the user as is, without any additional text like 'here is the report'."
         )        
+        
     if maintenance_engineer:
         _maintenance_engineer = Assistant(
             name="Maintenance Assistant",

@@ -39,6 +39,20 @@ def login(email: str, password: str) -> bool:
     except requests.exceptions.RequestException as e:
         st.error(f"Connection error: {str(e)}")
         return False
+
+def get_user_id(email: str = None) -> int:
+    """
+    Get the user ID from the session state.
+    If email is provided, it's used for logging purposes only.
+    """
+    user_id = st.session_state.get("user_id")
+    if user_id is None:
+        if email:
+            st.error(f"User ID not found for email: {email}")
+        else:
+            st.error("User ID not found. Please log in again.")
+        return None
+    return user_id
     
 def register(email, password):
     response = requests.post(f"{BACKEND_URL}/register", json={"email": email, "password": password})
