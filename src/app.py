@@ -117,13 +117,20 @@ def initialize_app():
             
             status_placeholder = st.empty()
             
-            initialization_messages = [
-                "Digging burrows...",
-                "Gathering meerkat wisdom...",                
-                "Teaching meerkats to type...",
-                "Perfecting meerkat accents...",
-                "Stocking up on bug snacks...",
-                "Setting up meerkat alert system..."
+            initialization_messages = [                                
+                "Git pulling from burrow...",                
+                "Containerizing meerkat snacks...",
+                "Deploying anti-mongoose firewall...",
+                "Optimizing tail recursion...",
+                "Parsing meerkat squeaks...",
+                "Overclocking tiny paw-cessors...",                
+                "Untangling spaghetti code...",                
+                "Buffering sandstorm data...",                
+                "Caching bug locations...",
+                "Pair programming with meerkats...",
+                "Agile sprinting from eagles...",
+                "Mocking mongoose objects...",
+                "Stress testing sand castles..."
             ]
 
             # Insert CSS for animation
@@ -137,6 +144,7 @@ def initialize_app():
 
             .fade {
                 animation: fadeInOut 3s infinite;
+                color: #FF4136;
             }
             </style>
             """
