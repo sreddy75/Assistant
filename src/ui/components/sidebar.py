@@ -26,38 +26,9 @@ def initialize_session_state():
 
 def render_sidebar():
     initialize_session_state()    
-                                               
-    # Model Type Selection
-    model_type = st.sidebar.radio("Select Model Type", ["Closed", "Open Source"])
-
-    # Model Selection based on type
-    if model_type == "Closed": # Closed Source
-        llm_options = ["gpt-4o", "gpt-3.5-turbo"]
-        llm_id = st.sidebar.selectbox("Select Closed Source Model", options=llm_options)
-    else: 
-        llm_options = ["tinyllama"]
-        llm_id = st.sidebar.selectbox("Select Open Source Model", options=llm_options)
-    
-
-    # Update session state and restart assistant if necessary
-    if "llm_id" not in st.session_state:
-        st.session_state["llm_id"] = llm_id
-    elif st.session_state["llm_id"] != llm_id:
-        st.session_state["llm_id"] = llm_id
-        restart_assistant()
-
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
-
-    # Rest of your existing sidebar code...
-    with st.sidebar.expander("Available Tools", expanded=False):
-    #     if "file_tools_enabled" not in st.session_state:
-    #         st.session_state["file_tools_enabled"] = False
-    #     file_tools_enabled = st.session_state["file_tools_enabled"]
-    #     file_tools = st.checkbox("File Tools", value=file_tools_enabled, help="Enable file tools.")
-    #     if file_tools_enabled != file_tools:
-    #         st.session_state["file_tools_enabled"] = file_tools
-    #         restart_assistant()
-        
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
+    with st.sidebar.expander("Available Assistants", expanded=False):                                                                       
+            
         if "web_search_enabled" not in st.session_state:
             st.session_state["web_search_enabled"] = True
         web_search_enabled = st.session_state["web_search_enabled"]
@@ -65,8 +36,7 @@ def render_sidebar():
         if web_search_enabled != web_search:
             st.session_state["web_search_enabled"] = web_search
             restart_assistant()
-
-    with st.sidebar.expander("Select Team Members", expanded=False):
+    
         if "research_assistant_enabled" not in st.session_state:
             st.session_state["research_assistant_enabled"] = True
         research_assistant_enabled = st.session_state["research_assistant_enabled"]
@@ -114,9 +84,7 @@ def render_sidebar():
         investment_assistant = st.checkbox("Investment Assistant", value=investment_assistant_enabled, help="Enable the investment assistant. NOTE: This is not financial advice.")
         if investment_assistant_enabled != investment_assistant:
             st.session_state["investment_assistant_enabled"] = investment_assistant
-            restart_assistant()        
-
-        st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
+            restart_assistant()                
 
         if "product_owner_enabled" not in st.session_state:
             st.session_state["product_owner_enabled"] = True
@@ -142,3 +110,24 @@ def render_sidebar():
             st.session_state["quality_analyst_enabled"] = quality_analyst
             restart_assistant()    
                 
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
+                    
+    with st.sidebar.expander("Select model:", expanded=False):
+        # Model Type Selection
+        model_type = st.sidebar.radio("Select Model Type", ["Closed", "Open Source"])
+
+        # Model Selection based on type
+        if model_type == "Closed": # Closed Source
+            llm_options = ["gpt-4o", "gpt-3.5-turbo"]
+            llm_id = st.sidebar.selectbox("Select Closed Source Model", options=llm_options)
+        else: 
+            llm_options = ["tinyllama"]
+            llm_id = st.sidebar.selectbox("Select Open Source Model", options=llm_options)
+        
+
+        # Update session state and restart assistant if necessary
+        if "llm_id" not in st.session_state:
+            st.session_state["llm_id"] = llm_id
+        elif st.session_state["llm_id"] != llm_id:
+            st.session_state["llm_id"] = llm_id
+            restart_assistant()                

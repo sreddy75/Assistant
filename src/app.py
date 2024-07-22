@@ -159,7 +159,7 @@ def initialize_app():
             perform_heavy_initialization()
 
             # Final status message
-            status_placeholder.markdown("<h3 style='text-align: center;'>Initialization complete!</h3>", unsafe_allow_html=True)
+            status_placeholder.markdown("<h3 style='text-align: center; color: #00FF00;'>Initialization complete!</h3>", unsafe_allow_html=True)
             time.sleep(2)
 
         st.session_state.initialization_complete = True
@@ -227,24 +227,29 @@ def check_token_validity():
             logout()
             st.rerun()
             
-def main_app():
-    st.sidebar.title("Compare the Meerkat")
-    if 'email' in st.session_state:
-        st.sidebar.write(f"Welcome, {st.session_state['email']}!")
-    else:   
-        st.sidebar.write("Welcome!")
+def main_app():    
+    col1, col2 = st.sidebar.columns([2, 1])
 
-    # Add logout link to sidebar
-    if st.sidebar.button("Logout"):
-        logout()
-        st.session_state.pop('user_id', None)
-        st.session_state.pop('email', None)
-        st.rerun()        
+    # Display welcome message in the first (wider) column
+    with col1:
+        if 'email' in st.session_state:
+            st.write(f"Hi, {st.session_state['email']}!")
+        else:   
+            st.write("Welcome!")
 
-    # Render the sidebar (this will handle LLM selection and other options)
-    render_sidebar()
-
+    # Display logout button in the second (narrower) column
+    with col2:
+        if st.button("Logout"):
+            logout()
+            st.session_state.pop('user_id', None)
+            st.session_state.pop('email', None)
+            st.rerun()
+    
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
+    
     render_chat(user_id=st.session_state.get('user_id'))
+    
+    render_sidebar()
 
 
 

@@ -320,11 +320,11 @@ def manage_knowledge_base(llm_os):
             logger.info("Knowledge base cleared")
 
     # Add a button to list available dataframes
-    if st.sidebar.button("List Available Dataframes"):
-        list_available_dataframes(llm_os)
+    # if st.sidebar.button("List Available Dataframes"):
+    #     list_available_dataframes(llm_os)
 
-    # Add the debug button here
-    debug_knowledge_base(llm_os)
+    # # Add the debug button here
+    # debug_knowledge_base(llm_os)
     
     if llm_os.team and len(llm_os.team) > 0:
         for team_member in llm_os.team:
