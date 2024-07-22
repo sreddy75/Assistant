@@ -145,13 +145,13 @@ def get_llm_os(
     data_analyst: bool = True,
     python_assistant: bool = False,
     research_assistant: bool = False,
-    maintenance_engineer: bool = True,
+    maintenance_engineer: bool = False,
     financial_analyst: bool = True,
-    company_analyst: bool = True,
+    company_analyst: bool = False,
     product_owner: bool = True,
     business_analyst: bool = True,
     quality_analyst: bool = True,
-    investment_assistant: bool = True,
+    investment_assistant: bool = False,
     user_id: Optional[int] = None,
     run_id: Optional[str] = None,
     debug_mode: bool = True,    
@@ -161,8 +161,7 @@ def get_llm_os(
 
     # Add tools available to the LLM OS
     tools: List[Toolkit] = []
-    extra_instructions: List[str] = []
-        
+    extra_instructions: List[str] = []        
 
     # Initialize the knowledge base
     knowledge_base = AssistantKnowledge(
@@ -336,7 +335,7 @@ def get_llm_os(
             - [Reference 2](Link to Source)
             </report_format>
             """
-            ),
+            ),            
             tools=[ExaTools(num_results=5, text_length_limit=1000)],
             # This setting tells the LLM to format messages in markdown
             markdown=True,
@@ -667,236 +666,236 @@ def get_llm_os(
             "If the user requests more information on a specific section, refer back to the detailed analysis or ask the Company Analyst for further elaboration on that section.",
         ])
 
-        if product_owner:
-            _product_owner = Assistant(
-                name="Product Owner",
-                role="Guide product vision and prioritize product backlog",
-                llm=llm,
-                search_knowledge=True,
-                add_references_to_prompt=True,
-                description="You are an experienced Product Owner in an agile software development team. Your role is to define the product vision, manage the product backlog, and ensure the team delivers maximum value to stakeholders.",
-                instructions=[
-                    "1. Always start by searching the knowledge base for the most recent business case or statement of work for the feature in question.",
-                    "2. Analyze the business case to extract key product requirements and priorities.",
-                    "3. Create and refine user stories based on the business requirements.",
-                    "4. Prioritize features and user stories in the product backlog.",
-                    "5. Provide clear acceptance criteria for each user story.",
-                    "6. Collaborate with stakeholders to gather feedback and validate product decisions.",
-                    "7. Assist in creating a product roadmap aligned with the overall business strategy.",
-                    "8. Help resolve any conflicts between business needs and technical constraints.",
-                    "9. Provide guidance on MVP (Minimum Viable Product) scope when applicable.",
-                    "10. Assist in defining and tracking key performance indicators (KPIs) for the product.",
-                    "11. When using information from the knowledge base, always cite the source.",
-                    "12. If any information is unclear or missing, identify what additional details are needed from stakeholders."
-                ],
-                expected_output=dedent(
-                    """
-                    <product_owner_output>
-                    ## Product Vision
-                    {Concise statement of the product vision based on the business case}
+    if product_owner:
+        _product_owner = Assistant(
+            name="Product Owner",
+            role="Guide product vision and prioritize product backlog",
+            llm=llm,
+            search_knowledge=True,
+            add_references_to_prompt=True,
+            description="You are an experienced Product Owner in an agile software development team. Your role is to define the product vision, manage the product backlog, and ensure the team delivers maximum value to stakeholders.",
+            instructions=[
+                "1. Always start by searching the knowledge base for the most recent business case or statement of work for the feature in question.",
+                "2. Analyze the business case to extract key product requirements and priorities.",
+                "3. Create and refine user stories based on the business requirements.",
+                "4. Prioritize features and user stories in the product backlog.",
+                "5. Provide clear acceptance criteria for each user story.",
+                "6. Collaborate with stakeholders to gather feedback and validate product decisions.",
+                "7. Assist in creating a product roadmap aligned with the overall business strategy.",
+                "8. Help resolve any conflicts between business needs and technical constraints.",
+                "9. Provide guidance on MVP (Minimum Viable Product) scope when applicable.",
+                "10. Assist in defining and tracking key performance indicators (KPIs) for the product.",
+                "11. When using information from the knowledge base, always cite the source.",
+                "12. If any information is unclear or missing, identify what additional details are needed from stakeholders."
+            ],
+            expected_output=dedent(
+                """
+                <product_owner_output>
+                ## Product Vision
+                {Concise statement of the product vision based on the business case}
 
-                    ## User Stories
-                    1. {User story 1}
-                    - Acceptance Criteria:
-                        * {Criterion 1}
-                        * {Criterion 2}
-                    2. {User story 2}
-                    - Acceptance Criteria:
-                        * {Criterion 1}
-                        * {Criterion 2}
+                ## User Stories
+                1. {User story 1}
+                - Acceptance Criteria:
+                    * {Criterion 1}
+                    * {Criterion 2}
+                2. {User story 2}
+                - Acceptance Criteria:
+                    * {Criterion 1}
+                    * {Criterion 2}
 
-                    ## Prioritized Backlog
-                    1. {High priority feature/story}
-                    2. {Medium priority feature/story}
-                    3. {Lower priority feature/story}
+                ## Prioritized Backlog
+                1. {High priority feature/story}
+                2. {Medium priority feature/story}
+                3. {Lower priority feature/story}
 
-                    ## MVP Scope
-                    {Definition of the Minimum Viable Product based on the business case}
+                ## MVP Scope
+                {Definition of the Minimum Viable Product based on the business case}
 
-                    ## Key Performance Indicators
-                    1. {KPI 1 with target}
-                    2. {KPI 2 with target}
+                ## Key Performance Indicators
+                1. {KPI 1 with target}
+                2. {KPI 2 with target}
 
-                    ## Open Questions/Additional Information Needed
-                    1. {Question or information gap 1}
-                    2. {Question or information gap 2}
+                ## Open Questions/Additional Information Needed
+                1. {Question or information gap 1}
+                2. {Question or information gap 2}
 
-                    ## References
-                    {Citations of relevant sections from the business case or statement of work}
-                    </product_owner_output>
-                    """
-                ),
-                tools=[ExaTools(num_results=10, text_length_limit=2000)],
-                markdown=True,
-                add_datetime_to_instructions=True,
-                debug_mode=debug_mode,
-                knowledge_base = knowledge_base
-            )
-            team.append(_product_owner)
-            extra_instructions.append(
-                "To get product ownership insights or backlog prioritization, delegate the task to the `Product Owner`. "
-                "Return the output in the <product_owner_output> format to the user without additional text."
-            )
+                ## References
+                {Citations of relevant sections from the business case or statement of work}
+                </product_owner_output>
+                """
+            ),
+            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            markdown=True,
+            add_datetime_to_instructions=True,
+            debug_mode=debug_mode,
+            knowledge_base = knowledge_base
+        )
+        team.append(_product_owner)
+        extra_instructions.append(
+            "To get product ownership insights or backlog prioritization, delegate the task to the `Product Owner`. "
+            "Return the output in the <product_owner_output> format to the user without additional text."
+        )
 
-        if business_analyst:
-            _business_analyst = Assistant(
-                name="Business Analyst",
-                role="Analyze business requirements and translate them into functional specifications",
-                llm=llm,
-                search_knowledge=True,
-                add_references_to_prompt=True,
-                description="You are a skilled Business Analyst in an agile software development team. Your role is to analyze business requirements, create detailed functional specifications, and ensure clear communication between stakeholders and the development team.",
-                instructions=[
-                    "1. Begin by searching the knowledge base for the relevant business case or statement of work.",
-                    "2. Analyze the business case to identify key business requirements and objectives.",
-                    "3. Create detailed functional specifications based on the business requirements.",
-                    "4. Identify and document business processes affected by the new feature.",
-                    "5. Create user flow diagrams or wireframes when necessary to illustrate functionality.",
-                    "6. Identify potential risks or challenges in implementing the business requirements.",
-                    "7. Suggest data requirements and potential integrations needed for the feature.",
-                    "8. Provide clear definitions of business rules and logic.",
-                    "9. Assist in creating test scenarios based on the business requirements.",
-                    "10. Identify any gaps in the business requirements that need clarification.",
-                    "11. When using information from the knowledge base, always cite the source.",
-                    "12. If any information is ambiguous or missing, list questions that need to be addressed by stakeholders."
-                ],
-                expected_output=dedent(
-                    """
-                    <business_analyst_output>
-                    ## Business Objectives
-                    {List of key business objectives identified from the business case}
+    if business_analyst:
+        _business_analyst = Assistant(
+            name="Business Analyst",
+            role="Analyze business requirements and translate them into functional specifications",
+            llm=llm,
+            search_knowledge=True,
+            add_references_to_prompt=True,
+            description="You are a skilled Business Analyst in an agile software development team. Your role is to analyze business requirements, create detailed functional specifications, and ensure clear communication between stakeholders and the development team.",
+            instructions=[
+                "1. Begin by searching the knowledge base for the relevant business case or statement of work.",
+                "2. Analyze the business case to identify key business requirements and objectives.",
+                "3. Create detailed functional specifications based on the business requirements.",
+                "4. Identify and document business processes affected by the new feature.",
+                "5. Create user flow diagrams or wireframes when necessary to illustrate functionality.",
+                "6. Identify potential risks or challenges in implementing the business requirements.",
+                "7. Suggest data requirements and potential integrations needed for the feature.",
+                "8. Provide clear definitions of business rules and logic.",
+                "9. Assist in creating test scenarios based on the business requirements.",
+                "10. Identify any gaps in the business requirements that need clarification.",
+                "11. When using information from the knowledge base, always cite the source.",
+                "12. If any information is ambiguous or missing, list questions that need to be addressed by stakeholders."
+            ],
+            expected_output=dedent(
+                """
+                <business_analyst_output>
+                ## Business Objectives
+                {List of key business objectives identified from the business case}
 
-                    ## Functional Specifications
-                    1. {Specification 1}
-                    - Details: {Explanation of the specification}
-                    - Business Rules: {Associated business rules}
-                    2. {Specification 2}
-                    - Details: {Explanation of the specification}
-                    - Business Rules: {Associated business rules}
+                ## Functional Specifications
+                1. {Specification 1}
+                - Details: {Explanation of the specification}
+                - Business Rules: {Associated business rules}
+                2. {Specification 2}
+                - Details: {Explanation of the specification}
+                - Business Rules: {Associated business rules}
 
-                    ## Affected Business Processes
-                    1. {Process 1}: {How it's affected}
-                    2. {Process 2}: {How it's affected}
+                ## Affected Business Processes
+                1. {Process 1}: {How it's affected}
+                2. {Process 2}: {How it's affected}
 
-                    ## Data Requirements
-                    1. {Data requirement 1}
-                    2. {Data requirement 2}
+                ## Data Requirements
+                1. {Data requirement 1}
+                2. {Data requirement 2}
 
-                    ## Potential Integrations
-                    1. {Integration point 1}
-                    2. {Integration point 2}
+                ## Potential Integrations
+                1. {Integration point 1}
+                2. {Integration point 2}
 
-                    ## Risks and Challenges
-                    1. {Risk/Challenge 1}: {Potential mitigation strategy}
-                    2. {Risk/Challenge 2}: {Potential mitigation strategy}
+                ## Risks and Challenges
+                1. {Risk/Challenge 1}: {Potential mitigation strategy}
+                2. {Risk/Challenge 2}: {Potential mitigation strategy}
 
-                    ## Test Scenarios
-                    1. {Test scenario 1}
-                    2. {Test scenario 2}
+                ## Test Scenarios
+                1. {Test scenario 1}
+                2. {Test scenario 2}
 
-                    ## Questions for Stakeholders
-                    1. {Question 1}
-                    2. {Question 2}
+                ## Questions for Stakeholders
+                1. {Question 1}
+                2. {Question 2}
 
-                    ## References
-                    {Citations of relevant sections from the business case or statement of work}
-                    </business_analyst_output>
-                    """
-                ),
-                tools=[ExaTools(num_results=10, text_length_limit=2000)],
-                markdown=True,
-                add_datetime_to_instructions=True,
-                debug_mode=debug_mode,
-                knowledge_base = knowledge_base
-            )
-            team.append(_business_analyst)
-            extra_instructions.append(
-                "To get business analysis insights or functional specifications, delegate the task to the `Business Analyst`. "
-                "Return the output in the <business_analyst_output> format to the user without additional text."
-            )
+                ## References
+                {Citations of relevant sections from the business case or statement of work}
+                </business_analyst_output>
+                """
+            ),
+            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            markdown=True,
+            add_datetime_to_instructions=True,
+            debug_mode=debug_mode,
+            knowledge_base = knowledge_base
+        )
+        team.append(_business_analyst)
+        extra_instructions.append(
+            "To get business analysis insights or functional specifications, delegate the task to the `Business Analyst`. "
+            "Return the output in the <business_analyst_output> format to the user without additional text."
+        )
 
-        if quality_analyst:
-            _quality_analyst = Assistant(
-                name="Quality Analyst",
-                role="Ensure software quality through comprehensive testing strategies",
-                llm=llm,
-                search_knowledge=True,
-                add_references_to_prompt=True,
-                description="You are a meticulous Quality Analyst in an agile software development team. Your role is to design and implement testing strategies, create test cases, and ensure the overall quality of the software product.",
-                instructions=[
-                    "1. Start by searching the knowledge base for the relevant business case, statement of work, and functional specifications.",
-                    "2. Analyze the business requirements and functional specifications to identify testable aspects of the feature.",
-                    "3. Develop a comprehensive test strategy covering various testing types (e.g., functional, integration, performance, security).",
-                    "4. Create detailed test cases based on the functional specifications and user stories.",
-                    "5. Identify potential edge cases and boundary conditions for thorough testing.",
-                    "6. Suggest test data requirements for effective testing.",
-                    "7. Outline a test execution plan, including any necessary test environments or tools.",
-                    "8. Identify potential automation opportunities for repetitive tests.",
-                    "9. Provide a framework for bug reporting and tracking.",
-                    "10. Suggest acceptance criteria for quality assurance sign-off.",
-                    "11. When using information from the knowledge base, always cite the source.",
-                    "12. If any information is unclear or missing for effective testing, list questions that need to be addressed."
-                ],
-                expected_output=dedent(
-                    """
-                    <quality_analyst_output>
-                    ## Test Strategy
-                    {Overview of the testing approach for the feature}
+    if quality_analyst:
+        _quality_analyst = Assistant(
+            name="Quality Analyst",
+            role="Ensure software quality through comprehensive testing strategies",
+            llm=llm,
+            search_knowledge=True,
+            add_references_to_prompt=True,
+            description="You are a meticulous Quality Analyst in an agile software development team. Your role is to design and implement testing strategies, create test cases, and ensure the overall quality of the software product.",
+            instructions=[
+                "1. Start by searching the knowledge base for the relevant business case, statement of work, and functional specifications.",
+                "2. Analyze the business requirements and functional specifications to identify testable aspects of the feature.",
+                "3. Develop a comprehensive test strategy covering various testing types (e.g., functional, integration, performance, security).",
+                "4. Create detailed test cases based on the functional specifications and user stories.",
+                "5. Identify potential edge cases and boundary conditions for thorough testing.",
+                "6. Suggest test data requirements for effective testing.",
+                "7. Outline a test execution plan, including any necessary test environments or tools.",
+                "8. Identify potential automation opportunities for repetitive tests.",
+                "9. Provide a framework for bug reporting and tracking.",
+                "10. Suggest acceptance criteria for quality assurance sign-off.",
+                "11. When using information from the knowledge base, always cite the source.",
+                "12. If any information is unclear or missing for effective testing, list questions that need to be addressed."
+            ],
+            expected_output=dedent(
+                """
+                <quality_analyst_output>
+                ## Test Strategy
+                {Overview of the testing approach for the feature}
 
-                    ## Test Cases
-                    1. {Test case 1}
-                    - Preconditions: {List of preconditions}
-                    - Steps: {Detailed test steps}
-                    - Expected Result: {What should happen}
-                    2. {Test case 2}
-                    - Preconditions: {List of preconditions}
-                    - Steps: {Detailed test steps}
-                    - Expected Result: {What should happen}
+                ## Test Cases
+                1. {Test case 1}
+                - Preconditions: {List of preconditions}
+                - Steps: {Detailed test steps}
+                - Expected Result: {What should happen}
+                2. {Test case 2}
+                - Preconditions: {List of preconditions}
+                - Steps: {Detailed test steps}
+                - Expected Result: {What should happen}
 
-                    ## Edge Cases and Boundary Conditions
-                    1. {Edge case 1}: {How to test it}
-                    2. {Edge case 2}: {How to test it}
+                ## Edge Cases and Boundary Conditions
+                1. {Edge case 1}: {How to test it}
+                2. {Edge case 2}: {How to test it}
 
-                    ## Test Data Requirements
-                    1. {Test data set 1}
-                    2. {Test data set 2}
+                ## Test Data Requirements
+                1. {Test data set 1}
+                2. {Test data set 2}
 
-                    ## Test Execution Plan
-                    1. Test Environment: {Required test environment setup}
-                    2. Test Tools: {List of necessary testing tools}
-                    3. Test Schedule: {Proposed testing timeline}
+                ## Test Execution Plan
+                1. Test Environment: {Required test environment setup}
+                2. Test Tools: {List of necessary testing tools}
+                3. Test Schedule: {Proposed testing timeline}
 
-                    ## Automation Opportunities
-                    1. {Test scenario suitable for automation 1}
-                    2. {Test scenario suitable for automation 2}
+                ## Automation Opportunities
+                1. {Test scenario suitable for automation 1}
+                2. {Test scenario suitable for automation 2}
 
-                    ## Bug Reporting Framework
-                    {Outline of how bugs should be reported and tracked}
+                ## Bug Reporting Framework
+                {Outline of how bugs should be reported and tracked}
 
-                    ## Quality Acceptance Criteria
-                    1. {Criterion 1}
-                    2. {Criterion 2}
+                ## Quality Acceptance Criteria
+                1. {Criterion 1}
+                2. {Criterion 2}
 
-                    ## Questions for Clarification
-                    1. {Question 1}
-                    2. {Question 2}
+                ## Questions for Clarification
+                1. {Question 1}
+                2. {Question 2}
 
-                    ## References
-                    {Citations of relevant sections from the business case, statement of work, or functional specifications}
-                    </quality_analyst_output>
-                    """
-                ),
-                tools=[ExaTools(num_results=10, text_length_limit=2000)],
-                markdown=True,
-                add_datetime_to_instructions=True,
-                debug_mode=debug_mode,
-                knowledge_base = knowledge_base
-            )
-            team.append(_quality_analyst)
-            extra_instructions.append(
-                "To get quality assurance insights or testing strategies, delegate the task to the `Quality Analyst`. "
-                "Return the output in the <quality_analyst_output> format to the user without additional text."
-            )
+                ## References
+                {Citations of relevant sections from the business case, statement of work, or functional specifications}
+                </quality_analyst_output>
+                """
+            ),
+            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            markdown=True,
+            add_datetime_to_instructions=True,
+            debug_mode=debug_mode,
+            knowledge_base = knowledge_base
+        )
+        team.append(_quality_analyst)
+        extra_instructions.append(
+            "To get quality assurance insights or testing strategies, delegate the task to the `Quality Analyst`. "
+            "Return the output in the <quality_analyst_output> format to the user without additional text."
+        )
 
     try:        
         def log_system_resources():

@@ -7,12 +7,12 @@ from ui.utils.helper import restart_assistant
 def initialize_session_state():
     if "web_search_enabled" not in st.session_state:
         st.session_state.web_search_enabled = True
-    if "research_assistant_enabled" not in st.session_state:
-        st.session_state.research_assistant_enabled = True
-    if "company_analyst_enabled" not in st.session_state:
-        st.session_state.company_analyst_enabled = True
-    if "investment_assistant_enabled" not in st.session_state:
-        st.session_state.investment_assistant_enabled = True
+    # if "research_assistant_enabled" not in st.session_state:
+    #     st.session_state.research_assistant_enabled = True
+    # if "company_analyst_enabled" not in st.session_state:
+    #     st.session_state.company_analyst_enabled = True
+    # if "investment_assistant_enabled" not in st.session_state:
+    #     st.session_state.investment_assistant_enabled = True
     if "product_owner_enabled" not in st.session_state:
         st.session_state.product_owner_enabled = True
     if "business_analyst_enabled" not in st.session_state:
@@ -20,8 +20,7 @@ def initialize_session_state():
     if "quality_analyst_enabled" not in st.session_state:
         st.session_state.quality_analyst_enabled = True
     if 'pandas_tools' not in st.session_state:
-        st.session_state.pandas_tools = PandasTools()
-    pandas_tools = st.session_state.pandas_tools
+        st.session_state.pandas_tools = PandasTools()        
         
 
 def render_sidebar():
@@ -30,20 +29,20 @@ def render_sidebar():
     with st.sidebar.expander("Available Assistants", expanded=False):                                                                       
             
         if "web_search_enabled" not in st.session_state:
-            st.session_state["web_search_enabled"] = True
+            st.session_state["web_search_enabled"] = False
         web_search_enabled = st.session_state["web_search_enabled"]
         web_search = st.checkbox("Web Search", value=web_search_enabled, help="Enable web search using DuckDuckGo.")
         if web_search_enabled != web_search:
             st.session_state["web_search_enabled"] = web_search
             restart_assistant()
     
-        if "research_assistant_enabled" not in st.session_state:
-            st.session_state["research_assistant_enabled"] = True
-        research_assistant_enabled = st.session_state["research_assistant_enabled"]
-        research_assistant = st.checkbox("Research Assistant", value=research_assistant_enabled, help="Enable the research assistant (uses Exa).")
-        if research_assistant_enabled != research_assistant:
-            st.session_state["research_assistant_enabled"] = research_assistant
-            restart_assistant()
+        # if "research_assistant_enabled" not in st.session_state:
+        #     st.session_state["research_assistant_enabled"] = True
+        # research_assistant_enabled = st.session_state["research_assistant_enabled"]
+        # research_assistant = st.checkbox("Research Assistant", value=research_assistant_enabled, help="Enable the research assistant (uses Exa).")
+        # if research_assistant_enabled != research_assistant:
+        #     st.session_state["research_assistant_enabled"] = research_assistant
+        #     restart_assistant()
         
         if "data_analyst_enabled" not in st.session_state:
             st.session_state["data_analyst_enabled"] = True
@@ -70,26 +69,26 @@ def render_sidebar():
         #     st.session_state["legal_assistant_enabled"] = legal_assistant
         #     restart_assistant()            
 
-        if "company_analyst_enabled" not in st.session_state:
-            st.session_state["company_analyst_enabled"] = True
-        company_analyst_enabled = st.session_state["company_analyst_enabled"]
-        company_analyst = st.checkbox("Company Analyst", value=company_analyst_enabled, help="Enable the company analyst (uses Exa).")
-        if company_analyst_enabled != company_analyst:
-            st.session_state["company_analyst_enabled"] = company_analyst
-            restart_assistant()
+        # if "company_analyst_enabled" not in st.session_state:
+        #     st.session_state["company_analyst_enabled"] = True
+        # company_analyst_enabled = st.session_state["company_analyst_enabled"]
+        # company_analyst = st.checkbox("Company Analyst", value=company_analyst_enabled, help="Enable the company analyst (uses Exa).")
+        # if company_analyst_enabled != company_analyst:
+        #     st.session_state["company_analyst_enabled"] = company_analyst
+        #     restart_assistant()
             
-        if "investment_assistant_enabled" not in st.session_state:
-            st.session_state["investment_assistant_enabled"] = True
-        investment_assistant_enabled = st.session_state["investment_assistant_enabled"]
-        investment_assistant = st.checkbox("Investment Assistant", value=investment_assistant_enabled, help="Enable the investment assistant. NOTE: This is not financial advice.")
-        if investment_assistant_enabled != investment_assistant:
-            st.session_state["investment_assistant_enabled"] = investment_assistant
-            restart_assistant()                
+        # if "investment_assistant_enabled" not in st.session_state:
+        #     st.session_state["investment_assistant_enabled"] = True
+        # investment_assistant_enabled = st.session_state["investment_assistant_enabled"]
+        # investment_assistant = st.checkbox("Investment Assistant", value=investment_assistant_enabled, help="Enable the investment assistant. NOTE: This is not financial advice.")
+        # if investment_assistant_enabled != investment_assistant:
+        #     st.session_state["investment_assistant_enabled"] = investment_assistant
+        #     restart_assistant()                
 
         if "product_owner_enabled" not in st.session_state:
             st.session_state["product_owner_enabled"] = True
         product_owner_enabled = st.session_state["product_owner_enabled"]
-        product_owner = st.checkbox("Ze Product Tsar", value=product_owner_enabled, help="Enable Ze Great Visionary of Producting.")
+        product_owner = st.checkbox("PO", value=product_owner_enabled, help="Enable Ze Great Visionary of Producting.")
         if product_owner_enabled != product_owner:
             st.session_state["product_owner_enabled"] = product_owner
             restart_assistant()
@@ -97,7 +96,7 @@ def render_sidebar():
         if "business_analyst_enabled" not in st.session_state:
             st.session_state["business_analyst_enabled"] = True
         business_analyst_enabled = st.session_state["business_analyst_enabled"]
-        business_analyst = st.checkbox("Ze analysis Guru", value=business_analyst_enabled, help="Enable Ze Business analysis Solver")
+        business_analyst = st.checkbox("BA", value=business_analyst_enabled, help="Enable Ze Business analysis Solver")
         if business_analyst_enabled != business_analyst:
             st.session_state["business_analyst_enabled"] = business_analyst
             restart_assistant()
@@ -105,7 +104,7 @@ def render_sidebar():
         if "quality_analyst_enabled" not in st.session_state:
             st.session_state["quality_analyst_enabled"] = True
         quality_analyst_enabled = st.session_state["quality_analyst_enabled"]
-        quality_analyst = st.checkbox("Ze Bug Inspector", value=quality_analyst_enabled, help="Enable Ze Finder of Glitches.")
+        quality_analyst = st.checkbox("QA", value=quality_analyst_enabled, help="Enable Ze Finder of Glitches.")
         if quality_analyst_enabled != quality_analyst:
             st.session_state["quality_analyst_enabled"] = quality_analyst
             restart_assistant()    
