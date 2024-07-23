@@ -336,10 +336,10 @@ class PgVector2(VectorDb):
                 id=neighbor.id, 
                 name=neighbor.name,
                 meta_data=neighbor.meta_data,
-                content=neighbor.content,
+                content=neighbor.content,  # Make sure this includes full content
                 embedder=self.embedder,
                 embedding=neighbor.embedding,
-                usage=usage.to_dict(),  # Convert Usage to dict
+                usage=usage.to_dict(),
             )
             search_results.append(doc)
 

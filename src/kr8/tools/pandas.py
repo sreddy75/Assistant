@@ -33,7 +33,7 @@ class PandasTools(Toolkit):
             self.dataframes[df_name] = df
             logger.info(f"Loaded CSV: {df_name}, shape: {df.shape}")
             
-             # Save to pgvector
+            # Save to pgvector
             self.save_to_pgvector(df_name, df)
             
             return df_name
@@ -46,14 +46,14 @@ class PandasTools(Toolkit):
             logger.error("Knowledge base not available. Cannot save to pgvector.")
             return
 
-        # Convert DataFrame to string representation
-        df_string = df.to_string()
+        # Convert DataFrame to CSV string representation
+        csv_string = df.to_csv(index=False)
 
         # Create a Document object
         doc = Document(
-            content=df_string,
+            content=csv_string,
             name=df_name,
-            meta_data={"type": "dataframe", "shape": str(df.shape)}
+            meta_data={"type": "dataframe", "shape": str(df.shape), "columns": df.columns.tolist()}
         )
 
         # Save to knowledge base
@@ -72,11 +72,29 @@ class PandasTools(Toolkit):
             df_name = f"user_{self.user_id}_{df_name}" if self.user_id else df_name
             self.dataframes[df_name] = df
             logger.info(f"Loaded Excel: {df_name}, shape: {df.shape}")
+            # Save to pgvector
+            self.save_to_pgvector(df_name, df)
             return df_name
         except Exception as e:
             logger.error(f"Error loading Excel {file_name}: {str(e)}")
             raise
-
+    
+    def get_dataframe(self, df_name: str) -> Optional[pd.DataFrame]:
+        if df_name in self.dataframes:
+            return self.dataframes[df_name]
+        elif self.knowledge_base:
+            doc = self.knowledge_base.get_document_by_name(df_name)
+            if doc and doc.content:
+                try:
+                    df = pd.read_csv(io.StringIO(doc.content))
+                    self.dataframes[df_name] = df
+                    return df
+                except Exception as e:
+                    logger.error(f"Error loading dataframe from document: {e}")
+                    return None
+        logger.warning(f"Dataframe '{df_name}' not found")
+        return None
+                
     def list_dataframes(self) -> str:
         if self.user_id:
             user_dfs = {name: df for name, df in self.dataframes.items() if name.startswith(f"user_{self.user_id}_")}

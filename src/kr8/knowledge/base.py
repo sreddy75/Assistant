@@ -92,6 +92,19 @@ class AssistantKnowledge(BaseModel):
         else:
             logger.info("No new documents to load")
 
+    def get_document_by_name(self, name: str) -> Optional[Document]:
+        if self.vector_db is None:
+            logger.warning("No vector db provided")
+            return None
+
+        try:
+            results = self.vector_db.search(query=f"name:{name}", limit=1, collection=self.get_collection_name())
+            if results:
+                return results[0]
+        except Exception as e:
+            logger.error(f"Error retrieving document by name: {e}")
+        return None
+    
     def load_dict(self, document: Dict[str, Any], upsert: bool = False, skip_existing: bool = True) -> None:
         self.load_documents(documents=[Document.from_dict(document)], upsert=upsert, skip_existing=skip_existing)
 
@@ -106,8 +119,8 @@ class AssistantKnowledge(BaseModel):
         if documents:
             doc = documents[0]
             if doc.meta_data.get("type") == "dataframe":
-                # Convert string representation back to DataFrame
-                return pd.read_csv(io.StringIO(doc.content), sep="\s+")
+                # Convert CSV string representation back to DataFrame
+                return pd.read_csv(io.StringIO(doc.content))
         return None
     
     def exists(self) -> bool:

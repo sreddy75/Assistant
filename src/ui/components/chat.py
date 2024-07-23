@@ -1,8 +1,13 @@
 import base64
+import io
+from pyexpat import ExpatError
 import random
+import re
 import time
+from xml.dom import minidom
 import httpx
 from openai import OpenAIError
+import pandas as pd
 import streamlit as st
 import html
 from kr8.utils.log import logger
@@ -18,6 +23,7 @@ from plotly.subplots import make_subplots
 import json
 
 from kr8.tools.pandas import PandasTools
+from team.data_analyst import EnhancedDataAnalyst
 
 # Load the custom icons
 meerkat_icon = Image.open("images/meerkat_icon.png")
@@ -25,7 +31,63 @@ user_icon = Image.open("images/user_icon.png")
 llm_os = None
 
 def sanitize_content(content):
-    return html.escape(content)
+    def format_code_block(match):
+        lang = match.group(1) or ''
+        code = match.group(2).strip()
+        if lang.lower() == 'json':
+            try:
+                parsed = json.loads(code)
+                code = json.dumps(parsed, indent=2)
+            except json.JSONDecodeError:
+                pass  # If it's not valid JSON, leave it as is
+        return f"```{lang}\n{code}\n```"
+
+    # Handle code blocks (with or without language specification)
+    content = re.sub(r'```(\w*)\s*([\s\S]*?)```', format_code_block, content)
+
+    # Handle inline code
+    content = re.sub(r'`([^`\n]+)`', r'`\1`', content)
+
+    # Handle headers
+    content = re.sub(r'^(#+)\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
+
+    # Handle unordered lists
+    content = re.sub(r'^(\s*[-*+])\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
+
+    # Handle ordered lists
+    content = re.sub(r'^(\s*\d+\.)\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
+
+    # Handle bold and italic
+    content = re.sub(r'\*\*(.*?)\*\*', r'**\1**', content)
+    content = re.sub(r'\*(.*?)\*', r'*\1*', content)
+
+    # Handle links
+    content = re.sub(r'\[(.*?)\]\((.*?)\)', r'[\1](\2)', content)
+
+    # Handle horizontal rules
+    content = re.sub(r'^(-{3,}|\*{3,}|_{3,})$', '---', content, flags=re.MULTILINE)
+
+    # Replace common escape sequences
+    content = content.replace('&quot;', '"').replace('&apos;', "'").replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+
+    # Replace escaped newlines with actual newlines
+    content = content.replace('\\n', '\n')
+
+    # Remove extra whitespace
+    content = re.sub(r'\n\s*\n', '\n\n', content)
+    
+    # Ensure consistent newlines before and after code blocks
+    content = re.sub(r'([\s\S]+?)(```[\s\S]+?```)', lambda m: f"{m.group(1).strip()}\n\n{m.group(2)}\n\n", content)
+    
+    # Ensure consistent formatting for bullet points
+    content = re.sub(r'^\* \*([^:]+):\*\*', r'* **\1:**', content, flags=re.MULTILINE)
+
+    # Ensure consistent newlines after headers
+    content = re.sub(r'(#+.*?)\n(?!\n)', r'\1\n\n', content)
+
+    content = content.strip()
+
+    return content
 
 def render_chat(user_id=None):
     if "llm_id" not in st.session_state:
@@ -158,6 +220,17 @@ def initialize_assistant(llm_id, user_id=None):
             )
             st.session_state["llm_os"] = llm_os
             logger.info(f"Initialized LLM OS with team: {[assistant.name for assistant in llm_os.team]}")
+            
+            data_analyst = next((a for a in llm_os.team if isinstance(a, EnhancedDataAnalyst)), None)
+            if data_analyst:
+                logger.info(f"EnhancedDataAnalyst initialized with pandas_tools: {data_analyst.pandas_tools is not None}")
+            else:
+                logger.warning("EnhancedDataAnalyst not found in the team")
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM OS: {str(e)}", exc_info=True)
+            st.error(f"An error occurred while initializing the assistant: {str(e)}")
+            return None
 
         except Exception as e:
             logger.error(f"Failed to initialize LLM OS: {e}")
@@ -287,18 +360,20 @@ def manage_knowledge_base(llm_os):
                             st.error(message)
                     elif file.name.endswith(('.csv', '.xlsx', '.xls')):
                         file_content = base64.b64encode(file.read()).decode('utf-8')
-                        if financial_analyst and any(keyword in file.name.lower() for keyword in ['revenue', 'financial', 'profit']):
+                        analyst_type = determine_analyst(file, file_content)
+                        
+                        if analyst_type == 'financial' and financial_analyst:
                             result = process_file_for_analyst(file, file_content, financial_analyst)
-                        elif data_analyst and any(keyword in file.name.lower() for keyword in ['marketing', 'spend', 'performance']):
+                        elif data_analyst:
                             result = process_file_for_analyst(file, file_content, data_analyst)
                         else:
-                            result = process_file_for_analyst(file, file_content, financial_analyst or data_analyst)
-                        
+                            result = "Error: No data analyst available to process this file"
+
                         if result.startswith("Error:"):
                             st.error(result)
                         else:
                             st.success(f"Loaded {file.name}: {result}")
-                            st.session_state["loaded_dataframes"][result] = "Financial Analyst" if financial_analyst else "Data Analyst"
+                            st.session_state["loaded_dataframes"][result] = analyst_type
                             st.session_state["processed_files"].append(file.name)
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
@@ -332,6 +407,22 @@ def manage_knowledge_base(llm_os):
                 with st.expander(f"{team_member.name} Memory", expanded=False):
                     st.container().json(team_member.memory.get_llm_messages())
 
+def determine_analyst(file, file_content):
+    # Read a sample of the file to determine its content
+    if file.name.endswith('.csv'):
+        df = pd.read_csv(io.StringIO(file_content), nrows=5)
+    elif file.name.endswith(('.xlsx', '.xls')):
+        df = pd.read_excel(io.BytesIO(base64.b64decode(file_content)), nrows=5)
+    else:
+        return None
+
+    # Check column names for keywords
+    columns = df.columns.str.lower()
+    if any(keyword in columns for keyword in ['revenue', 'financial', 'profit', 'cost']):
+        return 'financial'
+    else:
+        return 'data' 
+    
 def process_pdf(file, llm_os):
     reader = PDFReader()
     auto_rag_documents = reader.read(file)
@@ -354,23 +445,26 @@ def process_file_for_analyst(file, file_content, analyst):
         logger.error(f"Analyst is None when processing file: {file.name}")
         return f"Error: Unable to process {file.name} due to missing analyst"
 
-    if not hasattr(analyst, 'tools'):
-        logger.error(f"Analyst {analyst.name if hasattr(analyst, 'name') else 'Unknown'} has no 'tools' attribute")
+    if not hasattr(analyst, 'get_pandas_tools') or not callable(getattr(analyst, 'get_pandas_tools')):
+        logger.error(f"Analyst {analyst.name if hasattr(analyst, 'name') else 'Unknown'} has no 'get_pandas_tools' method")
         return f"Error: Unable to process {file.name} due to misconfigured analyst"
 
-    pandas_tools = next((tool for tool in analyst.tools if isinstance(tool, PandasTools)), None)
+    pandas_tools = analyst.get_pandas_tools()
     if not pandas_tools:
         logger.error(f"PandasTools not available for {analyst.name if hasattr(analyst, 'name') else 'Unknown'}")
         return f"Error: Unable to process {file.name} due to missing PandasTools"
     
     try:
         if file.name.endswith('.csv'):
-            return pandas_tools.load_csv(file.name, file_content)
+            df_name = pandas_tools.load_csv(file.name, file_content)
         elif file.name.endswith(('.xlsx', '.xls')):
-            return pandas_tools.load_excel(file.name, file_content)
+            df_name = pandas_tools.load_excel(file.name, file_content)
         else:
             logger.error(f"Unsupported file type: {file.name}")
             return f"Error: Unsupported file type for {file.name}"
+        
+        logger.info(f"Successfully loaded {file.name} as {df_name}")
+        return df_name
     except Exception as e:
         logger.error(f"Error processing {file.name}: {str(e)}")
         return f"Error processing {file.name}: {str(e)}"
