@@ -207,7 +207,6 @@ def initialize_assistant(llm_id, user_id=None):
                 llm_id=llm_id,  # Use the selected model
                 user_id=user_id,
                 web_search=st.session_state.get("web_search_enabled", True),
-                file_tools=st.session_state.get("file_tools_enabled", True),
                 research_assistant=st.session_state.get("research_assistant_enabled", False),
                 financial_analyst=financial_analyst_enabled,
                 data_analyst=data_analyst_enabled,

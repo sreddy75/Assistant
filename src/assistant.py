@@ -32,6 +32,9 @@ from kr8.tools.pandas import PandasTools
 import plotly.express as px
 import plotly.graph_objects as go
 
+from team.data_analyst import EnhancedDataAnalyst
+from team.financial_analyst import EnhancedFinancialAnalyst
+
 load_dotenv()
 
 db_url = os.getenv("DB_URL", "postgresql+psycopg://ai:ai@pgvector:5432/ai")
@@ -58,79 +61,6 @@ def is_ollama_available():
         print(f"Request error: {e}")
         return False
 
-class EnhancedFinancialAnalyst(Assistant):
-    def __init__(self, llm, tools):
-        super().__init__(
-            name="Enhanced Financial Analyst",
-            role="Analyze financial data and provide insights with visualizations",
-            llm=llm,
-            tools=tools,
-            instructions=[
-                # ... existing instructions ...
-                "Create visualizations using Plotly when appropriate to illustrate financial trends and insights.",
-                "Use the create_visualization method from PandasTools to generate charts and graphs.",
-            ],
-            expected_output=dedent(
-                """\
-                <financial_analysis>
-                ## Summary of Findings
-                {Provide a brief overview of key insights}
-
-                ## Detailed Analysis
-                {Present your detailed analysis here, using subheadings as appropriate}
-
-                ## Data Visualization
-                {Include Plotly chart JSON here if a visualization was created}
-
-                ## Recommendations
-                {Offer actionable recommendations based on the analysis}
-
-                ## Additional Information Needed
-                {If more data is required, specify what information would be helpful}
-                </financial_analysis>
-                """
-            ),
-            markdown=True,
-        )
-
-# Add this new class
-class EnhancedDataAnalyst(Assistant):
-    def __init__(self, llm, tools):
-        super().__init__(
-            name="Enhanced Data Analyst",
-            role="Analyze data from uploaded CSV files with visualizations",
-            llm=llm,
-            tools=tools,
-            instructions=[
-                # ... existing instructions ...
-                "Create visualizations using Plotly when appropriate to illustrate data trends and insights.",
-                "Use the create_visualization method from PandasTools to generate charts and graphs.",
-            ],
-            expected_output=dedent(
-                """\
-                <analysis_output>
-                ## Data Analysis Results
-
-                ### Summary Statistics
-                {Provide summary statistics of the analyzed data}
-
-                ### Key Findings
-                - {Key finding 1}
-                - {Key finding 2}
-                - {Key finding 3}
-
-                ### Data Visualization
-                {Include Plotly chart JSON here if a visualization was created}
-
-                ### Recommendations
-                {Provide any recommendations based on the analysis}
-
-                </analysis_output>
-                """
-            ),
-        )
-
-
 def create_pandas_tools(user_id):
     pandas_tools = PandasTools(user_id=user_id)
     return pandas_tools
@@ -138,10 +68,7 @@ def create_pandas_tools(user_id):
 def get_llm_os(
     llm_id: str = "gpt-4o",
     fallback_model: str = "tinyllama",    
-    calculator: bool = False,
     web_search: bool = True,
-    file_tools: bool = False,
-    shell_tools: bool = False,
     data_analyst: bool = True,
     python_assistant: bool = False,
     research_assistant: bool = False,
@@ -176,49 +103,19 @@ def get_llm_os(
 
     pandas_tools = PandasTools(user_id=user_id, knowledge_base=knowledge_base)
     tools = [
-        create_pandas_tools(user_id),
-        Calculator(),
+        create_pandas_tools(user_id),    
         ExaTools(num_results=5, text_length_limit=2000),        
     ]
 
-    # Add selected tools
-    if calculator:
-        tools.append(Calculator())
+
     if web_search:
         tools.append(ExaTools(num_results=5, text_length_limit=2000))
-    if file_tools:
-        tools.append(FileTools(base_dir=cwd))
-    if shell_tools:
-        tools.append(ShellTools())
 
     # Add team members available to the LLM OS
     team: List[Assistant] = []
     
-    if calculator:
-        tools.append(
-            Calculator(
-                add=True,
-                subtract=True,
-                multiply=True,
-                divide=True,
-                exponentiate=True,
-                factorial=True,
-                is_prime=True,
-                square_root=True,
-            )
-        )
     if web_search:
             tools.append(ExaTools(num_results=5, text_length_limit=1000))
-    if shell_tools:
-        tools.append(ShellTools())
-        extra_instructions.append(
-            "You can use the `run_shell_command` tool to run shell commands. For example, `run_shell_command(args='ls')`."
-        )
-    if file_tools:
-        tools.append(FileTools(base_dir=cwd))
-        extra_instructions.append(
-            "You can use the `read_file` tool to read a file, `save_file` to save a file, and `list_files` to list files in the working directory."
-        )
 
     if llm_id == "tinyllama":
             ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
@@ -725,7 +622,7 @@ def get_llm_os(
                 </product_owner_output>
                 """
             ),
-            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            tools=[ExaTools(num_results=10, text_length_limit=2000), pandas_tools],
             markdown=True,
             add_datetime_to_instructions=True,
             debug_mode=debug_mode,
@@ -802,7 +699,7 @@ def get_llm_os(
                 </business_analyst_output>
                 """
             ),
-            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            tools=[ExaTools(num_results=10, text_length_limit=2000), pandas_tools],
             markdown=True,
             add_datetime_to_instructions=True,
             debug_mode=debug_mode,
@@ -820,6 +717,7 @@ def get_llm_os(
             role="Ensure software quality through comprehensive testing strategies",
             llm=llm,
             search_knowledge=True,
+            tools=[pandas_tools], 
             add_references_to_prompt=True,
             description="You are a meticulous Quality Analyst in an agile software development team. Your role is to design and implement testing strategies, create test cases, and ensure the overall quality of the software product.",
             instructions=[
@@ -884,8 +782,7 @@ def get_llm_os(
                 {Citations of relevant sections from the business case, statement of work, or functional specifications}
                 </quality_analyst_output>
                 """
-            ),
-            tools=[ExaTools(num_results=10, text_length_limit=2000)],
+            ),            
             markdown=True,
             add_datetime_to_instructions=True,
             debug_mode=debug_mode,
@@ -1011,6 +908,9 @@ def delegate_to_analyst(self, analyst_name: str, task: str):
     analyst = next(member for member in self.team if member.name == analyst_name)
     result = analyst.run(task)
     return result
+
+def get_pandas_tools(self):
+        return next((tool for tool in self.tools if isinstance(tool, PandasTools)), None)               
 
 def create_financial_analyst_assistant(llm, tools):
     return Assistant(

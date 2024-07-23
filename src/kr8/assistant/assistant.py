@@ -1379,4 +1379,5 @@ class Assistant(BaseModel):
                 if message in _exit_on:
                     break
 
-                self.print_response(message=message, stream=stream, markdown=markdown, **kwargs)    
+                self.print_response(message=message, stream=stream, markdown=markdown, **kwargs) 
+                

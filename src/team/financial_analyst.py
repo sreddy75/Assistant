@@ -4,9 +4,11 @@ from textwrap import dedent
 from kr8.assistant.assistant import Assistant
 from kr8.tools.pandas import PandasTools
 from typing import Any, List, Optional
-from pydantic import Field
+from pydantic import Field, BaseModel
 
-class EnhancedFinancialAnalyst(Assistant):
+class EnhancedFinancialAnalyst(Assistant, BaseModel):
+    pandas_tools: Optional[PandasTools] = Field(default=None, description="PandasTools for data analysis")
+
     def __init__(self, llm, tools: List[Any]):
         super().__init__(
             name="Enhanced Financial Analyst",
@@ -45,15 +47,17 @@ class EnhancedFinancialAnalyst(Assistant):
         )
         pandas_tools = next((tool for tool in tools if isinstance(tool, PandasTools)), None)
         if pandas_tools:
-            self.set_pandas_tools(pandas_tools)
+            self.pandas_tools = pandas_tools
         else:
             raise ValueError("PandasTools not found in the provided tools")
 
     def run(self, query: str) -> str:
-        pandas_tools = self.get_pandas_tools()
-        if not pandas_tools:
+        if not self.pandas_tools:
             return "Error: PandasTools not initialized"
-        available_dataframes = pandas_tools.list_dataframes()
+        available_dataframes = self.pandas_tools.list_dataframes()
         context = f"Available dataframes: {available_dataframes}\n\n"
         full_query = context + query
         return super().run(full_query)
+
+    def get_pandas_tools(self):
+        return self.pandas_tools

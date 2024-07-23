@@ -2,9 +2,13 @@ from kr8.assistant.assistant import Assistant
 from kr8.tools.pandas import PandasTools
 from kr8.knowledge import AssistantKnowledge
 from typing import List, Any, Optional
+from pydantic import Field, BaseModel
 import json
 
-class EnhancedQualityAnalyst(Assistant):
+class EnhancedQualityAnalyst(Assistant, BaseModel):
+    pandas_tools: Optional[PandasTools] = Field(default=None, description="PandasTools for data analysis")
+    knowledge_base: Optional[AssistantKnowledge] = Field(default=None, description="Knowledge base for searching relevant documents")
+
     def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None):
         super().__init__(
             name="Enhanced Quality Analyst",
@@ -16,25 +20,24 @@ class EnhancedQualityAnalyst(Assistant):
                 "Identify potential gaps in test coverage.",
                 "Suggest improvements for test case optimization.",
                 "Use the pandas_tools to access loaded DataFrames and perform operations.",
-                "List available DataFrames using self.get_pandas_tools().list_dataframes().",
+                "List available DataFrames using self.pandas_tools.list_dataframes().",
                 "Always check for available dataframes before asking for data uploads.",
                 "If a dataframe is not found, use the search_knowledge_base function to look for relevant documents.",
             ],
         )
         pandas_tools = next((tool for tool in tools if isinstance(tool, PandasTools)), None)
         if pandas_tools:
-            self.set_pandas_tools(pandas_tools)
+            self.pandas_tools = pandas_tools
         else:
             raise ValueError("PandasTools not found in the provided tools")
         
         self.knowledge_base = knowledge_base
 
     def run(self, query: str) -> str:
-        pandas_tools = self.get_pandas_tools()
-        if not pandas_tools:
+        if not self.pandas_tools:
             return "Error: PandasTools not initialized"
         
-        available_dataframes = pandas_tools.list_dataframes()
+        available_dataframes = self.pandas_tools.list_dataframes()
         if not available_dataframes:
             # If no dataframes are available, search the knowledge base
             search_results = self.search_knowledge_base(query)
@@ -66,3 +69,6 @@ class EnhancedQualityAnalyst(Assistant):
         except Exception as e:
             print(f"Error searching knowledge base: {str(e)}")
             return []
+
+    def get_pandas_tools(self):
+        return self.pandas_tools

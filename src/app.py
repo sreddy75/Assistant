@@ -160,7 +160,7 @@ def initialize_app():
 
             # Final status message
             status_placeholder.markdown("<h3 style='text-align: center; color: #00FF00;'>Initialization complete!</h3>", unsafe_allow_html=True)
-            time.sleep(2)
+            time.sleep(1)
 
         st.session_state.initialization_complete = True
         st.session_state.app_initialized = True
