@@ -146,20 +146,30 @@ def render_chat(user_id=None):
 
             with st.chat_message("assistant", avatar=meerkat_icon):
                 response = ""
+                buffer = ""
                 resp_container = st.empty()
+                start_time = time.time()
+                update_interval = 0.1  # Update every 0.1 seconds
+
                 try:
                     for delta in llm_os.run(prompt):
+                        buffer += delta
                         response += delta
-                        sanitized_response = sanitize_content(response)
-                        resp_container.markdown(sanitized_response)
+                        current_time = time.time()
+                        
+                        if current_time - start_time >= update_interval:
+                            sanitized_response = sanitize_content(response)
+                            resp_container.markdown(sanitized_response + "▌")
+                            start_time = current_time
+                            buffer = ""
 
                         # Check if the response contains a Plotly chart JSON
-                        if '{"data":' in response and '"layout":' in response:
+                        if '{"data":' in buffer and '"layout":' in buffer:
                             try:
                                 # Find the start and end of the JSON object
-                                start_index = response.index('{"data":')
-                                end_index = response.rindex('}') + 1
-                                chart_json = response[start_index:end_index]
+                                start_index = buffer.index('{"data":')
+                                end_index = buffer.rindex('}') + 1
+                                chart_json = buffer[start_index:end_index]
                                 
                                 # Unescape the JSON string
                                 chart_json = chart_json.replace('&quot;', '"')
@@ -172,9 +182,16 @@ def render_chat(user_id=None):
                                 
                                 # Display the figure
                                 st.plotly_chart(fig)
+                                
+                                # Clear the buffer after processing the chart
+                                buffer = buffer[end_index:]
                             except Exception as e:
                                 st.error(f"Error rendering chart: {e}")
                 
+                    # Final update
+                    sanitized_response = sanitize_content(response)
+                    resp_container.markdown(sanitized_response)
+
                 except OpenAIError as e:
                     st.error(f"An error occurred while generating the response: {str(e)}")
                     logger.error(f"OpenAI API error: {str(e)}")                
