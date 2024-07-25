@@ -1146,7 +1146,8 @@ class Assistant(BaseModel):
         for doc in results:
             references.append({
                 "name": doc.name,
-                "content": doc.content[:200] + "..." if len(doc.content) > 200 else doc.content
+                # "content": doc.content[:200] + "..." if len(doc.content) > 200 else doc.content
+                "content": doc.content
             })
         
         _ref = References(query=query, references=references, time=round(reference_timer.elapsed, 4))

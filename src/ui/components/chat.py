@@ -229,12 +229,7 @@ def initialize_assistant(llm_id, user_id=None):
         except Exception as e:
             logger.error(f"Failed to initialize LLM OS: {str(e)}", exc_info=True)
             st.error(f"An error occurred while initializing the assistant: {str(e)}")
-            return None
-
-        except Exception as e:
-            logger.error(f"Failed to initialize LLM OS: {e}")
-            st.error(f"Failed to initialize the assistant. Error: {e}")
-            return None
+            return None        
     else:
         llm_os = st.session_state["llm_os"]
         logger.info(f"Using existing LLM OS with team: {[assistant.name for assistant in llm_os.team]}")
@@ -478,13 +473,6 @@ def process_file_for_analyst(llm_os, file, file_content, analyst):
         logger.error(f"Error processing {file.name}: {str(e)}")
         return f"Error processing {file.name}: {str(e)}"
 
-def check_available_data(data_type):
-    available_data = []
-    for df_name, analyst in st.session_state["loaded_dataframes"].items():
-        if data_type.lower() in df_name.lower():
-            available_data.append((df_name, analyst))
-    return available_data
-
 def delegate_task(task_description, analyst_name):
     analyst = next((assistant for assistant in llm_os.team if assistant.name == analyst_name), None)
     if analyst:
@@ -492,18 +480,6 @@ def delegate_task(task_description, analyst_name):
     else:
         return f"Error: {analyst_name} not found in the team."
     
-def list_available_dataframes(llm_os):
-    for assistant in llm_os.team:
-        pandas_tools = next((tool for tool in assistant.tools if isinstance(tool, PandasTools)), None)
-        if pandas_tools:
-            st.sidebar.write(f"{assistant.name}'s Dataframes:")
-            for df_name, df in pandas_tools.dataframes.items():
-                st.sidebar.write(f"- {df_name}: {df.shape[0]} rows, {df.shape[1]} columns")
-            logger.info(f"{assistant.name}'s Dataframes: {list(pandas_tools.dataframes.keys())}")
-        else:
-            st.sidebar.write(f"No PandasTools available for {assistant.name}.")
-            logger.warning(f"No PandasTools available for {assistant.name}.")
-
 def debug_knowledge_base(llm_os):
     st.sidebar.markdown("### Knowledge Base Debug")
     if st.sidebar.button("Check Knowledge Base"):

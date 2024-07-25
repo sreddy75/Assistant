@@ -1,6 +1,6 @@
 from kr8.assistant.assistant import Assistant
 from kr8.tools.pandas import PandasTools
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Union
 from pydantic import Field, BaseModel
 
 class EnhancedDataAnalyst(Assistant, BaseModel):
@@ -26,13 +26,13 @@ class EnhancedDataAnalyst(Assistant, BaseModel):
         else:
             raise ValueError("PandasTools not found in the provided tools")
 
-    def run(self, query: str) -> str:
+    def run(self, query: str, stream: bool = False) -> Union[str, Any]:
         if not self.pandas_tools:
             return "Error: PandasTools not initialized"
         available_dataframes = self.pandas_tools.list_dataframes()
         context = f"Available dataframes: {available_dataframes}\n\n"
         full_query = context + query
-        return super().run(full_query)
+        return super().run(full_query, stream=stream)
 
     def get_pandas_tools(self):
         return self.pandas_tools
