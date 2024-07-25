@@ -21,6 +21,9 @@ from PIL import Image
 import plotly.io as pio
 from plotly.subplots import make_subplots
 import json
+import streamlit as st
+import plotly.graph_objects as go
+import json
 
 from kr8.tools.pandas import PandasTools
 from team.data_analyst import EnhancedDataAnalyst
@@ -163,25 +166,29 @@ def render_chat(user_id=None):
                             start_time = current_time
                             buffer = ""
 
-                        # Check if the response contains a Plotly chart JSON
-                        if '{"data":' in buffer and '"layout":' in buffer:
+                        # Check if the response contains a chart JSON
+                        if '"chart_type":' in buffer and '"data":' in buffer and '"interpretation":' in buffer:
                             try:
                                 # Find the start and end of the JSON object
-                                start_index = buffer.index('{"data":')
+                                start_index = buffer.index('{"chart_type":')
                                 end_index = buffer.rindex('}') + 1
                                 chart_json = buffer[start_index:end_index]
                                 
-                                # Unescape the JSON string
-                                chart_json = chart_json.replace('&quot;', '"')
-                                
                                 # Parse the JSON
-                                fig_dict = json.loads(chart_json)
+                                chart_data = json.loads(chart_json)
                                 
                                 # Create a Plotly figure from the dictionary
-                                fig = pio.from_json(json.dumps(fig_dict))
+                                fig = go.Figure(data=[go.Bar(x=chart_data['data']['data']['x'], 
+                                                            y=chart_data['data']['data']['y'])])
+                                fig.update_layout(title=chart_data['data']['layout']['title'],
+                                                  xaxis_title=chart_data['data']['layout']['xaxis']['title'],
+                                                  yaxis_title=chart_data['data']['layout']['yaxis']['title'])
                                 
                                 # Display the figure
                                 st.plotly_chart(fig)
+                                
+                                # Display the interpretation
+                                st.write(chart_data['interpretation'])
                                 
                                 # Clear the buffer after processing the chart
                                 buffer = buffer[end_index:]
@@ -192,19 +199,12 @@ def render_chat(user_id=None):
                     sanitized_response = sanitize_content(response)
                     resp_container.markdown(sanitized_response)
 
-                except OpenAIError as e:
-                    st.error(f"An error occurred while generating the response: {str(e)}")
-                    logger.error(f"OpenAI API error: {str(e)}")                
-                except httpx.ConnectError:
-                    logger.error("Failed to connect to Ollama service. Working in offline mode.")
-                    offline_response = "I'm sorry, but I'm currently offline. I can't process your request at the moment, but I'm here to chat about general topics that don't require real-time data or external connections. How else can I assist you? Simples!"
-                    resp_container.markdown(offline_response)
-                    response = offline_response
                 except Exception as e:
                     st.error(f"An unexpected error occurred: {str(e)}")
                     logger.error(f"Unexpected error: {str(e)}")                                    
                     
                 st.session_state["messages"].append({"role": "assistant", "content": response})
+
 
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
@@ -384,7 +384,10 @@ def manage_knowledge_base(llm_os):
                             st.error(result)
                         else:
                             st.success(f"Loaded {file.name}: {result}")
-                            st.session_state["loaded_dataframes"][result] = analyst_type
+                            st.session_state["loaded_dataframes"][result] = {
+                                "file_name": file.name,
+                                "analyst_type": analyst_type
+                            }
                             st.session_state["processed_files"].append(file.name)
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")

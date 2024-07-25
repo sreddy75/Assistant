@@ -1,7 +1,9 @@
 from kr8.assistant.assistant import Assistant
 from kr8.tools.pandas import PandasTools
-from typing import List, Any, Optional, Union
+from typing import List, Any, Optional, Union, Dict
 from pydantic import Field, BaseModel
+import plotly.express as px
+import json
 
 class EnhancedDataAnalyst(Assistant, BaseModel):
     pandas_tools: Optional[PandasTools] = Field(default=None, description="PandasTools for data analysis")
@@ -18,6 +20,12 @@ class EnhancedDataAnalyst(Assistant, BaseModel):
                 "Perform analysis on the relevant DataFrame based on the user's query.",
                 "Create visualizations using Plotly when appropriate to illustrate data trends and insights.",
                 "Use the create_visualization method to generate charts and graphs.",
+                "Always return the chart data in the following JSON format:",
+                "   {",
+                "     'chart_type': 'bar|line|scatter|histogram',",
+                "     'data': { ... Plotly figure dictionary ... },",
+                "     'interpretation': 'Brief interpretation of the chart'",
+                "   }",
             ],
         )
         pandas_tools = next((tool for tool in tools if isinstance(tool, PandasTools)), None)
@@ -33,6 +41,28 @@ class EnhancedDataAnalyst(Assistant, BaseModel):
         context = f"Available dataframes: {available_dataframes}\n\n"
         full_query = context + query
         return super().run(full_query, stream=stream)
+
+    def create_visualization(self, chart_type: str, dataframe_name: str, x: str, y: str, title: str) -> Dict[str, Any]:
+        df = self.pandas_tools.get_dataframe(dataframe_name)
+        if df is None:
+            raise ValueError(f"DataFrame '{dataframe_name}' not found")
+
+        if chart_type == "bar":
+            fig = px.bar(df, x=x, y=y, title=title)
+        elif chart_type == "line":
+            fig = px.line(df, x=x, y=y, title=title)
+        elif chart_type == "scatter":
+            fig = px.scatter(df, x=x, y=y, title=title)
+        elif chart_type == "histogram":
+            fig = px.histogram(df, x=x, title=title)
+        else:
+            raise ValueError(f"Unsupported chart type: {chart_type}")
+
+        return {
+            "chart_type": chart_type,
+            "data": json.loads(pio.to_json(fig)),
+            "interpretation": f"This {chart_type} chart shows the relationship between {x} and {y} in the {dataframe_name} dataset."
+        }
 
     def get_pandas_tools(self):
         return self.pandas_tools
