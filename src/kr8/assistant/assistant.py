@@ -66,7 +66,7 @@ class Assistant(BaseModel):
 
     # -*- Default tools
     read_chat_history: bool = False
-    search_knowledge: bool = False
+    search_knowledge: bool = True
     update_knowledge: bool = False
     read_tool_call_history: bool = False
     use_tools: bool = False
@@ -526,7 +526,7 @@ class Assistant(BaseModel):
             # Before passing the message to the LLM, perform a knowledge base search
             if isinstance(message, str):
                 search_results = json.loads(self.search_knowledge_base(message))
-                if "results" in search_results:
+                if "results" in search_results and search_results["results"]:
                     context = "Relevant information from the knowledge base:\n"
                     for doc in search_results["results"]:
                         context += f"Document: {doc['name']}\nContent: {doc['content']}\n\n"
@@ -1018,9 +1018,11 @@ class Assistant(BaseModel):
 
         if self.knowledge_base is not None:
             system_prompt_lines.append(
-                "You can use the `search_knowledge_base` function to search for relevant documents. "
-                "This function returns a JSON string containing document names and content snippets. "
-                "If you need to list or search for documents, use this function instead of trying to access the knowledge base directly."
+                "You have access to a knowledge base. Relevant information from the knowledge base will be provided in the user's message. "
+                "Use this information to answer the user's questions. If the knowledge base doesn't provide relevant information, "
+                "use your general knowledge to answer, but prioritize information from the knowledge base when available."
+                "Do not use phrases like 'based on the information provided.'"
+                "Do not reveal that your information is 'from the knowledge base.'"
             )
             
         # Then add instructions to the system prompt

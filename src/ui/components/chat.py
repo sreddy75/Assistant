@@ -362,9 +362,9 @@ def manage_knowledge_base(llm_os):
                         analyst_type = determine_analyst(file, file_content)
                         
                         if analyst_type == 'financial' and financial_analyst:
-                            result = process_file_for_analyst(file, file_content, financial_analyst)
+                            result = process_file_for_analyst(llm_os, file, file_content, financial_analyst)
                         elif data_analyst:
-                            result = process_file_for_analyst(file, file_content, data_analyst)
+                            result = process_file_for_analyst(llm_os, file, file_content, data_analyst)
                         else:
                             result = "Error: No data analyst available to process this file"
 
@@ -439,7 +439,7 @@ def process_pdf(file, llm_os):
         logger.error(f"Error adding PDF content to knowledge base: {str(e)}")
         return False, f"Error processing {file.name}: {str(e)}"
 
-def process_file_for_analyst(file, file_content, analyst):
+def process_file_for_analyst(llm_os, file, file_content, analyst):
     if analyst is None:
         logger.error(f"Analyst is None when processing file: {file.name}")
         return f"Error: Unable to process {file.name} due to missing analyst"
@@ -456,6 +456,16 @@ def process_file_for_analyst(file, file_content, analyst):
     try:
         if file.name.endswith('.csv'):
             df_name = pandas_tools.load_csv(file.name, file_content)
+            df = pandas_tools.dataframes[df_name]
+
+            # Convert DataFrame to Document and store in vector database
+            doc = Document(
+                name=file.name,
+                content=df.to_csv(index=False),
+                meta_data={"type": "csv", "shape": df.shape}
+            )
+            llm_os.knowledge_base.load_document(doc, upsert=True)
+            
         elif file.name.endswith(('.xlsx', '.xls')):
             df_name = pandas_tools.load_excel(file.name, file_content)
         else:

@@ -179,7 +179,9 @@ class PgVector2(VectorDb):
         with self.Session() as sess:
             counter = 0
             for document in documents:
+                logger.info(f"Embedding document: {document.name}")
                 document.embed(embedder=self.embedder)
+                logger.info(f"Embedded document: {document.name}, embedding shape: {len(document.embedding)}")
                 cleaned_content = document.content.replace("\x00", "\ufffd")
                 content_hash = md5(cleaned_content.encode()).hexdigest()
                 _id = document.id or content_hash
@@ -336,7 +338,7 @@ class PgVector2(VectorDb):
                 id=neighbor.id, 
                 name=neighbor.name,
                 meta_data=neighbor.meta_data,
-                content=neighbor.content,  # Make sure this includes full content
+                content=neighbor.content,  # This should now contain full content
                 embedder=self.embedder,
                 embedding=neighbor.embedding,
                 usage=usage.to_dict(),

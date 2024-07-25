@@ -25,8 +25,8 @@ class AssistantKnowledge(BaseModel):
     def get_collection_name(self):
         return f"user_{self.user_id}_documents" if self.user_id is not None else "llm_os_documents"
 
-    # Update other methods to use the new collection name
     def search(self, query: str, num_documents: Optional[int] = None) -> List[Document]:
+        logger.info(f"Searching for query: {query}")
         try:
             if self.vector_db is None:
                 logger.warning("No vector db provided")
@@ -34,7 +34,9 @@ class AssistantKnowledge(BaseModel):
 
             _num_documents = num_documents or self.num_documents
             logger.debug(f"Getting {_num_documents} relevant documents for query: {query}")
-            return self.vector_db.search(query=query, limit=_num_documents, collection=self.get_collection_name())
+            results = self.vector_db.search(query=query, limit=_num_documents, collection=self.get_collection_name())
+            logger.info(f"Found {len(results)} documents")
+            return results
         except Exception as e:
             logger.error(f"Error searching for documents: {e}")
             return []

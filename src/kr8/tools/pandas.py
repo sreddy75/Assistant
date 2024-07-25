@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 from kr8.tools import Toolkit
 from kr8.utils.log import logger
 from kr8.document import Document
+from kr8.knowledge.base import AssistantKnowledge
 
 try:
     import pandas as pd
@@ -173,25 +174,25 @@ class PandasTools(Toolkit):
         :param operation_parameters: The parameters to pass to the operation.
         :return: The result of the operation if successful, otherwise an error message.
         """
-        try:
+        try:            
             logger.debug(f"Running operation: {operation}")
             logger.debug(f"On dataframe: {dataframe_name}")
             logger.debug(f"With parameters: {operation_parameters}")
 
             # Get the dataframe
-            dataframe = self.dataframes.get(dataframe_name)
+            dataframe = self.get_dataframe(dataframe_name)
+            
+            if dataframe is None:
+                return f"Error: Dataframe '{dataframe_name}' not found"
 
             # Run the operation
             result = getattr(dataframe, operation)(**operation_parameters)
 
             logger.debug(f"Ran operation: {operation}")
             try:
-                try:
-                    return result.to_string()
-                except AttributeError:
-                    return str(result)
-            except Exception:
-                return "Operation ran successfully"
+                return result.to_string()
+            except AttributeError:
+                return str(result)
         except Exception as e:
             logger.error(f"Error running operation: {e}")
             return f"Error running operation: {e}"

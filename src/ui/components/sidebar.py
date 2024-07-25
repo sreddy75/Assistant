@@ -120,7 +120,7 @@ def render_sidebar():
             llm_options = ["gpt-4o", "gpt-3.5-turbo"]
             llm_id = st.sidebar.selectbox("Select Closed Source Model", options=llm_options)
         else: 
-            llm_options = ["tinyllama"]
+            llm_options = ["llama3", "tinyllama"]
             llm_id = st.sidebar.selectbox("Select Open Source Model", options=llm_options)
         
 

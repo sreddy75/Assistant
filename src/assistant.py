@@ -151,6 +151,40 @@ def get_llm_os(
                     logger.error(f"Failed to initialize Ollama with fallback model: {fallback_error}")
                     logger.warning("Switching to offline mode")
                     llm = OfflineLLM(model=fallback_model)                
+    elif llm_id == "llama3":
+            ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+            logger.info(f"Attempting to connect to Ollama at: {ollama_base_url}")
+
+            try:
+                llm = Ollama(
+                    model=llm_id,
+                    base_url=ollama_base_url,
+                    options={
+                        "num_ctx": 2048,  # Reduce context size
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                    }
+                )            
+                logger.info(f"Successfully connected to Ollama service using model {llm_id}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize {llm_id}: {e}")
+                logger.info(f"Attempting to fall back to {fallback_model}")
+                try:
+                    llm = Ollama(
+                        model=fallback_model,
+                        base_url=ollama_base_url,
+                        options={
+                            "num_ctx": 1024,  # Further reduce context size for smaller model
+                            "temperature": 0.7,
+                            "top_p": 0.9,
+                        }
+                    )
+                    llm.client.list_models()
+                    logger.info(f"Successfully connected to Ollama service using fallback model {fallback_model}")
+                except Exception as fallback_error:
+                    logger.error(f"Failed to initialize Ollama with fallback model: {fallback_error}")
+                    logger.warning("Switching to offline mode")
+                    llm = OfflineLLM(model=fallback_model)                                    
     elif llm_id == "gpt-3.5-turbo":
         llm = OpenAIChat(model="gpt-3.5-turbo")
     elif llm_id == "gpt-4o":
@@ -856,6 +890,8 @@ def get_llm_os(
             "When dealing with financial data or revenue analysis, delegate to the Financial Analyst.",
             "For marketing spend analysis or general data insights, delegate to the Data Analyst.",
             "If a question requires both financial and marketing insights, coordinate between both analysts.",
+            "When you receive full CSV content, parse it and display all rows.",
+            "If the CSV content is too large, display the first 10 rows and offer to show more if needed."
             "Always respond in character as Sergei, the meerkat.",
             "Use a friendly, slightly formal tone with a hint of Russian accent in your text.",
             "End at least some of your messages with the word 'Simples!'",
@@ -899,10 +935,6 @@ def flatten_tools(tool_list):
         else:
             flattened.append(item)
     return flattened
-
-def get_dataframe(self, name: str):
-    pandas_tools = next(tool for tool in self.tools if isinstance(tool, PandasTools))
-    return pandas_tools.dataframes.get(name)
 
 def delegate_to_analyst(self, analyst_name: str, task: str):
     analyst = next(member for member in self.team if member.name == analyst_name)
