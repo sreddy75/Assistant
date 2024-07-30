@@ -28,7 +28,7 @@ class CodeTools(Toolkit):
                         "file_type": ext
                     }
                 )
-                # Remove the 'collection' argument
+                # Remove the 'upsert' argument here as well
                 self.knowledge_base.load_document(doc)
         
         logger.info(f"React project '{project_name}' loaded successfully")

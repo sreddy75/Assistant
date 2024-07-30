@@ -1257,45 +1257,45 @@ class Assistant(BaseModel):
             self.markdown = False
             stream = False
 
-            if stream:
-                response = ""
-                with Live() as live_log:
-                    status = Status("Working...", spinner="dots")
-                    live_log.update(status)
-                    response_timer = Timer()
-                    response_timer.start()
-                    for resp in self.run(message=message, messages=messages, stream=True, **kwargs):
-                        if isinstance(resp, str):
-                            response += resp
-                        _response = Markdown(response) if self.markdown else response
-
-                        table = Table(box=ROUNDED, border_style="blue", show_header=False)
-                        if message and show_message:
-                            table.show_header = True
-                            table.add_column("Message")
-                            table.add_column(get_text_from_message(message))
-                        table.add_row(f"Response\n({response_timer.elapsed:.1f}s)", _response)  # type: ignore
-                        live_log.update(table)
-                    response_timer.stop()
-            else:
+        if stream:
+            response = ""
+            with Live() as live_log:
+                status = Status("Working...", spinner="dots")
+                live_log.update(status)
                 response_timer = Timer()
                 response_timer.start()
-                with Progress(
-                    SpinnerColumn(spinner_name="dots"), TextColumn("{task.description}"), transient=True
-                ) as progress:
-                    progress.add_task("Working...")
-                    response = self.run(message=message, messages=messages, stream=False, **kwargs)  # type: ignore
+                for resp in self.run(message=message, messages=messages, stream=True, **kwargs):
+                    if isinstance(resp, str):
+                        response += resp
+                    _response = Markdown(response) if self.markdown else response
 
+                    table = Table(box=ROUNDED, border_style="blue", show_header=False)
+                    if message and show_message:
+                        table.show_header = True
+                        table.add_column("Message")
+                        table.add_column(get_text_from_message(message))
+                    table.add_row(f"Response\n({response_timer.elapsed:.1f}s)", _response)  # type: ignore
+                    live_log.update(table)
                 response_timer.stop()
-                _response = Markdown(response) if self.markdown else self.convert_response_to_string(response)
+        else:
+            response_timer = Timer()
+            response_timer.start()
+            with Progress(
+                SpinnerColumn(spinner_name="dots"), TextColumn("{task.description}"), transient=True
+            ) as progress:
+                progress.add_task("Working...")
+                response = self.run(message=message, messages=messages, stream=False, **kwargs)  # type: ignore
 
-                table = Table(box=ROUNDED, border_style="blue", show_header=False)
-                if message and show_message:
-                    table.show_header = True
-                    table.add_column("Message")
-                    table.add_column(get_text_from_message(message))
-                table.add_row(f"Response\n({response_timer.elapsed:.1f}s)", _response)  # type: ignore
-                console.print(table)
+            response_timer.stop()
+            _response = Markdown(response) if self.markdown else self.convert_response_to_string(response)
+
+            table = Table(box=ROUNDED, border_style="blue", show_header=False)
+            if message and show_message:
+                table.show_header = True
+                table.add_column("Message")
+                table.add_column(get_text_from_message(message))
+            table.add_row(f"Response\n({response_timer.elapsed:.1f}s)", _response)  # type: ignore
+            console.print(table)
 
         async def async_print_response(
             self,

@@ -22,7 +22,7 @@ init_queue = Queue()
 
 @st.cache_resource
 def load_meerkat_logo():
-    file_ = open("images/meerkat_logo.gif", "rb")
+    file_ = open("images/meerkat.png", "rb")
     contents = file_.read()
     data_url = base64.b64encode(contents).decode("utf-8")
     file_.close()
@@ -36,15 +36,14 @@ def login_form():
     st.title("Welcome to Compare the Meerkat!")
     col1, col2, col3 = st.columns([1,8,1])
     with col2:        
-        # Display the animated meerkat logo
-        file_ = open("images/meerkat_logo.gif", "rb")
+        file_ = open("images/meerkat.png", "rb")
         contents = file_.read()
         data_url = base64.b64encode(contents).decode("utf-8")
         file_.close()
 
         st.markdown(
             f'<div style="display: flex; justify-content: center; margin-bottom: 20px;">'
-            f'<img src="data:image/gif;base64,{data_url}" alt="meerkat logo" width="200">'
+            f'<img src="data:image/png;base64,{data_url}" alt="meerkat logo" width="200">'
             f'</div>',
             unsafe_allow_html=True,
         )

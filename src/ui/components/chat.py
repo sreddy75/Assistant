@@ -3,6 +3,7 @@ import io
 from pyexpat import ExpatError
 import random
 import re
+from sqlite3 import IntegrityError
 import time
 from xml.dom import minidom
 import zipfile
@@ -346,18 +347,8 @@ def manage_knowledge_base(llm_os):
         st.session_state["file_uploader_key"] = 100
 
     uploaded_files = st.sidebar.file_uploader(
-        "Upload Documents", type=["pdf", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
+        "Upload Documents", type=["pdf", "json", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
-
-    # Separate uploader for React project files
-    react_files = st.sidebar.file_uploader(
-        "Upload React Project Files", 
-        type=["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"],
-        key="react_file_uploader",
-        accept_multiple_files=True
-    )
-
-    code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
 
     if uploaded_files:
         financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Financial Analyst"), None)
@@ -396,24 +387,6 @@ def manage_knowledge_base(llm_os):
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
                     logger.error(f"Error processing {file.name}: {str(e)}")
-    
-    if react_files:
-        project_name = st.text_input("Enter React Project Name", "my_react_project")
-        if st.button("Process React Project"):
-            with st.spinner("Processing React project files..."):
-                try:
-                    directory_content = {}
-                    for file in react_files:
-                        file_content = file.read().decode('utf-8', errors='ignore')
-                        directory_content[file.name] = file_content
-
-                    code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
-                    result = code_tools.load_react_project(project_name, directory_content)
-                    st.success(result)
-                    st.session_state['current_project'] = project_name
-                except Exception as e:
-                    st.error(f"Error processing React project files: {str(e)}")
-                    logger.error(f"Error processing React project files: {str(e)}")
                                         
         # Increment the file uploader key to force a refresh
         st.session_state["file_uploader_key"] += 1
@@ -501,7 +474,17 @@ def process_file_for_analyst(llm_os, file, file_content, analyst):
                 content=df.to_csv(index=False),
                 meta_data={"type": "csv", "shape": df.shape}
             )
-            llm_os.knowledge_base.load_document(doc, upsert=True)
+            # Use upsert operation to handle existing documents
+            try:
+                llm_os.knowledge_base.vector_db.upsert([doc])
+                logger.info(f"Upserted CSV file {file.name} to vector database")
+            except AttributeError:
+                # If upsert is not available, fall back to insert
+                try:
+                    llm_os.knowledge_base.vector_db.insert([doc])
+                    logger.info(f"Inserted CSV file {file.name} to vector database")
+                except IntegrityError:
+                    logger.warning(f"Document {file.name} already exists in the database. Skipping insertion.")
             
         elif file.name.endswith(('.xlsx', '.xls')):
             df_name = pandas_tools.load_excel(file.name, file_content)

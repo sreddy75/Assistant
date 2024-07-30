@@ -100,7 +100,7 @@ def get_llm_os(
             collection=f"user_{user_id}_documents" if user_id is not None else "llm_os_documents",
             embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2"),
         ),
-        num_documents=3,
+        num_documents=50,
         user_id=user_id,
     )
 

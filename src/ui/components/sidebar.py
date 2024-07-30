@@ -1,6 +1,7 @@
 from asyncio.log import logger
 import streamlit as st
 from kr8.tools.pandas import PandasTools
+from kr8.tools.code_tools import CodeTools
 from ui.utils.helper import restart_assistant
 
 
@@ -116,30 +117,79 @@ def render_sidebar():
             st.session_state["quality_analyst_enabled"] = quality_analyst
             restart_assistant()    
     
-    if st.session_state.get("react_assistant_enabled", False) and st.session_state.get('current_project'):
-        with st.sidebar.expander("React Assistant Tools", expanded=False):
+      # File uploader
+        react_files = st.sidebar.file_uploader(
+            "Upload React Project Files", 
+            type=["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"],
+            key="react_file_uploader",
+            accept_multiple_files=True
+        )
+        
+        # Project name input
+        project_name = st.sidebar.text_input("Enter React Project Name", "my_react_project")
+        
+         # Process files when they are uploaded
+        if react_files:
+            if 'react_files_processed' not in st.session_state:
+                st.session_state.react_files_processed = False
+            
+            if not st.session_state.react_files_processed:
+                st.sidebar.info("React files uploaded. Click 'Process React Project' to analyze them.")
+            
+            if st.sidebar.button("Process React Project"):
+                if react_files:
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    with st.spinner("Processing React project files..."):
+                        try:
+                            directory_content = {}
+                            total_files = len(react_files)
+                            
+                            for i, file in enumerate(react_files):
+                                file_content = file.read().decode('utf-8', errors='ignore')
+                                directory_content[file.name] = file_content
+                                
+                                # Update progress
+                                progress = (i + 1) / total_files
+                                progress_bar.progress(progress)
+                                status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
+
+                            # Use the LLM OS from the session state
+                            llm_os = st.session_state.get("llm_os")
+                            if llm_os and llm_os.knowledge_base:
+                                code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
+                                result = code_tools.load_react_project(project_name, directory_content)
+                                st.sidebar.success(result)
+                                st.session_state['current_project'] = project_name
+                                st.session_state.react_files_processed = True
+                            else:
+                                st.sidebar.error("LLM OS or knowledge base not initialized. Please try restarting the application.")
+                        except Exception as e:
+                            st.sidebar.error(f"Error processing React project files: {str(e)}")
+                            logger.error(f"Error processing React project files: {str(e)}")
+                        finally:
+                            # Clear the progress bar and status text
+                            progress_bar.empty()
+                            status_text.empty()
+                else:
+                    st.sidebar.warning("Please upload React project files first.")                
+        else:
+            st.session_state.react_files_processed = False
+        
+        # React Assistant Tools
+        if st.session_state.get('current_project') and st.session_state.get('react_files_processed', False):
+            st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
+            st.sidebar.subheader("React Assistant Tools")
             project_name = st.session_state['current_project']
             
-            if st.button("Analyze Project Structure"):
-                result = st.session_state.llm_os.run(f"Analyze the structure of the React project named {project_name}")
-                st.write(result)
-            
-            component_name = st.text_input("Find Component")
-            if st.button("Search for Component"):
-                result = st.session_state.llm_os.run(f"Find the component named {component_name} in the React project {project_name}")
-                st.write(result)
-            
-            file_path = st.text_input("File Path for Improvement Suggestions")
-            if st.button("Suggest Improvements"):
-                result = st.session_state.llm_os.run(f"Suggest code improvements for the file {file_path} in the React project {project_name}")
-                st.write(result)
-            
-            explain_file = st.text_input("File Path for Code Explanation")
-            start_line = st.number_input("Start Line", min_value=1, value=1)
-            end_line = st.number_input("End Line", min_value=1, value=10)
-            if st.button("Explain Code Snippet"):
-                result = st.session_state.llm_os.run(f"Explain the code snippet from line {start_line} to {end_line} in the file {explain_file} of the React project {project_name}")
-                st.write(result)
+            if st.sidebar.button("Analyze Project Structure"):
+                llm_os = st.session_state.get("llm_os")
+                if llm_os:
+                    result = llm_os.run(f"Analyze the structure of the React project named {project_name}")
+                    st.write(result)
+                else:
+                    st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
                             
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
                     

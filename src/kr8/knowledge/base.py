@@ -11,7 +11,7 @@ from kr8.vectordb.pgvector.pgvector2 import PgVector2
 class AssistantKnowledge(BaseModel):
     reader: Optional[Reader] = None
     vector_db: Optional[Any] = None  # Change this to Any
-    num_documents: int = 2
+    num_documents: int = 20
     optimize_on: Optional[int] = 1000
     cache: Dict[str, Any] = {}  # Simple cache implementation
     user_id: Optional[int] = None 
