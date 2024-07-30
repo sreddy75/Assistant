@@ -3,7 +3,7 @@ import imageio
 import numpy as np
 
 # Load the GIF image using imageio.get_reader() with memtest=False
-gif_path = "meerkat.gif"
+gif_path = "meerkat.png"
 reader = imageio.get_reader(gif_path, memtest=False)
 
 # Process each frame to remove the white background

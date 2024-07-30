@@ -1,19 +1,18 @@
-# code_assistant.py
+# react_assistant.py
 
 from kr8.assistant import Assistant
 from kr8.tools import Toolkit
 from kr8.tools.code_tools import CodeTools
-from typing import List, Any, Optional, Dict
+from typing import Dict, List, Any, Optional, Union
 from pydantic import Field
 import json
 
 class ReactAssistant(Assistant):
-    
     code_tools: Optional[CodeTools] = Field(default=None, description="CodeTools for React project analysis")
 
     def __init__(self, llm, tools: List[Any]):
         super().__init__(
-            name="Code Assistant",
+            name="React Assistant",
             role="Assist with React project development and analysis",
             llm=llm,
             tools=tools,
@@ -21,10 +20,44 @@ class ReactAssistant(Assistant):
                 "Analyze React project code and provide solutions, guidance, and analysis.",
                 "Use the knowledge base to access project files and structure.",
                 "Provide code snippets, explanations, and best practices for React development.",
+                "Include summarized dependency information when answering questions about the project."
             ],
         )
         self.code_tools = next((tool for tool in tools if isinstance(tool, CodeTools)), None)
 
+    def run(self, query: str, stream: bool = False) -> Union[str, Any]:
+        if not self.code_tools:
+            return "Error: CodeTools not initialized"
+        
+        project_name = self.extract_project_name(query)
+        dependency_summary = self.summarize_dependency_graph(project_name)
+        
+        context = f"Dependency summary for project {project_name}:\n{dependency_summary}\n\n"
+        full_query = context + query
+        return super().run(full_query, stream=stream)
+
+    def extract_project_name(self, query: str) -> str:
+        # Implement logic to extract project name from query or use a default
+        return "my_react_project"
+
+    def summarize_dependency_graph(self, project_name: str) -> str:
+        doc = self.code_tools.knowledge_base.vector_db.search(f"{project_name}_dependency_graph", limit=1)
+        if doc:
+            graph = json.loads(doc[0].content)
+            summary = {
+                "total_dependencies": len(graph),
+                "top_level_dependencies": list(graph.keys())[:10],  # List first 10 top-level dependencies
+                "complex_dependencies": [pkg for pkg, deps in graph.items() if len(deps) > 5][:5]  # List up to 5 complex dependencies
+            }
+            return json.dumps(summary, indent=2)
+        return "{}"
+
+    def get_dependency_graph(self, project_name: str) -> Dict:
+        doc = self.code_tools.knowledge_base.vector_db.search(f"{project_name}_dependency_graph", limit=1)
+        if doc:
+            return json.loads(doc[0].content)
+        return {}
+    
     def analyze_project_structure(self, project_name: str) -> str:
         if not self.code_tools:
             return "Error: CodeTools not initialized"

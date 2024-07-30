@@ -3,6 +3,7 @@ import streamlit as st
 from kr8.tools.pandas import PandasTools
 from kr8.tools.code_tools import CodeTools
 from ui.utils.helper import restart_assistant
+from utils.npm_utils import run_npm_command
 
 
 def initialize_session_state():
@@ -117,6 +118,14 @@ def render_sidebar():
             st.session_state["quality_analyst_enabled"] = quality_analyst
             restart_assistant()    
     
+        if st.session_state.get("react_assistant_enabled", False):
+            st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
+            st.sidebar.subheader("React Project Upload")
+        
+        # Check if npm is installed
+        if run_npm_command("--version") is None:
+            st.sidebar.warning("npm is not installed or not in PATH. Some features may not work correctly.")
+            
       # File uploader
         react_files = st.sidebar.file_uploader(
             "Upload React Project Files", 
@@ -137,43 +146,41 @@ def render_sidebar():
                 st.sidebar.info("React files uploaded. Click 'Process React Project' to analyze them.")
             
             if st.sidebar.button("Process React Project"):
-                if react_files:
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    with st.spinner("Processing React project files..."):
-                        try:
-                            directory_content = {}
-                            total_files = len(react_files)
+                # Create placeholders in the main area for progress bar and status
+                progress_bar = st.empty()
+                status_text = st.empty()
+                
+                with st.spinner("Processing React project files..."):
+                    try:
+                        directory_content = {}
+                        total_files = len(react_files)
+                        
+                        for i, file in enumerate(react_files):
+                            file_content = file.read().decode('utf-8', errors='ignore')
+                            directory_content[file.name] = file_content
                             
-                            for i, file in enumerate(react_files):
-                                file_content = file.read().decode('utf-8', errors='ignore')
-                                directory_content[file.name] = file_content
-                                
-                                # Update progress
-                                progress = (i + 1) / total_files
-                                progress_bar.progress(progress)
-                                status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
+                            # Update progress
+                            progress = (i + 1) / total_files
+                            progress_bar.progress(progress)
+                            status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
 
-                            # Use the LLM OS from the session state
-                            llm_os = st.session_state.get("llm_os")
-                            if llm_os and llm_os.knowledge_base:
-                                code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
-                                result = code_tools.load_react_project(project_name, directory_content)
-                                st.sidebar.success(result)
-                                st.session_state['current_project'] = project_name
-                                st.session_state.react_files_processed = True
-                            else:
-                                st.sidebar.error("LLM OS or knowledge base not initialized. Please try restarting the application.")
-                        except Exception as e:
-                            st.sidebar.error(f"Error processing React project files: {str(e)}")
-                            logger.error(f"Error processing React project files: {str(e)}")
-                        finally:
-                            # Clear the progress bar and status text
-                            progress_bar.empty()
-                            status_text.empty()
-                else:
-                    st.sidebar.warning("Please upload React project files first.")                
+                        # Use the LLM OS from the session state
+                        llm_os = st.session_state.get("llm_os")
+                        if llm_os and llm_os.knowledge_base:
+                            code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
+                            result = code_tools.load_react_project(project_name, directory_content)
+                            st.success(result)
+                            st.session_state['current_project'] = project_name
+                            st.session_state.react_files_processed = True
+                        else:
+                            st.error("LLM OS or knowledge base not initialized. Please try restarting the application.")
+                    except Exception as e:
+                        st.error(f"Error processing React project files: {str(e)}")
+                        logger.error(f"Error processing React project files: {str(e)}")
+                    finally:
+                        # Clear the progress bar and status text
+                        progress_bar.empty()
+                        status_text.empty()
         else:
             st.session_state.react_files_processed = False
         
