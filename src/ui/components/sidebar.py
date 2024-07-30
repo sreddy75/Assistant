@@ -84,7 +84,14 @@ def render_sidebar():
         # if investment_assistant_enabled != investment_assistant:
         #     st.session_state["investment_assistant_enabled"] = investment_assistant
         #     restart_assistant()                
-
+        if "react_assistant_enabled" not in st.session_state:
+            st.session_state["react_assistant_enabled"] = False
+        react_assistant_enabled = st.session_state["react_assistant_enabled"]
+        react_assistant = st.checkbox("React Assistant", value=react_assistant_enabled, help="Enable the React Assistant for React project development.")
+        if react_assistant_enabled != react_assistant:
+            st.session_state["react_assistant_enabled"] = react_assistant
+            restart_assistant()
+            
         if "product_owner_enabled" not in st.session_state:
             st.session_state["product_owner_enabled"] = True
         product_owner_enabled = st.session_state["product_owner_enabled"]
@@ -108,7 +115,32 @@ def render_sidebar():
         if quality_analyst_enabled != quality_analyst:
             st.session_state["quality_analyst_enabled"] = quality_analyst
             restart_assistant()    
-                
+    
+    if st.session_state.get("react_assistant_enabled", False):
+        with st.sidebar.expander("React Assistant Tools", expanded=False):
+            project_name = st.text_input("React Project Name")
+            
+            if st.button("Analyze Project Structure"):
+                result = st.session_state.llm_os.run(f"Analyze the structure of the React project named {project_name}")
+                st.write(result)
+            
+            component_name = st.text_input("Find Component")
+            if st.button("Search for Component"):
+                result = st.session_state.llm_os.run(f"Find the component named {component_name} in the React project {project_name}")
+                st.write(result)
+            
+            file_path = st.text_input("File Path for Improvement Suggestions")
+            if st.button("Suggest Improvements"):
+                result = st.session_state.llm_os.run(f"Suggest code improvements for the file {file_path} in the React project {project_name}")
+                st.write(result)
+            
+            explain_file = st.text_input("File Path for Code Explanation")
+            start_line = st.number_input("Start Line", min_value=1, value=1)
+            end_line = st.number_input("End Line", min_value=1, value=10)
+            if st.button("Explain Code Snippet"):
+                result = st.session_state.llm_os.run(f"Explain the code snippet from line {start_line} to {end_line} in the file {explain_file} of the React project {project_name}")
+                st.write(result)
+                            
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
                     
     with st.sidebar.expander("Select model:", expanded=False):

@@ -8,6 +8,8 @@ import httpx
 import psutil
 from dotenv import load_dotenv
 
+from team.react_assistant import ReactAssistant
+from kr8.tools.code_tools import CodeTools
 from kr8.assistant import Assistant
 from kr8.assistant.duckdb import DuckDbAssistant
 from kr8.assistant.python import PythonAssistant
@@ -71,6 +73,7 @@ def get_llm_os(
     web_search: bool = True,
     data_analyst: bool = True,
     python_assistant: bool = False,
+    react_assistant: bool = False,
     research_assistant: bool = False,
     maintenance_engineer: bool = False,
     financial_analyst: bool = True,
@@ -597,6 +600,18 @@ def get_llm_os(
             "If the user requests more information on a specific section, refer back to the detailed analysis or ask the Company Analyst for further elaboration on that section.",
         ])
 
+    if react_assistant:
+        code_tools = CodeTools(knowledge_base=knowledge_base)
+        _react_assistant = ReactAssistant(
+            llm=llm,
+            tools=[code_tools],  
+        )
+        team.append(_react_assistant)
+        extra_instructions.append(
+            "To get assistance with React projects, delegate the task to the `Code Assistant`. "
+            "The Code Assistant can help with code problems, feature design, and various analyses."
+        )
+    
     if product_owner:
         _product_owner = Assistant(
             name="Product Owner",

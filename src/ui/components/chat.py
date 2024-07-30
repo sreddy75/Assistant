@@ -5,6 +5,7 @@ import random
 import re
 import time
 from xml.dom import minidom
+import zipfile
 import httpx
 from openai import OpenAIError
 import pandas as pd
@@ -26,6 +27,7 @@ import plotly.graph_objects as go
 import json
 
 from kr8.tools.pandas import PandasTools
+from kr8.tools.code_tools import CodeTools
 from team.data_analyst import EnhancedDataAnalyst
 
 # Load the custom icons
@@ -230,6 +232,7 @@ def initialize_assistant(llm_id, user_id=None):
                 investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
                 company_analyst=st.session_state.get("company_analyst_enabled", False),            
                 maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
+                react_assistant=st.session_state.get("react_assistant_enabled", False),
                 product_owner=st.session_state.get("product_owner_enabled", True),
                 business_analyst=st.session_state.get("business_analyst_enabled", True),
                 quality_analyst=st.session_state.get("quality_analyst_enabled", True),
@@ -343,26 +346,32 @@ def manage_knowledge_base(llm_os):
         st.session_state["file_uploader_key"] = 100
 
     uploaded_files = st.sidebar.file_uploader(
-        "Upload Documents", type=["pdf", "csv", "xlsx", "xls"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
+        "Upload Documents or React Project", type=["pdf", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
-    
+
+    # Add a new uploader for folder
+    uploaded_folder = st.sidebar.file_uploader(
+        "Upload React Project Folder", type=["py", "js", "jsx", "ts", "tsx", "css", "json", "md", "yml", "yaml", "txt"],
+        key="folder_uploader", accept_multiple_files=True
+    )
+
+    code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
+
     if uploaded_files:
         financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Financial Analyst"), None)
         data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Data Analyst"), None)
         
-        logger.debug(f"Team members: {[assistant.name for assistant in llm_os.team]}")
-        logger.debug(f"Financial Analyst: {financial_analyst}")
-        logger.debug(f"Data Analyst: {data_analyst}")
-
-        if financial_analyst is None and data_analyst is None:
-            st.error("No Financial Analyst or Data Analyst available. Please check your configuration.")
-            logger.error("No Financial Analyst or Data Analyst found in the team.")
-            return
-
         for file in uploaded_files:
             with st.spinner(f"Processing {file.name}..."):
                 try:
-                    if file.name.endswith('.pdf'):
+                    if file.name.endswith('.zip'):
+                        # Assume zip file is a React project
+                        project_name = file.name.replace('.zip', '')
+                        with zipfile.ZipFile(file) as z:
+                            directory_content = {name: z.read(name).decode('utf-8') for name in z.namelist()}
+                        result = code_tools.load_react_project(project_name, directory_content)
+                        st.success(result)
+                    elif file.name.endswith('.pdf'):
                         success, message = process_pdf(file, llm_os)
                         if success:
                             st.success(message)
@@ -392,7 +401,23 @@ def manage_knowledge_base(llm_os):
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
                     logger.error(f"Error processing {file.name}: {str(e)}")
-                            
+    
+    if uploaded_folder:
+        project_name = st.text_input("Enter React Project Name", "my_react_project")
+        directory_content = {}
+        for file in uploaded_folder:
+            file_content = file.read().decode('utf-8', errors='ignore')
+            directory_content[file.name] = file_content
+        
+        if directory_content:
+            with st.spinner(f"Processing React project folder..."):
+                try:
+                    result = code_tools.load_react_project(project_name, directory_content)
+                    st.success(result)
+                except Exception as e:
+                    st.error(f"Error processing React project folder: {str(e)}")
+                    logger.error(f"Error processing React project folder: {str(e)}")
+                                        
         # Increment the file uploader key to force a refresh
         st.session_state["file_uploader_key"] += 1
 

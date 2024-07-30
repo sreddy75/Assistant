@@ -39,8 +39,10 @@ class PgVector2(VectorDb):
         embedder: Optional[Embedder] = None,
         distance: Distance = Distance.cosine,
         index: Optional[Union[Ivfflat, HNSW]] = HNSW(),
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        project_namespace: Optional[str] = None  # Add this line
     ):
+        self.project_namespace = project_namespace
         self.user_id = user_id
         # Collection attributes
         self.collection = f"user_{user_id}_{collection}" if user_id else collection
@@ -78,6 +80,10 @@ class PgVector2(VectorDb):
 
         # Database table for the collection
         self.table: Table = self.get_table()
+    
+    def get_collection_name(self):
+        base_name = f"user_{self.user_id}_{self.collection}" if self.user_id else self.collection
+        return f"{base_name}_{self.project_namespace}" if self.project_namespace else base_name
     
     def get_table(self) -> Table:
         return Table(

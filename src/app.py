@@ -110,6 +110,10 @@ def initialize_app():
             st.session_state.llm_id = "gpt-4o"  
             logger.debug(f"Initialized llm_id with default value: {st.session_state.llm_id}")
         
+        # Initialize react_assistant_enabled if it's not already set
+        if "react_assistant_enabled" not in st.session_state:
+            st.session_state.react_assistant_enabled = False
+            
         # Create a centered column for the spinner and status messages
         col1, col2, col3 = st.columns([1, 6, 1])
         with col2:
