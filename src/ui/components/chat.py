@@ -346,13 +346,15 @@ def manage_knowledge_base(llm_os):
         st.session_state["file_uploader_key"] = 100
 
     uploaded_files = st.sidebar.file_uploader(
-        "Upload Documents or React Project", type=["pdf", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
+        "Upload Documents", type=["pdf", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
 
-    # Add a new uploader for folder
-    uploaded_folder = st.sidebar.file_uploader(
-        "Upload React Project Folder", type=["py", "js", "jsx", "ts", "tsx", "css", "json", "md", "yml", "yaml", "txt"],
-        key="folder_uploader", accept_multiple_files=True
+    # Separate uploader for React project files
+    react_files = st.sidebar.file_uploader(
+        "Upload React Project Files", 
+        type=["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"],
+        key="react_file_uploader",
+        accept_multiple_files=True
     )
 
     code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
@@ -363,15 +365,8 @@ def manage_knowledge_base(llm_os):
         
         for file in uploaded_files:
             with st.spinner(f"Processing {file.name}..."):
-                try:
-                    if file.name.endswith('.zip'):
-                        # Assume zip file is a React project
-                        project_name = file.name.replace('.zip', '')
-                        with zipfile.ZipFile(file) as z:
-                            directory_content = {name: z.read(name).decode('utf-8') for name in z.namelist()}
-                        result = code_tools.load_react_project(project_name, directory_content)
-                        st.success(result)
-                    elif file.name.endswith('.pdf'):
+                try:                    
+                    if file.name.endswith('.pdf'):
                         success, message = process_pdf(file, llm_os)
                         if success:
                             st.success(message)
@@ -402,21 +397,23 @@ def manage_knowledge_base(llm_os):
                     st.error(f"Error processing {file.name}: {str(e)}")
                     logger.error(f"Error processing {file.name}: {str(e)}")
     
-    if uploaded_folder:
+    if react_files:
         project_name = st.text_input("Enter React Project Name", "my_react_project")
-        directory_content = {}
-        for file in uploaded_folder:
-            file_content = file.read().decode('utf-8', errors='ignore')
-            directory_content[file.name] = file_content
-        
-        if directory_content:
-            with st.spinner(f"Processing React project folder..."):
+        if st.button("Process React Project"):
+            with st.spinner("Processing React project files..."):
                 try:
+                    directory_content = {}
+                    for file in react_files:
+                        file_content = file.read().decode('utf-8', errors='ignore')
+                        directory_content[file.name] = file_content
+
+                    code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
                     result = code_tools.load_react_project(project_name, directory_content)
                     st.success(result)
+                    st.session_state['current_project'] = project_name
                 except Exception as e:
-                    st.error(f"Error processing React project folder: {str(e)}")
-                    logger.error(f"Error processing React project folder: {str(e)}")
+                    st.error(f"Error processing React project files: {str(e)}")
+                    logger.error(f"Error processing React project files: {str(e)}")
                                         
         # Increment the file uploader key to force a refresh
         st.session_state["file_uploader_key"] += 1

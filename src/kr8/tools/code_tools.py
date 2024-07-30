@@ -5,17 +5,12 @@ from kr8.tools import Toolkit
 from kr8.document import Document
 from kr8.utils.log import logger
 import os
-import json
 
 class CodeTools(Toolkit):
     def __init__(self, knowledge_base=None):
         super().__init__(name="code_tools")
         self.knowledge_base = knowledge_base
         self.register(self.load_react_project)
-        self.register(self.analyze_project_structure)
-        self.register(self.find_component)
-        self.register(self.get_file_content)
-        self.register(self.get_code_snippet)
 
     def load_react_project(self, project_name: str, directory_content: Dict[str, str]) -> str:
         project_namespace = f"react_project_{project_name}"
@@ -33,11 +28,12 @@ class CodeTools(Toolkit):
                         "file_type": ext
                     }
                 )
-                self.knowledge_base.load_document(doc, collection=project_namespace)
+                # Remove the 'collection' argument
+                self.knowledge_base.load_document(doc)
         
         logger.info(f"React project '{project_name}' loaded successfully")
         return f"React project '{project_name}' loaded successfully"
-    
+            
     def analyze_project_structure(self, project_name: str) -> str:
         project_namespace = f"react_project_{project_name}"
         files = self.knowledge_base.search(query=f"project:{project_name}", num_documents=1000)

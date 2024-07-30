@@ -53,22 +53,16 @@ class AssistantKnowledge(BaseModel):
         logger.info("Creating collection")
         self.vector_db.create(collection=self.get_collection_name())
 
-    def load_document(self, document: Document, upsert: bool = False, skip_existing: bool = True) -> None:
-        self.load_documents(documents=[document], upsert=upsert, skip_existing=skip_existing)
+    def load_document(self, document: Document) -> None:
+        self.load_documents([document])
 
-    def load_documents(self, documents: List[Document], upsert: bool = False, skip_existing: bool = True) -> None:
+    def load_documents(self, documents: List[Document]) -> None:
         logger.info("Loading knowledge base")
         logger.info(f"Attempting to load {len(documents)} documents into knowledge base")
 
         if self.vector_db is None:
             logger.error("No vector db provided")
             return
-
-        logger.debug(f"Vector DB: {self.vector_db}")
-        logger.debug(f"Vector DB type: {type(self.vector_db)}")
-
-        logger.debug("Creating collection")
-        self.vector_db.create()  # Remove the collection argument
 
         documents_to_load = []
         for document in documents:
@@ -82,18 +76,15 @@ class AssistantKnowledge(BaseModel):
 
         if documents_to_load:
             try:
-                logger.debug(f"Attempting to {'upsert' if upsert else 'insert'} {len(documents_to_load)} documents")
-                if upsert:
-                    self.vector_db.upsert(documents=documents_to_load)
-                else:
-                    self.vector_db.insert(documents=documents_to_load)
+                logger.debug(f"Attempting to insert {len(documents_to_load)} documents")
+                self.vector_db.insert(documents=documents_to_load)
                 logger.info(f"Loaded {len(documents_to_load)} documents to knowledge base")
             except Exception as e:
                 logger.error(f"Error loading documents to knowledge base: {e}")
                 logger.exception("Traceback:")
         else:
             logger.info("No new documents to load")
-
+            
     def get_document_by_name(self, name: str) -> Optional[Document]:
         if self.vector_db is None:
             logger.warning("No vector db provided")

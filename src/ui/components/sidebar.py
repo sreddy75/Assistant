@@ -116,9 +116,9 @@ def render_sidebar():
             st.session_state["quality_analyst_enabled"] = quality_analyst
             restart_assistant()    
     
-    if st.session_state.get("react_assistant_enabled", False):
+    if st.session_state.get("react_assistant_enabled", False) and st.session_state.get('current_project'):
         with st.sidebar.expander("React Assistant Tools", expanded=False):
-            project_name = st.text_input("React Project Name")
+            project_name = st.session_state['current_project']
             
             if st.button("Analyze Project Structure"):
                 result = st.session_state.llm_os.run(f"Analyze the structure of the React project named {project_name}")
