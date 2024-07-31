@@ -442,7 +442,7 @@ def process_pdf(file, llm_os):
     logger.info(f"Successfully read PDF: {file.name}. Found {len(auto_rag_documents)} documents.")
     
     try:
-        llm_os.knowledge_base.load_documents(auto_rag_documents, upsert=True)
+        llm_os.knowledge_base.load_documents(auto_rag_documents)
         logger.info(f"Successfully added PDF content to knowledge base.")
         return True, f"Successfully processed {file.name}"
     except Exception as e:

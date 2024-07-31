@@ -76,9 +76,12 @@ class AssistantKnowledge(BaseModel):
 
         if documents_to_load:
             try:
-                logger.debug(f"Attempting to insert {len(documents_to_load)} documents")
-                self.vector_db.insert(documents=documents_to_load)
+                logger.debug(f"Attempting to upsert {len(documents_to_load)} documents")
+                self.vector_db.upsert(documents=documents_to_load)
                 logger.info(f"Loaded {len(documents_to_load)} documents to knowledge base")
+            except AttributeError:
+                logger.warning("Upsert not available, falling back to insert")
+                self.vector_db.insert(documents=documents_to_load)    
             except Exception as e:
                 logger.error(f"Error loading documents to knowledge base: {e}")
                 logger.exception("Traceback:")
