@@ -19,6 +19,7 @@ from kr8.knowledge import AssistantKnowledge
 from kr8.llm.offline_llm import OfflineLLM
 from kr8.llm.ollama import Ollama
 from kr8.llm.openai import OpenAIChat
+from kr8.llm.anthropic import Claude
 from kr8.storage.assistant.postgres import PgAssistantStorage
 from kr8.tools import Toolkit, Function
 from kr8.tools.calculator import Calculator
@@ -188,8 +189,8 @@ def get_llm_os(
                     logger.error(f"Failed to initialize Ollama with fallback model: {fallback_error}")
                     logger.warning("Switching to offline mode")
                     llm = OfflineLLM(model=fallback_model)                                    
-    elif llm_id == "gpt-3.5-turbo":
-        llm = OpenAIChat(model="gpt-3.5-turbo")
+    elif llm_id == "claude-3.5":
+        llm = Claude(model="claude-3-sonnet-20240229")
     elif llm_id == "gpt-4o":
         llm = OpenAIChat(model="gpt-4o")
     else:

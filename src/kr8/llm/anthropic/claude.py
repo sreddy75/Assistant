@@ -74,11 +74,19 @@ class Claude(LLM):
         api_kwargs: Dict[str, Any] = self.api_kwargs
         api_messages: List[dict] = []
 
+        system_message = None
         for m in messages:
             if m.role == "system":
-                api_kwargs["system"] = m.content
+                system_message = m.content
             else:
                 api_messages.append({"role": m.role, "content": m.content or ""})
+
+        # Ensure the first message is a user message
+        if api_messages and api_messages[0]["role"] != "user":
+            api_messages.insert(0, {"role": "user", "content": "Hello"})
+
+        if system_message:
+            api_kwargs["system"] = system_message
 
         return self.client.messages.create(
             model=self.model,
@@ -90,18 +98,25 @@ class Claude(LLM):
         api_kwargs: Dict[str, Any] = self.api_kwargs
         api_messages: List[dict] = []
 
+        system_message = None
         for m in messages:
             if m.role == "system":
-                api_kwargs["system"] = m.content
+                system_message = m.content
             else:
                 api_messages.append({"role": m.role, "content": m.content or ""})
+
+        # Ensure the first message is a user message
+        if api_messages and api_messages[0]["role"] != "user":
+            api_messages.insert(0, {"role": "user", "content": "Hello"})
+
+        if system_message:
+            api_kwargs["system"] = system_message
 
         return self.client.messages.stream(
             model=self.model,
             messages=api_messages,
             **api_kwargs,
         )
-
     def response(self, messages: List[Message]) -> str:
         logger.debug("---------- Claude Response Start ----------")
         # -*- Log messages for debugging
