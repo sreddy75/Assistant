@@ -1,17 +1,11 @@
 import base64
 import io
-from pyexpat import ExpatError
 import random
 import re
 from sqlite3 import IntegrityError
 import time
-from xml.dom import minidom
-import zipfile
-import httpx
-from openai import OpenAIError
 import pandas as pd
 import streamlit as st
-import html
 from kr8.utils.log import logger
 from assistant import get_llm_os
 from kr8.document.reader.website import WebsiteReader
@@ -26,6 +20,9 @@ import json
 import streamlit as st
 import plotly.graph_objects as go
 import json
+import base64
+from io import BytesIO
+from PIL import Image
 
 from kr8.tools.pandas import PandasTools
 from kr8.tools.code_tools import CodeTools
@@ -36,6 +33,35 @@ meerkat_icon = Image.open("images/meerkat_icon.png")
 user_icon = Image.open("images/user_icon.png")
 llm_os = None
 
+def display_base64_image(base64_string):
+    try:
+        # Remove the "data:image/png;base64," part if present
+        if "base64," in base64_string:
+            base64_string = base64_string.split("base64,")[1]
+        
+        # Decode the base64 string
+        img_data = base64.b64decode(base64_string)
+        
+        # Open the image using PIL
+        img = Image.open(BytesIO(img_data))
+        
+        # Display the image using Streamlit
+        st.image(img, use_column_width=True)
+    except Exception as e:
+        st.error(f"Error displaying image: {e}")
+        logger.error(f"Error displaying image: {str(e)}", exc_info=True)
+
+
+def render_chart(chart_data):
+    try:
+        fig = go.Figure(data=chart_data['data']['data'], layout=chart_data['data']['layout'])
+        st.plotly_chart(fig, use_container_width=True)
+        if 'interpretation' in chart_data:
+            st.write(chart_data['interpretation'])
+    except Exception as e:
+        st.error(f"Error rendering chart: {e}")
+        logger.error(f"Error rendering chart: {str(e)}", exc_info=True)
+                
 def sanitize_content(content):
     def format_code_block(match):
         lang = match.group(1) or ''
@@ -103,7 +129,6 @@ def render_chat(user_id=None):
     llm_id = st.session_state.llm_id
     llm_os = initialize_assistant(llm_id, user_id)
 
-
     if llm_os is None:
         st.warning("The assistant is currently unavailable. Please try again later.")
         return
@@ -155,51 +180,43 @@ def render_chat(user_id=None):
                 buffer = ""
                 resp_container = st.empty()
                 start_time = time.time()
-                update_interval = 0.1  # Update every 0.1 seconds
+                update_interval = 0.1 # Update every 0.1 seconds
 
                 try:
+                    # In the main loop of render_chat function:
+                    full_response = ""
                     for delta in llm_os.run(prompt):
-                        buffer += delta
-                        response += delta
+                        full_response += delta
                         current_time = time.time()
                         
                         if current_time - start_time >= update_interval:
-                            sanitized_response = sanitize_content(response)
-                            resp_container.markdown(sanitized_response + "▌")
+                            sanitized_response = sanitize_content(full_response)
+                            
+                            # Clear the previous content
+                            resp_container.empty()
+                            
+                            # Find all JSON-like structures
+                            json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
+                            parts = json_pattern.split(sanitized_response)
+                            json_matches = json_pattern.findall(sanitized_response)
+                            
+                            for i, part in enumerate(parts):
+                                resp_container.markdown(part)
+                                if i < len(json_matches):
+                                    try:
+                                        chart_data = json.loads(json_matches[i])
+                                        if 'chart_type' in chart_data and 'data' in chart_data:
+                                            render_chart(chart_data)
+                                        else:
+                                            resp_container.code(json.dumps(chart_data, indent=2))
+                                    except json.JSONDecodeError:
+                                        resp_container.code(json_matches[i])
+                            
                             start_time = current_time
-                            buffer = ""
 
-                        # Check if the response contains a chart JSON
-                        if '"chart_type":' in buffer and '"data":' in buffer and '"interpretation":' in buffer:
-                            try:
-                                # Find the start and end of the JSON object
-                                start_index = buffer.index('{"chart_type":')
-                                end_index = buffer.rindex('}') + 1
-                                chart_json = buffer[start_index:end_index]
-                                
-                                # Parse the JSON
-                                chart_data = json.loads(chart_json)
-                                
-                                # Create a Plotly figure from the dictionary
-                                fig = go.Figure(data=[go.Bar(x=chart_data['data']['data']['x'], 
-                                                            y=chart_data['data']['data']['y'])])
-                                fig.update_layout(title=chart_data['data']['layout']['title'],
-                                                  xaxis_title=chart_data['data']['layout']['xaxis']['title'],
-                                                  yaxis_title=chart_data['data']['layout']['yaxis']['title'])
-                                
-                                # Display the figure
-                                st.plotly_chart(fig)
-                                
-                                # Display the interpretation
-                                st.write(chart_data['interpretation'])
-                                
-                                # Clear the buffer after processing the chart
-                                buffer = buffer[end_index:]
-                            except Exception as e:
-                                st.error(f"Error rendering chart: {e}")
-                
-                    # Final update
-                    sanitized_response = sanitize_content(response)
+                    # Final update after the loop
+                    sanitized_response = sanitize_content(full_response)
+                    resp_container.empty()
                     resp_container.markdown(sanitized_response)
 
                 except Exception as e:
@@ -208,10 +225,9 @@ def render_chat(user_id=None):
                     
                 st.session_state["messages"].append({"role": "assistant", "content": response})
 
-
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
-
+        
 def initialize_assistant(llm_id, user_id=None):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
