@@ -3,6 +3,7 @@ import time
 import requests
 import streamlit as st
 import base64
+from streamlit.web.server.websocket_headers import _get_websocket_headers
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat, debug_knowledge_base
@@ -12,6 +13,8 @@ from queue import Queue
 from threading import Thread
 from streamlit_autorefresh import st_autorefresh
 from utils.auth import get_user_id
+import time
+from service.analytics_service import analytics_service
 from config.client_config import load_theme, ENABLED_ASSISTANTS, get_client_name
 import toml
 
@@ -62,13 +65,18 @@ def login_form():
                     if login(email, password):
                         st.session_state.authenticated = True
                         st.session_state.initialization_complete = False
-                        st.session_state.user_id = get_user_id(email) 
+                        st.session_state.user_id = get_user_id(email)
+                        
+                        # Set admin flag
+                        st.session_state.is_admin = is_admin_user(email)
+                        
                         logger.debug("User authenticated, initializing app")
                         st.rerun()
                     else:
                         st.error("Invalid email or password")
                 else:
                     st.error("Please enter a valid email address")
+                    
 
         with tab2:
             new_email = st.text_input("Email", key="register_email")
@@ -103,6 +111,11 @@ def perform_heavy_initialization():
     # Add any other heavy initialization steps here
     log_init_event("Initialization complete!")
 
+
+def is_admin_user(email):
+    # Implement this function to check if the user is an admin
+    admin_emails = ["admin@example.com", "suren@kr8it.com"]  
+    return email in admin_emails
 
 def initialize_app():
     if "app_initialized" not in st.session_state:
@@ -233,7 +246,10 @@ def check_token_validity():
             logout()
             st.rerun()
             
-def main_app():    
+def main_app():
+    client_name = get_client_name()
+    st.title(f"Welcome to {client_name.capitalize()}'s AI Assistant")
+
     col1, col2 = st.sidebar.columns([2, 1])
 
     # Display welcome message in the first (wider) column
@@ -251,12 +267,22 @@ def main_app():
             st.session_state.pop('email', None)
             st.rerun()
     
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
-    
-    render_chat(user_id=st.session_state.get('user_id'))
-    
-    render_sidebar()
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
 
+    # Create tabs
+    chat_tab, analytics_tab = st.tabs(["Chat", "Analytics"])
+
+    with chat_tab:
+        render_chat(user_id=st.session_state.get('user_id'))
+    
+    with analytics_tab:
+        if st.session_state.get('is_admin', False):
+            from ui.components.chat import render_analytics_dashboard
+            render_analytics_dashboard()
+        else:
+            st.warning("You don't have permission to view the analytics dashboard.")
+
+    render_sidebar()
 
 def apply_custom_theme():
     theme_path = load_theme()
@@ -287,6 +313,11 @@ def main():
      # Apply custom theme
     apply_custom_theme()    
 
+    # Track user information
+    headers = _get_websocket_headers()
+    st.session_state['user_agent'] = headers.get('User-Agent', '')
+    st.session_state['client_ip'] = headers.get('X-Forwarded-For', '').split(',')[0].strip()
+    
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
         logger.debug("Setting initial authenticated state")
@@ -322,7 +353,25 @@ def main():
             st.rerun()
         else:
             logger.debug("Rendering main app")
-            main_app()
+            if st.session_state.authenticated:
+                user_id = st.session_state.get('user_id')
+                
+                # Log app access
+                analytics_service.log_event(user_id, "app_access", {
+                    "user_agent": st.session_state.get('user_agent', ''),
+                    "ip_address": st.session_state.get('client_ip', '')
+                })
+
+                if not st.session_state.initialization_complete:
+                    start_time = time.time()
+                    initialize_app()
+                    
+                    # Log app initialization
+                    analytics_service.log_event(user_id, "app_initialized", {}, duration=time.time() - start_time)
+                    
+                    st.rerun()
+                else:
+                    main_app()
     else:
         logger.debug("Showing login form")
         login_form()

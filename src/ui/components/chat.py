@@ -11,10 +11,12 @@ from assistant import get_llm_os
 from kr8.document.reader.website import WebsiteReader
 from kr8.document.reader.pdf import PDFReader
 from multiprocessing import Pool
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import asyncio
 from kr8.document import Document
 from PIL import Image
-import plotly.io as pio
 from plotly.subplots import make_subplots
 import json
 import streamlit as st
@@ -26,9 +28,8 @@ from PIL import Image
 import os
 from dotenv import load_dotenv
 import json
-from kr8.tools.pandas import PandasTools
-from kr8.tools.code_tools import CodeTools
 from team.data_analyst import EnhancedDataAnalyst
+from service.analytics_service import analytics_service
 
 # Load environment variables
 load_dotenv()
@@ -128,7 +129,8 @@ def sanitize_content(content):
 
     return content
 
-def render_chat(user_id=None):
+def render_chat(user_id=None):    
+            
     if "llm_id" not in st.session_state:
         st.session_state.llm_id = "gpt-4o"  # Set a default value
         logger.warning("llm_id not found in session state, using default value")
@@ -178,6 +180,12 @@ def render_chat(user_id=None):
     # Chat input at the bottom
     if prompt := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": prompt})
+        
+        start_time = time.time()
+        
+        # Log user query
+        analytics_service.log_event(user_id, "user_query", {"query": prompt})
+        
         with chat_container:
             with st.chat_message("user", avatar=user_icon):
                 st.markdown(prompt)
@@ -189,12 +197,24 @@ def render_chat(user_id=None):
                 start_time = time.time()
                 update_interval = 0.1 # Update every 0.1 seconds
 
+                used_tools = []
+                used_assistants = []
+
                 try:
                     # In the main loop of render_chat function:
                     full_response = ""
                     for delta in llm_os.run(prompt):
                         full_response += delta
                         current_time = time.time()
+                        
+                        # Track used tools and assistants
+                        if hasattr(delta, 'tool_calls'):
+                            for tool_call in delta.tool_calls:
+                                if tool_call.name not in used_tools:
+                                    used_tools.append(tool_call.name)
+                        if hasattr(delta, 'assistant'):
+                            if delta.assistant.name not in used_assistants:
+                                used_assistants.append(delta.assistant.name)
                         
                         if current_time - start_time >= update_interval:
                             sanitized_response = sanitize_content(full_response)
@@ -230,11 +250,153 @@ def render_chat(user_id=None):
                     st.error(f"An unexpected error occurred: {str(e)}")
                     logger.error(f"Unexpected error: {str(e)}")                                    
                     
-                st.session_state["messages"].append({"role": "assistant", "content": response})
-
+                st.session_state["messages"].append({"role": "assistant", "content": full_response})
+        
+        # Log assistant response
+        response_time = time.time() - start_time
+        analytics_service.log_event(user_id, "assistant_response", {
+            "response_length": len(full_response),
+            "tools_used": used_tools,
+            "assistants_used": used_assistants
+        }, duration=response_time)
+        
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
+
+def render_analytics_dashboard():
+    st.header("Analytics Dashboard")
+
+    # Overview metrics
+    total_users = analytics_service.get_unique_users()
+    event_summary = analytics_service.get_event_summary()
+
+    # Create three columns for key metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Users", total_users)
+    with col2:
+        total_queries = event_summary.get('user_query', 0)
+        st.metric("Total Queries", total_queries)
+    with col3:
+        total_responses = event_summary.get('assistant_response', 0)
+        st.metric("Total Responses", total_responses)
+
+    # Event Summary as a horizontal bar chart
+    st.subheader("Event Summary")
+    event_df = pd.DataFrame(list(event_summary.items()), columns=['Event', 'Count'])
+    fig = px.bar(event_df, x='Count', y='Event', orientation='h')
+    st.plotly_chart(fig, use_container_width=True)
+
+    # User activity over time
+    st.subheader("User Activity Over Time")
+    all_events = analytics_service.get_user_events()
+    activity_data = [{"date": event['timestamp'].date(), "count": 1} for event in all_events]
+    activity_df = pd.DataFrame(activity_data)
+    activity_df = activity_df.groupby('date').sum().reset_index()
+    
+    # Use a line chart with markers for better visibility
+    fig = px.line(activity_df, x='date', y='count', markers=True, title='Daily User Activity')
+    fig.update_layout(xaxis_title='Date', yaxis_title='Number of Events')
+    st.plotly_chart(fig, use_container_width=True)
+
+    # User-specific analytics
+    st.subheader("User Analytics")
+    user_id = st.selectbox("Select User", options=[None] + list(range(1, total_users + 1)))
+    
+    if user_id:
+        events = analytics_service.get_user_events(user_id)
         
+        # User activity heatmap
+        st.subheader(f"Activity Heatmap for User {user_id}")
+        activity_data = [{"date": event['timestamp'].date(), "hour": event['timestamp'].hour, "count": 1} for event in events]
+        activity_df = pd.DataFrame(activity_data)
+        activity_df = activity_df.groupby(['date', 'hour']).sum().reset_index()
+        
+        # Create a pivot table for the heatmap
+        pivot_df = activity_df.pivot(index='date', columns='hour', values='count').fillna(0)
+        
+        fig = go.Figure(data=go.Heatmap(
+            z=pivot_df.values,
+            x=pivot_df.columns,
+            y=pivot_df.index,
+            colorscale='Viridis'))
+        
+        fig.update_layout(
+            title='User Activity Heatmap',
+            xaxis_title='Hour of Day',
+            yaxis_title='Date'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Most used tools and assistants
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Most Used Tools")
+            tool_usage = {}
+            for event in events:
+                if event['event_type'] == 'assistant_response':
+                    for tool in event['event_data'].get('tools_used', []):
+                        tool_usage[tool] = tool_usage.get(tool, 0) + 1
+            
+            tool_df = pd.DataFrame(list(tool_usage.items()), columns=['Tool', 'Usage'])
+            fig = px.pie(tool_df, values='Usage', names='Tool', title='Tool Usage Distribution')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.subheader("Most Used Assistants")
+            assistant_usage = {}
+            for event in events:
+                if event['event_type'] == 'assistant_response':
+                    for assistant in event['event_data'].get('assistants_used', []):
+                        assistant_usage[assistant] = assistant_usage.get(assistant, 0) + 1
+            
+            assistant_df = pd.DataFrame(list(assistant_usage.items()), columns=['Assistant', 'Usage'])
+            fig = px.pie(assistant_df, values='Usage', names='Assistant', title='Assistant Usage Distribution')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Average response time over time
+        st.subheader("Average Response Time Trend")
+        response_times = [
+            {"timestamp": event['timestamp'], "duration": event['duration']}
+            for event in events
+            if event['event_type'] == 'assistant_response' and event['duration']
+        ]
+        if response_times:
+            response_df = pd.DataFrame(response_times)
+            response_df['date'] = response_df['timestamp'].dt.date
+            daily_avg = response_df.groupby('date')['duration'].mean().reset_index()
+            
+            fig = px.line(daily_avg, x='date', y='duration', title='Daily Average Response Time')
+            fig.update_layout(xaxis_title='Date', yaxis_title='Average Response Time (seconds)')
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Recent global activity
+    st.subheader("Recent Global Activity")
+    recent_events = analytics_service.get_user_events()[:50]  # Get last 50 events
+    
+    # Create a DataFrame for recent events
+    recent_df = pd.DataFrame([
+        {
+            "User ID": event['user_id'],
+            "Timestamp": event['timestamp'],
+            "Event Type": event['event_type']
+        }
+        for event in recent_events
+    ])
+    
+    # Display recent events as an interactive table
+    st.dataframe(recent_df, use_container_width=True)
+
+    # Add a download button for the full activity log
+    csv = recent_df.to_csv(index=False)
+    st.download_button(
+        label="Download Full Activity Log",
+        data=csv,
+        file_name="activity_log.csv",
+        mime="text/csv",
+    )
+                
 def initialize_assistant(llm_id, user_id=None):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
