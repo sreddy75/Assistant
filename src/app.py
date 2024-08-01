@@ -12,6 +12,8 @@ from queue import Queue
 from threading import Thread
 from streamlit_autorefresh import st_autorefresh
 from utils.auth import get_user_id
+from config.client_config import load_theme, ENABLED_ASSISTANTS, get_client_name
+import toml
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -32,11 +34,13 @@ def log_init_event(event):
     init_queue.put(event)
     logger.debug(event)
     
-def login_form():
-    st.title("Welcome to Compare the Meerkat!")
+def login_form():    
+    client_name = get_client_name()     
+    st.title(f"Welcome to {client_name.capitalize()}'s Assistant")
     col1, col2, col3 = st.columns([1,8,1])
     with col2:        
-        file_ = open("images/meerkat.png", "rb")
+        # Customize the app based on the client           
+        file_ = open(f"src/config/themes/{get_client_name()}/main_image.png", "rb")
         contents = file_.read()
         data_url = base64.b64encode(contents).decode("utf-8")
         file_.close()
@@ -109,31 +113,30 @@ def initialize_app():
             st.session_state.llm_id = "gpt-4o"  
             logger.debug(f"Initialized llm_id with default value: {st.session_state.llm_id}")
         
-        # Initialize react_assistant_enabled if it's not already set
-        if "react_assistant_enabled" not in st.session_state:
-            st.session_state.react_assistant_enabled = False
+        # Initialize assistant states based on ENABLED_ASSISTANTS
+        for assistant in ENABLED_ASSISTANTS:
+            key = f"{assistant.lower().replace(' ', '_')}_enabled"
+            if key not in st.session_state:
+                st.session_state[key] = True
+                logger.debug(f"Initialized {key} with default value: True")
             
         # Create a centered column for the spinner and status messages
         col1, col2, col3 = st.columns([1, 6, 1])
         with col2:
-            st.markdown("<h1 style='text-align: center;'>Activating Meerkats...</h1>", unsafe_allow_html=True)
+            st.markdown("<h1 style='text-align: center;'>Initializing...</h1>", unsafe_allow_html=True)
             
             status_placeholder = st.empty()
             
             initialization_messages = [                                
-                "Git pulling from burrow...",                
-                "Containerizing meerkat snacks...",
-                "Deploying anti-mongoose firewall...",
-                "Optimizing tail recursion...",
-                "Parsing meerkat squeaks...",
-                "Overclocking tiny paw-cessors...",                
-                "Untangling spaghetti code...",                
-                "Buffering sandstorm data...",                
-                "Caching bug locations...",
-                "Pair programming with meerkats...",
-                "Agile sprinting from eagles...",
-                "Mocking mongoose objects...",
-                "Stress testing sand castles..."
+                "Loading language models...",                
+                "Initializing knowledge base...",
+                "Configuring AI assistants...",                
+                "Preparing natural language processing...",
+                "Optimizing response algorithms...",                
+                "Calibrating sentiment analysis...",                
+                "Loading conversation history...",                
+                "Initializing data analytics tools...",                                                
+                "Initializing context understanding..."
             ]
 
             # Insert CSS for animation
@@ -146,8 +149,8 @@ def initialize_app():
             }
 
             .fade {
-                animation: fadeInOut 3s infinite;
-                color: #FF4136;
+                animation: fadeInOut 2s infinite;
+                color: #4CAF50;
             }
             </style>
             """
@@ -157,20 +160,20 @@ def initialize_app():
             for _ in range(5):
                 status_message = f"<h3 class='fade' style='text-align: center;'>{random.choice(initialization_messages)}</h3>"
                 status_placeholder.markdown(status_message, unsafe_allow_html=True)
-                time.sleep(3)  # Delay to allow users to see the message
+                time.sleep(2)  # Reduced delay to 2 seconds for a faster experience
 
             perform_heavy_initialization()
 
             # Final status message
-            status_placeholder.markdown("<h3 style='text-align: center; color: #00FF00;'>Initialization complete!</h3>", unsafe_allow_html=True)
-            time.sleep(1)
+            status_placeholder.markdown("<h3 style='text-align: center; color: #4CAF50;'>AI Assistant Ready!</h3>", unsafe_allow_html=True)
+            time.sleep(2)
 
         st.session_state.initialization_complete = True
         st.session_state.app_initialized = True
         logger.debug("App initialization complete")
     else:
         logger.debug("App already initialized, skipping initialization")
-        
+                
 def reset_password_form():
     st.title("Reset Your Password")
 
@@ -255,14 +258,34 @@ def main_app():
     render_sidebar()
 
 
+def apply_custom_theme():
+    theme_path = load_theme()
+    with open(theme_path, 'r') as f:
+        theme_config = toml.load(f)
+    
+    # Apply the theme using custom CSS
+    theme_css = f"""
+    <style>
+        :root {{
+            --primaryColor: {theme_config['theme']['primaryColor']};
+            --backgroundColor: {theme_config['theme']['backgroundColor']};
+            --secondaryBackgroundColor: {theme_config['theme']['secondaryBackgroundColor']};
+            --textColor: {theme_config['theme']['textColor']};
+            --font: {theme_config['theme']['font']};
+        }}
+    </style>
+    """
+    st.markdown(theme_css, unsafe_allow_html=True)
 
 def main():
+    
     st.set_page_config(
-        page_title="Compare the Meerkat Assistant",
-        page_icon="favicon.png",
+        page_title="AI Assistant", 
+        page_icon="🤖"          
     )
-
-    logger.debug("Starting Compare the Meerkat app")
+    
+     # Apply custom theme
+    apply_custom_theme()    
 
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False

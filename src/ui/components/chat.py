@@ -23,14 +23,21 @@ import json
 import base64
 from io import BytesIO
 from PIL import Image
-
+import os
+from dotenv import load_dotenv
+import json
 from kr8.tools.pandas import PandasTools
 from kr8.tools.code_tools import CodeTools
 from team.data_analyst import EnhancedDataAnalyst
 
+# Load environment variables
+load_dotenv()
+
+client_name = os.getenv('CLIENT_NAME', 'default')
+
 # Load the custom icons
-meerkat_icon = Image.open("images/meerkat_icon.png")
-user_icon = Image.open("images/user_icon.png")
+meerkat_icon = Image.open(f"src/config/themes/{client_name}/chat_system_icon.png")
+user_icon = Image.open(f"src/config/themes/{client_name}/chat_user_icon.png")
 llm_os = None
 
 def display_base64_image(base64_string):
