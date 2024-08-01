@@ -1,4 +1,5 @@
 import json
+import re
 from textwrap import dedent
 from typing import Optional, List, Iterator, Dict, Any
 
@@ -69,6 +70,23 @@ class Claude(LLM):
         if self.request_params:
             _request_params.update(self.request_params)
         return _request_params
+
+    def clean_response(self, response: str) -> str:
+        # Remove XML tags
+        response = re.sub(r'<[^>]+>', '', response)
+        
+        # Convert newlines to proper Markdown line breaks
+        response = response.replace('\n', '  \n')
+        
+        # Add Markdown formatting for headers
+        response = re.sub(r'^(\w.+):$', r'### \1', response, flags=re.MULTILINE)
+        
+        # Add Markdown formatting for bullet points
+        response = re.sub(r'^\* ', '- ', response, flags=re.MULTILINE)
+        
+        response += "\n\nSimples!"
+        
+        return response.strip()
 
     def invoke(self, messages: List[Message]) -> AnthropicMessage:
         api_kwargs: Dict[str, Any] = self.api_kwargs
@@ -227,8 +245,8 @@ class Claude(LLM):
             return final_response
         logger.debug("---------- Claude Response End ----------")
         # -*- Return content if no function calls are present
-        if assistant_message.content is not None:
-            return assistant_message.get_content_string()
+        if assistant_message.content is not None:            
+            return self.clean_response(assistant_message.get_content_string())            
         return "Something went wrong, please try again."
 
     def response_stream(self, messages: List[Message]) -> Iterator[str]:
