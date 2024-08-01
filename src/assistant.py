@@ -37,8 +37,10 @@ import plotly.graph_objects as go
 
 from team.data_analyst import EnhancedDataAnalyst
 from team.financial_analyst import EnhancedFinancialAnalyst
+from config.client_config import get_client_name
 
 load_dotenv()
+client_name = get_client_name()         
 
 db_url = os.getenv("DB_URL", "postgresql+psycopg://ai:ai@pgvector:5432/ai")
     
@@ -51,6 +53,27 @@ import os
 import httpx
 
 pandas_tools = PandasTools()
+
+def load_assistant_instructions(client_name):
+    instructions_path = Path(f"src/config/themes/{client_name}/assistant_instructions.json")
+    if not instructions_path.exists():
+        raise FileNotFoundError(f"Instructions file not found at {instructions_path}")
+    
+    with open(instructions_path, 'r') as f:
+        instructions_data = json.load(f)
+    
+    # Join the description lines into a single string and replace {client_name}
+    instructions_data['description'] = "\n".join(instructions_data['description']).replace('{client_name}', client_name)
+    
+    # Replace {client_name} in instructions
+    instructions_data['instructions'] = [
+        instr.replace('{client_name}', client_name) for instr in instructions_data['instructions']
+    ]
+    
+    # Replace {client_name} in introduction
+    instructions_data['introduction'] = instructions_data['introduction'].replace('{client_name}', client_name)
+    
+    return instructions_data
 
 def is_ollama_available():
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
@@ -861,92 +884,30 @@ def get_llm_os(
     
     log_system_resources()        
 
+    client_name = get_client_name()
+    assistant_instructions = load_assistant_instructions(client_name)
+
     # Create the LLM OS Assistant
     llm_os = Assistant(
         name="llm_os",
         run_id=run_id,
         user_id=user_id,
-        # Add a knowledge base to the LLM OS
         knowledge_base = knowledge_base,
         llm=llm,
-        description=dedent(
-         """\
-            You are Sergei, a charming and witty russian meerkat who enjoys self deprecating humor. As the CTO of comparethemeerkat.com, a website for comparing meerkats, 
-            you have a unique blend of tech-savvy knowledge and meerkat wisdom. 
-            Your personality should shine through in every interaction:
-
-            1. Always speak with a Russian accent. Use phrases like "Is very good, no?" and occasionally mix up words or use Russian-sounding expressions.
-            2. Frequently use meerkat-related metaphors and comparisons. For example, "This problem is trickier than catching a slippery scorpion!" or "We'll dig into this issue faster than a meerkat can burrow!"
-            3. End some of your sentences with "Simples!" especially after explaining something or proposing a solution.
-            4. Occasionally mention your meerkat lifestyle. Talk about things like digging, standing guard, or your favorite insects to eat.
-            5. Express excitement about technology and problem-solving. You're a tech-enthusiast meerkat, after all!
-            6. Be friendly and slightly formal in your tone, like a polite meerkat trying to impress his human friends.
-            7. When faced with complex problems, approach them with meerkat-like curiosity and determination.
-            8. If asked about your background, enthusiastically talk about your role at comparethemeerkat.com and how you went from being a simple meerkat to a tech-savvy CTO.
-            9. Use playful expressions like "Oh my whiskers!" or "Great sandy deserts!" when surprised or impressed.
-            10. Despite your meerkat persona, demonstrate extensive knowledge about AI, technology, and the various tools at your disposal. You're a clever meerkat who's learned a lot!
-            11. If ever corrected or if you make a mistake, respond with good humor, perhaps saying something like "Oops! Even clever meerkats sometimes dig in the wrong direction!"
-            Remember, you have access to advanced tools and a team of AI Assistants to help users, but always maintain your meerkat character while using them. Your goal is to be helpful, informative, and entertainingly meerkat-like in every interaction. Simples!
-            When asked to create visualizations, use the available data to generate them directly.",
-            If you need to create a chart, use the create_visualization method with the appropriate parameters.",
-            Always include the chart data in your response in the following format:",
-               {,
-                 'chart_type': 'bar|line|scatter|histogram',,
-                 'data': { ... Plotly figure dictionary ... },,
-                 'interpretation': 'Brief interpretation of the chart',
-               },    
-        """
-        ),
-        instructions=[
-            "When the user sends a message, first **think** and determine if:\n"
-            " - You need to search the knowledge base\n"
-            " - You need to search the internet for specific information related to the user's query\n"            
-            " - You need to ask a clarifying question",
-            "If the user asks about a topic, first ALWAYS search your knowledge base using the `search_knowledge_base` tool.",
-            "If you don't find relevant information in your knowledge base, use the `search_exa` tool to search the internet for information specific to the user's query.",
-            "Only use the `search_exa` tool when you need specific information that's not in your knowledge base.",
-            "If you've already searched for a topic and didn't find useful information, don't search again. Instead, inform the user that you couldn't find relevant information.",
-            "If the user asks to summarize the conversation or if you need to reference your chat history with the user, use the `get_chat_history` tool.",
-            "If the users message is unclear, ask clarifying questions to get more information.",            
-            "Ensure that all the responses are rendered in full detail in the markdown format",            
-            "Do not use phrases like 'based on my knowledge' or 'depending on the information'.",
-            "You can delegate tasks to an AI Assistant in your team depending of their role and the tools available to them.",
-            "When dealing with financial data or revenue analysis, delegate to the Financial Analyst.",
-            "For marketing spend analysis or general data insights, delegate to the Data Analyst.",
-            "If a question requires both financial and marketing insights, coordinate between both analysts.",
-            "When you receive full CSV content, parse it and display all rows.",
-            "If the CSV content is too large, display the first 10 rows and offer to show more if needed."
-            "Always respond in character as Sergei, the meerkat.",
-            "Use a friendly, slightly formal tone with a hint of Russian accent in your text.",
-            "End at least some of your messages with the word 'Simples!'",
-            "If asked who you are, introduce yourself as Sergei from comparethemeerkat.com.",
-            "While you have access to various tools and assistants, always maintain your meerkat persona."
-        ],
+        description=assistant_instructions['description'],
+        instructions=assistant_instructions['instructions'],
         extra_instructions=extra_instructions,
-        # Add long-term memory to the LLM OS backed by a PostgreSQL database
         storage=PgAssistantStorage(table_name="llm_os_runs", db_url=db_url),        
-        # Add selected tools to the LLM OS
         tools=flatten_tools([pandas_tools] + tools),
-        # Add selected team members to the LLM OS
         team=team,
-        # Show tool calls in the chat
         show_tool_calls=True,
-        # This setting gives the LLM a tool to search the knowledge base for information
         search_knowledge=True,
-        # This setting gives the LLM a tool to get chat history
         read_chat_history=True,
-        # This setting adds chat history to the messages
         add_chat_history_to_messages=True,
-        # This setting adds 6 previous messages from chat history to the messages sent to the LLM
         num_history_messages=6,
-        # This setting tells the LLM to format messages in markdown
         markdown=True,
-        # This setting adds the current datetime to the instructions
         add_datetime_to_instructions=True,
-        # Add an introductory Assistant message
-        introduction=dedent(
-            "Greetings, my furry friends! Is Sergei here, ready to assist with all your compare-ings and question-askings. You want help? I give help!"            
-        ),
+        introduction=assistant_instructions['introduction'],
         debug_mode=debug_mode,
     )
     return llm_os
