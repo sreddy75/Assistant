@@ -35,11 +35,11 @@ def log_init_event(event):
     logger.debug(event)
     
 def login_form():    
-    client_name = get_client_name()     
-    st.title(f"Welcome to {client_name.capitalize()}'s Assistant")
+    client_name = get_client_name()         
     col1, col2, col3 = st.columns([1,8,1])
     with col2:        
         # Customize the app based on the client           
+        st.markdown(f"<h1 style='text-align: center;'>Welcome to {client_name.capitalize()}'s Assistant</h1>", unsafe_allow_html=True)
         file_ = open(f"src/config/themes/{get_client_name()}/main_image.png", "rb")
         contents = file_.read()
         data_url = base64.b64encode(contents).decode("utf-8")
