@@ -255,7 +255,7 @@ def render_chat(user_id=None):
                             resp_container.empty()
                             
                             # Update the loading message
-                            loading_placeholder.markdown(f'<p class="loading">Generating response...</p>', unsafe_allow_html=True)
+                            loading_placeholder.markdown(f'<p class="pulsating-dot"></p>', unsafe_allow_html=True)
                             
                             # Find all JSON-like structures
                             json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
