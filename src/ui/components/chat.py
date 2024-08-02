@@ -131,6 +131,24 @@ def sanitize_content(content):
 
 def render_chat(user_id=None):    
             
+    st.markdown("""
+        <style>
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        .loading {
+            display: inline-block;
+            animation: pulse 2s infinite;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f0f0f0;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+            
     if "llm_id" not in st.session_state:
         st.session_state.llm_id = "gpt-4o"  # Set a default value
         logger.warning("llm_id not found in session state, using default value")
@@ -191,6 +209,10 @@ def render_chat(user_id=None):
                 st.markdown(prompt)
 
             with st.chat_message("assistant", avatar=meerkat_icon):
+                # Create a placeholder for the loading message
+                loading_placeholder = st.empty()
+                loading_placeholder.markdown('<p class="loading">Thinking... Please wait</p>', unsafe_allow_html=True)
+
                 response = ""
                 buffer = ""
                 resp_container = st.empty()
@@ -201,7 +223,6 @@ def render_chat(user_id=None):
                 used_assistants = []
 
                 try:
-                    # In the main loop of render_chat function:
                     full_response = ""
                     for delta in llm_os.run(prompt):
                         full_response += delta
@@ -210,8 +231,8 @@ def render_chat(user_id=None):
                         # Track used tools and assistants
                         if hasattr(delta, 'tool_calls'):
                             for tool_call in delta.tool_calls:
-                                if tool_call.name not in used_tools:
-                                    used_tools.append(tool_call.name)
+                                if tool_call.function.name not in used_tools:
+                                    used_tools.append(tool_call.function.name)
                         if hasattr(delta, 'assistant'):
                             if delta.assistant.name not in used_assistants:
                                 used_assistants.append(delta.assistant.name)
@@ -221,6 +242,9 @@ def render_chat(user_id=None):
                             
                             # Clear the previous content
                             resp_container.empty()
+                            
+                            # Update the loading message
+                            loading_placeholder.markdown(f'<p class="loading">Generating response... ({len(full_response)} characters generated so far)</p>', unsafe_allow_html=True)
                             
                             # Find all JSON-like structures
                             json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
@@ -245,6 +269,9 @@ def render_chat(user_id=None):
                     sanitized_response = sanitize_content(full_response)
                     resp_container.empty()
                     resp_container.markdown(sanitized_response)
+
+                    # Remove the loading message
+                    loading_placeholder.empty()
 
                 except Exception as e:
                     st.error(f"An unexpected error occurred: {str(e)}")
@@ -280,13 +307,22 @@ def render_analytics_dashboard():
     with col3:
         total_responses = event_summary.get('assistant_response', 0)
         st.metric("Total Responses", total_responses)
+    
+    st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
+    
+    st.subheader("Most Used Tools")
+    most_used_tools = analytics_service.get_most_used_tools()
+    st.bar_chart(dict(most_used_tools))        
 
+    st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
+    
     # Event Summary as a horizontal bar chart
     st.subheader("Event Summary")
     event_df = pd.DataFrame(list(event_summary.items()), columns=['Event', 'Count'])
     fig = px.bar(event_df, x='Count', y='Event', orientation='h')
     st.plotly_chart(fig, use_container_width=True)
 
+    st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
     # User activity over time
     st.subheader("User Activity Over Time")
     all_events = analytics_service.get_user_events()
@@ -299,6 +335,8 @@ def render_analytics_dashboard():
     fig.update_layout(xaxis_title='Date', yaxis_title='Number of Events')
     st.plotly_chart(fig, use_container_width=True)
 
+    st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
+    
     # User-specific analytics
     st.subheader("User Analytics")
     user_id = st.selectbox("Select User", options=[None] + list(range(1, total_users + 1)))

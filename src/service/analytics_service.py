@@ -39,6 +39,18 @@ class AnalyticsService:
         finally:
             session.close()
 
+    def get_most_used_tools(self):
+        session = self.Session()
+        try:
+            events = session.query(UserAnalytics).filter(UserAnalytics.event_type == 'assistant_response').all()
+            tool_usage = {}
+            for event in events:
+                tools = event.event_data.get('tools_used', [])
+                for tool in tools:
+                    tool_usage[tool] = tool_usage.get(tool, 0) + 1
+            return sorted(tool_usage.items(), key=lambda x: x[1], reverse=True)
+        finally:
+            session.close()
     def get_user_events(self, user_id=None):
         session = self.Session()
         try:

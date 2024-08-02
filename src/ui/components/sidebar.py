@@ -204,7 +204,7 @@ def render_sidebar():
 
         # Model Selection based on type
         if model_type == "Closed": # Closed Source
-            llm_options = ["claude-3.5", "gpt-4o"]
+            llm_options = ["gpt-4o", "claude-3.5"]
             llm_id = st.sidebar.selectbox("Select Closed Source Model", options=llm_options)
         else: 
             llm_options = ["llama3", "tinyllama"]
