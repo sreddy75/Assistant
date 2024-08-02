@@ -1,5 +1,6 @@
 import json
 from os import getenv
+import traceback
 from uuid import uuid4
 from textwrap import dedent
 from datetime import datetime
@@ -552,7 +553,7 @@ class Assistant(BaseModel):
             else:
                 llm_response = self.llm.response(messages=llm_messages)
         except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
+            logger.error(f"Error generating response: {traceback.format_exc()}")
             yield "I'm having trouble generating a response right now. Please try again later."
             return
 
@@ -742,7 +743,7 @@ class Assistant(BaseModel):
             else:
                 llm_response = await self.llm.aresponse(messages=llm_messages)
         except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
+            logger.error(f"Error generating response: {traceback.format_exc()}")
             yield "I'm having trouble generating a response right now. Please try again later."
             return
 
