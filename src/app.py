@@ -141,15 +141,14 @@ def initialize_app():
             status_placeholder = st.empty()
             
             initialization_messages = [                                
-                "Loading language models...",                
-                "Initializing knowledge base...",
-                "Configuring AI assistants...",                
-                "Preparing natural language processing...",
-                "Optimizing response algorithms...",                
-                "Calibrating sentiment analysis...",                
-                "Loading conversation history...",                
-                "Initializing data analytics tools...",                                                
-                "Initializing context understanding..."
+                "language models...",                
+                "knowledge base...",
+                "AI assistants...",                
+                "natural language processing...",
+                "response algorithms...",                
+                "sentiment analysis...",                
+                "conversation history...",                
+                "analytics tools..."                                                              
             ]
 
             # Insert CSS for animation
@@ -163,7 +162,7 @@ def initialize_app():
 
             .fade {
                 animation: fadeInOut 2s infinite;
-                color: #4CAF50;
+                color: #a61d0d;
             }
             </style>
             """
@@ -178,7 +177,7 @@ def initialize_app():
             perform_heavy_initialization()
 
             # Final status message
-            status_placeholder.markdown("<h3 style='text-align: center; color: #4CAF50;'>AI Assistant Ready!</h3>", unsafe_allow_html=True)
+            status_placeholder.markdown("<h3 style='text-align: center; color: #06752d;'>Assistant Ready!</h3>", unsafe_allow_html=True)
             time.sleep(2)
 
         st.session_state.initialization_complete = True

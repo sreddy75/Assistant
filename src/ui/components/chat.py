@@ -134,16 +134,27 @@ def render_chat(user_id=None):
     st.markdown("""
         <style>
         @keyframes pulse {
-            0% { opacity: 0.5; }
-            50% { opacity: 1; }
-            100% { opacity: 0.5; }
+            0% {
+                transform: scale(0.8);
+                opacity: 0.7;
+            }
+            50% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(0.8);
+                opacity: 0.7;
+            }
         }
-        .loading {
+
+        .pulsating-dot {
+            width: 20px;
+            height: 20px;
+            background-color: #ed053b;
+            border-radius: 50%;
             display: inline-block;
-            animation: pulse 2s infinite;
-            padding: 10px;
-            border-radius: 5px;
-            background-color: #f0f0f0;
+            animation: pulse 1.5s ease-in-out infinite;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -211,7 +222,7 @@ def render_chat(user_id=None):
             with st.chat_message("assistant", avatar=meerkat_icon):
                 # Create a placeholder for the loading message
                 loading_placeholder = st.empty()
-                loading_placeholder.markdown('<p class="loading">Thinking... Please wait</p>', unsafe_allow_html=True)
+                loading_placeholder.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
 
                 response = ""
                 buffer = ""
@@ -244,7 +255,7 @@ def render_chat(user_id=None):
                             resp_container.empty()
                             
                             # Update the loading message
-                            loading_placeholder.markdown(f'<p class="loading">Generating response... ({len(full_response)} characters generated so far)</p>', unsafe_allow_html=True)
+                            loading_placeholder.markdown(f'<p class="loading">Generating response...</p>', unsafe_allow_html=True)
                             
                             # Find all JSON-like structures
                             json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
