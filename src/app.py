@@ -292,16 +292,33 @@ def apply_custom_theme():
     # Apply the theme using custom CSS
     theme_css = f"""
     <style>
-        :root {{
-            --primaryColor: {theme_config['theme']['primaryColor']};
-            --backgroundColor: {theme_config['theme']['backgroundColor']};
-            --secondaryBackgroundColor: {theme_config['theme']['secondaryBackgroundColor']};
-            --textColor: {theme_config['theme']['textColor']};
-            --font: {theme_config['theme']['font']};
+        .stApp {{
+            background-color: {theme_config['theme']['backgroundColor']};
+        }}
+        .stTextInput > div > div > input {{
+            color: {theme_config['theme']['textColor']};
+        }}
+        .stButton > button {{
+            color: {theme_config['theme']['backgroundColor']};
+            background-color: {theme_config['theme']['primaryColor']};
+        }}
+        .stTextArea > div > div > textarea {{
+            color: {theme_config['theme']['textColor']};
+        }}
+        .stSelectbox > div > div > div {{
+            color: {theme_config['theme']['textColor']};
+            background-color: {theme_config['theme']['secondaryBackgroundColor']};
+        }}
+        .stHeader {{
+            color: {theme_config['theme']['primaryColor']};
+        }}
+        * {{
+            font-family: {theme_config['theme']['font']};
         }}
     </style>
     """
     st.markdown(theme_css, unsafe_allow_html=True)
+
 
 def main():
     
