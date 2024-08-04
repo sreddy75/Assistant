@@ -58,6 +58,10 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
+    first_name = Column(String)
+    last_name = Column(String)
+    nickname = Column(String)
+    role = Column(String)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
     trial_end = Column(SQLDateTime(timezone=True), default=func.now() + timedelta(days=7))
@@ -67,6 +71,8 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     user_id: int
+    role: str
+    nickname: str
     
 class TokenData(BaseModel):
     email: str | None = None
@@ -81,6 +87,10 @@ class UserInDB(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
+    first_name: str
+    last_name: str
+    nickname: str
+    role: str
 
 class EmailSchema(BaseModel):
     email: str
@@ -257,9 +267,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, "role": user.role, "nickname": user.nickname}, 
+        expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer", "user_id": user.id}
+    return {"access_token": access_token, "token_type": "bearer", "user_id": user.id, "role": user.role, "nickname": user.nickname}
 
 @app.get("/users/me", response_model=UserInDB)
 async def read_users_me(current_user: User = Depends(get_current_user)):
@@ -276,10 +287,17 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks, db: Sess
     except EmailNotValidError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
+    if user.role not in ["QA", "Product", "Delivery", "Manager"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
     hashed_password = get_password_hash(user.password)
     new_user = User(
         email=email, 
         hashed_password=hashed_password,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        nickname=user.nickname,
+        role=user.role,
         trial_end=datetime.now(UTC) + timedelta(days=7)
     )
     db.add(new_user)
@@ -391,13 +409,17 @@ def init_db():
         # Check if admin user exists, if not create one
         admin_user = db.query(User).filter(User.is_admin == True).first()
         if not admin_user:
-            hashed_password = get_password_hash("admin_password")  # Change this!
+            hashed_password = get_password_hash("password") 
             admin_user = User(
-                email="suren@kr8it.com",  # Change this!
+                email="suren@kr8it.com", 
                 hashed_password=hashed_password,
+                first_name="Suren",
+                last_name="Reddy",
+                nickname="Suren",
+                role="QA",
                 is_active=True,
                 is_admin=True,
-                trial_end=datetime.now(UTC) + timedelta(days=365),
+                trial_end=datetime.now(UTC) + timedelta(days=1),
                 email_verified=True
             )
             db.add(admin_user)

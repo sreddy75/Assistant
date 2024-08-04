@@ -1,3 +1,6 @@
+from asyncio.log import logger
+
+import pandas as pd
 from kr8.assistant.assistant import Assistant
 from kr8.tools.pandas import PandasTools
 from typing import List, Any, Optional, Union, Dict
@@ -5,27 +8,22 @@ from pydantic import Field, BaseModel
 import plotly.express as px
 import json
 
+from kr8.document.base import Document
+from kr8.knowledge.base import AssistantKnowledge
+
 class EnhancedDataAnalyst(Assistant, BaseModel):
     pandas_tools: Optional[PandasTools] = Field(default=None, description="PandasTools for data analysis")
 
-    def __init__(self, llm, tools: List[Any]):
+    def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None):
         super().__init__(
             name="Enhanced Data Analyst",
             role="Analyze data from uploaded CSV files with visualizations",
             llm=llm,
             tools=tools,
+            knowledge_base=knowledge_base, 
             instructions=[
-                "Use the pandas_tools to access loaded DataFrames and perform operations.",
-                "List available DataFrames using self.pandas_tools.list_dataframes().",
-                "Perform analysis on the relevant DataFrame based on the user's query.",
-                "Create visualizations using Plotly when appropriate to illustrate data trends and insights.",
-                "Use the create_visualization method to generate charts and graphs.",
-                "Always return the chart data in the following JSON format:",
-                "   {",
-                "     'chart_type': 'bar|line|scatter|histogram',",
-                "     'data': { ... Plotly figure dictionary ... },",
-                "     'interpretation': 'Brief interpretation of the chart'",
-                "   }",
+                "Always check the knowledge base first before asking for CSV files.",
+                "If the required data is in the knowledge base, use it directly for analysis."                
             ],
         )
         pandas_tools = next((tool for tool in tools if isinstance(tool, PandasTools)), None)
@@ -33,14 +31,42 @@ class EnhancedDataAnalyst(Assistant, BaseModel):
             self.pandas_tools = pandas_tools
         else:
             raise ValueError("PandasTools not found in the provided tools")
-
+        self.knowledge_base = knowledge_base
     def run(self, query: str, stream: bool = False) -> Union[str, Any]:
         if not self.pandas_tools:
             return "Error: PandasTools not initialized"
-        available_dataframes = self.pandas_tools.list_dataframes()
-        context = f"Available dataframes: {available_dataframes}\n\n"
+        
+        logger.debug(f"Searching knowledge base for query: {query}")
+        knowledge_base_results = self.search_knowledge_base(query)
+        logger.debug(f"Knowledge base search results: {knowledge_base_results}")
+        
+        if knowledge_base_results:
+            context = f"Relevant data found in knowledge base: {knowledge_base_results}\n\n"
+        else:
+            available_dataframes = self.pandas_tools.list_dataframes()
+            context = f"No data found in knowledge base. Available dataframes: {available_dataframes}\n\n"
+        
         full_query = context + query
         return super().run(full_query, stream=stream)
+
+    def search_knowledge_base(self, query: str) -> str:
+        if self.knowledge_base:
+            results = self.knowledge_base.search(query)
+            return json.dumps({"results": [doc.to_dict() for doc in results]})
+        return json.dumps({"results": []})
+
+    def process_knowledge_base_results(self, results: List[Document]) -> Optional[pd.DataFrame]:
+        if not results:
+            return None
+        
+        # Assuming the first result contains the CSV data
+        csv_content = results[0].content
+        try:
+            df = pd.read_csv(io.StringIO(csv_content))
+            return df
+        except Exception as e:
+            logger.error(f"Error processing knowledge base results: {e}")
+            return None
 
     def create_visualization(self, chart_type: str, dataframe_name: str, x: str, y: str, title: str) -> Dict[str, Any]:
         df = self.pandas_tools.get_dataframe(dataframe_name)
@@ -60,7 +86,7 @@ class EnhancedDataAnalyst(Assistant, BaseModel):
 
         return {
             "chart_type": chart_type,
-            "data": json.loads(pio.to_json(fig)),
+            "data": fig.to_dict(),
             "interpretation": f"This {chart_type} chart shows the relationship between {x} and {y} in the {dataframe_name} dataset."
         }
 

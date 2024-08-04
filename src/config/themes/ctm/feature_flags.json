@@ -1,10 +1,10 @@
 {
     "enable_data_analyst": false,
     "enable_financial_analyst": false,
-    "enable_product_owner": true,
-    "enable_business_analyst": true,
+    "enable_product_owner": false,
+    "enable_business_analyst": false,
     "enable_quality_analyst": true,
-    "enable_react_assistant": true,
+    "enable_react_assistant": false,
     "enable_web_search": true,
     "enable_research_assistant": false,
     "enable_investment_assistant": false,

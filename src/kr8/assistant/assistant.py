@@ -33,6 +33,7 @@ class Assistant(BaseModel):
     introduction: Optional[str] = None
     name: Optional[str] = None
     assistant_data: Optional[Dict[str, Any]] = None
+    user_nickname: Optional[str] = "friend"
 
     # -*- Run settings
     run_id: Optional[str] = Field(None, validate_default=True)
@@ -468,11 +469,11 @@ class Assistant(BaseModel):
 
         if isinstance(message, str) and "list of documents" in message.lower():
             search_results = self.search_knowledge_base("list of documents")
-            yield "Certainly! I'll search the knowledge base for a list of documents. Here's what I found:\n\n"
+            yield f"Certainly, {self.user_nickname}! I'll search the knowledge base for a list of documents. Here's what I found:\n\n"
             yield search_results
-            yield "\n\nIs there anything specific you'd like to know about these documents? Simples!"
+            yield f"\n\nIs there anything specific you'd like to know about these documents, {self.user_nickname}? Simples!"
             return
-    
+        
         self.update_llm()
 
         llm_messages: List[Message] = []
@@ -526,15 +527,17 @@ class Assistant(BaseModel):
 
             # Before passing the message to the LLM, perform a knowledge base search
             if isinstance(message, str):
-                search_results = json.loads(self.search_knowledge_base(message))
-                if "results" in search_results and search_results["results"]:
+                logger.debug(f"Searching knowledge base for: {message}")
+                search_results = self.search_knowledge_base(message)
+                logger.debug(f"Knowledge base search results: {search_results}")
+                search_results = json.loads(search_results)
+                if search_results.get("results"):
                     context = "Relevant information from the knowledge base:\n"
                     for doc in search_results["results"]:
                         context += f"Document: {doc['name']}\nContent: {doc['content']}\n\n"
-                    
-                    enhanced_message = f"{context}\nUser query: {message}\n\nPlease use the information above to answer the following question: {message}"
+                    enhanced_message = f"{context}\nUser query: {message}\n\nPlease use the information above to answer the following question from {self.user_nickname}: {message}"
                 else:
-                    enhanced_message = message
+                    enhanced_message = f"A question from {self.user_nickname}: {message}"
                 
                 user_prompt_message = Message(role="user", content=enhanced_message, **kwargs)
             else:
@@ -554,7 +557,7 @@ class Assistant(BaseModel):
                 llm_response = self.llm.response(messages=llm_messages)
         except Exception as e:
             logger.error(f"Error generating response: {traceback.format_exc()}")
-            yield "I'm having trouble generating a response right now. Please try again later."
+            yield f"I'm having trouble generating a response right now, {self.user_nickname}. Please try again later."
             return
 
         user_message = Message(role="user", content=message) if message is not None else None
@@ -924,9 +927,8 @@ class Assistant(BaseModel):
         return _user_prompt
             
     def get_system_prompt(self) -> Optional[str]:
-        """Return the system prompt"""
+        system_prompt_lines = []
 
-        # If the system_prompt is set, return it
         if self.system_prompt is not None:
             if self.output_model is not None:
                 sys_prompt = self.system_prompt
@@ -934,7 +936,6 @@ class Assistant(BaseModel):
                 return sys_prompt
             return self.system_prompt
 
-        # If the system_prompt_template is set, build the system_prompt using the template
         if self.system_prompt_template is not None:
             system_prompt_kwargs = {"assistant": self}
             system_prompt_from_template = self.system_prompt_template.get_prompt(**system_prompt_kwargs)
@@ -942,7 +943,6 @@ class Assistant(BaseModel):
                 system_prompt_from_template += f"\n{self.get_json_output_prompt()}"
             return system_prompt_from_template
 
-        # If build_default_system_prompt is False, return None
         if not self.build_default_system_prompt:
             return None
 
@@ -981,7 +981,10 @@ class Assistant(BaseModel):
                 instructions.append("Do not reveal that your information is 'from the knowledge base.'")
             if self.prevent_hallucinations:
                 instructions.append("If you don't know the answer, say 'I don't know'.")
-
+        
+        if self.description is not None:
+            system_prompt_lines.append(self.description.replace("{user_nickname}", self.user_nickname))
+            
         # Add instructions specifically from the LLM
         llm_instructions = self.llm.get_instructions_from_llm()
         if llm_instructions is not None:

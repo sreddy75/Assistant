@@ -41,7 +41,7 @@ class PandasTools(Toolkit):
         except Exception as e:
             logger.error(f"Error loading CSV {file_name}: {str(e)}")
             raise
-    
+
     def save_to_pgvector(self, df_name: str, df: pd.DataFrame):
         if self.knowledge_base is None:
             logger.error("Knowledge base not available. Cannot save to pgvector.")
@@ -79,21 +79,32 @@ class PandasTools(Toolkit):
         except Exception as e:
             logger.error(f"Error loading Excel {file_name}: {str(e)}")
             raise
-    
+
     def get_dataframe(self, df_name: str) -> Optional[pd.DataFrame]:
+        logger.debug(f"Attempting to retrieve dataframe: {df_name}")
         if df_name in self.dataframes:
+            logger.debug(f"Found dataframe {df_name} in local memory")
             return self.dataframes[df_name]
         elif self.knowledge_base:
+            logger.debug(f"Searching for dataframe {df_name} in knowledge base")
             doc = self.knowledge_base.get_document_by_name(df_name)
             if doc and doc.content:
                 try:
-                    df = pd.read_csv(io.StringIO(doc.content))
-                    self.dataframes[df_name] = df
-                    return df
+                    # Try different encodings
+                    encodings = ['utf-8', 'iso-8859-1', 'cp1252', 'latin1']
+                    for encoding in encodings:
+                        try:
+                            df = pd.read_csv(io.StringIO(doc.content), encoding=encoding)
+                            self.dataframes[df_name] = df
+                            logger.debug(f"Successfully loaded dataframe {df_name} from knowledge base")
+                            return df
+                        except UnicodeDecodeError:
+                            continue
+                    else:
+                        logger.error(f"Unable to decode the CSV content for {df_name} with any of the tried encodings")
                 except Exception as e:
                     logger.error(f"Error loading dataframe from document: {e}")
-                    return None
-        logger.warning(f"Dataframe '{df_name}' not found")
+        logger.warning(f"Dataframe '{df_name}' not found in local memory or knowledge base")
         return None
                 
     def list_dataframes(self) -> str:
@@ -103,10 +114,10 @@ class PandasTools(Toolkit):
             user_dfs = self.dataframes
         return "\n".join([f"{name}: {df.shape}" for name, df in user_dfs.items()])
 
-    def create_visualization(self, df_name: str, chart_type: str, x: str, y: str, title: str) -> str:
-        df = self.dataframes.get(df_name)
+    def create_visualization(self, df_name: str, chart_type: str, x: str, y: str, title: str) -> Dict[str, Any]:
+        df = self.get_dataframe(df_name)
         if df is None:
-            return "Dataframe not found"
+            raise ValueError(f"DataFrame '{df_name}' not found")
 
         try:
             if chart_type == "line":
@@ -115,29 +126,23 @@ class PandasTools(Toolkit):
                 fig = px.bar(df, x=x, y=y, title=title)
             elif chart_type == "scatter":
                 fig = px.scatter(df, x=x, y=y, title=title)
+            elif chart_type == "histogram":
+                fig = px.histogram(df, x=x, title=title)
             else:
-                return "Unsupported chart type"
+                raise ValueError(f"Unsupported chart type: {chart_type}")
 
-            return fig.to_json()
+            return {
+                "chart_type": chart_type,
+                "data": json.loads(pio.to_json(fig)),
+                "interpretation": f"This {chart_type} chart shows the relationship between {x} and {y} in the {df_name} dataset."
+            }
         except Exception as e:
             logger.error(f"Error creating visualization: {str(e)}")
             return f"Error creating visualization: {str(e)}"
-                    
+
     def create_pandas_dataframe(
         self, dataframe_name: str, create_using_function: str, function_parameters: Dict[str, Any]
     ) -> str:
-        """Creates a pandas dataframe named `dataframe_name` by running a function `create_using_function` with the parameters `function_parameters`.
-        Returns the created dataframe name as a string if successful, otherwise returns an error message.
-
-        For Example:
-        - To create a dataframe `csv_data` by reading a CSV file, use: {"dataframe_name": "csv_data", "create_using_function": "read_csv", "function_parameters": {"filepath_or_buffer": "data.csv"}}
-        - To create a dataframe `csv_data` by reading a JSON file, use: {"dataframe_name": "json_data", "create_using_function": "read_json", "function_parameters": {"path_or_buf": "data.json"}}
-
-        :param dataframe_name: The name of the dataframe to create.
-        :param create_using_function: The function to use to create the dataframe.
-        :param function_parameters: The parameters to pass to the function.
-        :return: The name of the created dataframe if successful, otherwise an error message.
-        """
         try:
             logger.debug(f"Creating dataframe: {dataframe_name}")
             logger.debug(f"Using function: {create_using_function}")
@@ -162,18 +167,6 @@ class PandasTools(Toolkit):
             return f"Error creating dataframe: {e}"
 
     def run_dataframe_operation(self, dataframe_name: str, operation: str, operation_parameters: Dict[str, Any]) -> str:
-        """Runs an operation `operation` on a dataframe `dataframe_name` with the parameters `operation_parameters`.
-        Returns the result of the operation as a string if successful, otherwise returns an error message.
-
-        For Example:
-        - To get the first 5 rows of a dataframe `csv_data`, use: {"dataframe_name": "csv_data", "operation": "head", "operation_parameters": {"n": 5}}
-        - To get the last 5 rows of a dataframe `csv_data`, use: {"dataframe_name": "csv_data", "operation": "tail", "operation_parameters": {"n": 5}}
-
-        :param dataframe_name: The name of the dataframe to run the operation on.
-        :param operation: The operation to run on the dataframe.
-        :param operation_parameters: The parameters to pass to the operation.
-        :return: The result of the operation if successful, otherwise an error message.
-        """
         try:            
             logger.debug(f"Running operation: {operation}")
             logger.debug(f"On dataframe: {dataframe_name}")

@@ -61,6 +61,7 @@ pydantic-settings==2.2.1
 pydantic_core==2.18.2
 pydeck==0.9.1
 Pygments==2.18.0
+PyJWT==2.8.0
 pyparsing==3.1.2
 pypdf==4.2.0
 python-dateutil==2.9.0.post0

@@ -60,6 +60,9 @@ def display_base64_image(base64_string):
         logger.error(f"Error displaying image: {str(e)}", exc_info=True)
 
 
+import plotly.graph_objects as go
+import json
+import logging
 def render_chart(chart_data):
     try:
         fig = go.Figure(data=chart_data['data']['data'], layout=chart_data['data']['layout'])
@@ -69,7 +72,7 @@ def render_chart(chart_data):
     except Exception as e:
         st.error(f"Error rendering chart: {e}")
         logger.error(f"Error rendering chart: {str(e)}", exc_info=True)
-                
+                        
 def sanitize_content(content):
     def format_code_block(match):
         lang = match.group(1) or ''
@@ -129,8 +132,7 @@ def sanitize_content(content):
 
     return content
 
-def render_chat(user_id=None):    
-            
+def render_chat(user_id=None):        
     st.markdown("""
         <style>
         @keyframes pulse {
@@ -151,7 +153,7 @@ def render_chat(user_id=None):
         .pulsating-dot {
             width: 20px;
             height: 20px;
-            background-color: #ed053b;
+            background-color: #ff0000;
             border-radius: 50%;
             display: inline-block;
             animation: pulse 1.5s ease-in-out infinite;
@@ -159,7 +161,6 @@ def render_chat(user_id=None):
         </style>
         """, unsafe_allow_html=True)
 
-            
     if "llm_id" not in st.session_state:
         st.session_state.llm_id = "gpt-4o"  # Set a default value
         logger.warning("llm_id not found in session state, using default value")
@@ -225,69 +226,51 @@ def render_chat(user_id=None):
                 loading_placeholder.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
 
                 response = ""
-                buffer = ""
                 resp_container = st.empty()
                 start_time = time.time()
-                update_interval = 0.1 # Update every 0.1 seconds
 
                 used_tools = []
                 used_assistants = []
 
                 try:
+                    # Use streaming mode for responses
                     full_response = ""
-                    for delta in llm_os.run(prompt):
-                        full_response += delta
-                        current_time = time.time()
-                        
-                        # Track used tools and assistants
-                        if hasattr(delta, 'tool_calls'):
-                            for tool_call in delta.tool_calls:
-                                if tool_call.function.name not in used_tools:
-                                    used_tools.append(tool_call.function.name)
-                        if hasattr(delta, 'assistant'):
-                            if delta.assistant.name not in used_assistants:
-                                used_assistants.append(delta.assistant.name)
-                        
-                        if current_time - start_time >= update_interval:
-                            sanitized_response = sanitize_content(full_response)
-                            
-                            # Clear the previous content
-                            resp_container.empty()
-                            
-                            # Update the loading message
-                            loading_placeholder.markdown(f'<p class="pulsating-dot"></p>', unsafe_allow_html=True)
-                            
-                            # Find all JSON-like structures
-                            json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
-                            parts = json_pattern.split(sanitized_response)
-                            json_matches = json_pattern.findall(sanitized_response)
-                            
-                            for i, part in enumerate(parts):
-                                resp_container.markdown(part)
-                                if i < len(json_matches):
-                                    try:
-                                        chart_data = json.loads(json_matches[i])
-                                        if 'chart_type' in chart_data and 'data' in chart_data:
-                                            render_chart(chart_data)
-                                        else:
-                                            resp_container.code(json.dumps(chart_data, indent=2))
-                                    except json.JSONDecodeError:
-                                        resp_container.code(json_matches[i])
-                            
-                            start_time = current_time
-
-                    # Final update after the loop
+                    for chunk in llm_os.run(prompt, stream=True):
+                        full_response += chunk
+                        # Update the UI to show the streaming response
+                        resp_container.markdown(sanitize_content(full_response))
+                    
+                    # Process the full response
                     sanitized_response = sanitize_content(full_response)
+                    
+                    # Find all JSON-like structures
+                    json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
+                    parts = json_pattern.split(sanitized_response)
+                    json_matches = json_pattern.findall(sanitized_response)
+                    
+                    # Clear the previous content
                     resp_container.empty()
-                    resp_container.markdown(sanitized_response)
+                    
+                    for i, part in enumerate(parts):
+                        resp_container.markdown(part)
+                        if i < len(json_matches):
+                            try:
+                                chart_data = json.loads(json_matches[i])
+                                if 'chart_type' in chart_data and 'data' in chart_data:
+                                    render_chart(chart_data)
+                                else:
+                                    resp_container.code(json.dumps(chart_data, indent=2))
+                            except json.JSONDecodeError:
+                                resp_container.code(json_matches[i])
 
                     # Remove the loading message
                     loading_placeholder.empty()
 
                 except Exception as e:
                     st.error(f"An unexpected error occurred: {str(e)}")
-                    logger.error(f"Unexpected error: {str(e)}")                                    
-                    
+                    logger.error(f"Unexpected error: {str(e)}")
+                    full_response = "I apologize, but I encountered an error while processing your request. Please try again."
+                
                 st.session_state["messages"].append({"role": "assistant", "content": full_response})
         
         # Log assistant response
@@ -450,16 +433,20 @@ def initialize_assistant(llm_id, user_id=None):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
         
+        user_nickname = st.session_state.get("nickname", "friend")
+        user_role = st.session_state.get("role", "default")
+
         financial_analyst_enabled = st.session_state.get("financial_analyst_enabled", True)
         data_analyst_enabled = st.session_state.get("data_analyst_enabled", True)
         logger.debug(f"Financial Analyst enabled: {financial_analyst_enabled}")
         logger.debug(f"Data Analyst enabled: {data_analyst_enabled}")
         
         try:
-            # user_id = st.session_state.get('user_id')
             llm_os = get_llm_os(
                 llm_id=llm_id,  # Use the selected model
                 user_id=user_id,
+                user_role=user_role,
+                user_nickname=user_nickname,
                 web_search=st.session_state.get("web_search_enabled", True),
                 research_assistant=st.session_state.get("research_assistant_enabled", False),
                 financial_analyst=financial_analyst_enabled,

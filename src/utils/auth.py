@@ -1,7 +1,9 @@
+from datetime import datetime, UTC
 import os
 import streamlit as st
 import requests
 import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError
 from functools import wraps
 from typing import Tuple
 import re
@@ -16,26 +18,44 @@ def login(email: str, password: str) -> bool:
         response.raise_for_status()
         
         if response.status_code == 200:
-            token = response.json().get("access_token")
-            user_id = response.json().get("user_id")
-            if token:
+            token_data = response.json()
+            token = token_data["access_token"]
+            
+            # Decode the token to check its expiry
+            try:
+                # Use 'HS256' as the algorithm, or whichever algorithm your backend uses
+                decoded_token = jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
+                expiry = datetime.fromtimestamp(decoded_token['exp'], tz=UTC)
+                if expiry <= datetime.now(UTC):
+                    st.error("Your session has expired. Please log in again.")
+                    return False
+                
                 st.session_state["token"] = token
                 st.session_state["email"] = email
-                st.session_state["user_id"] = user_id 
+                st.session_state["user_id"] = token_data["user_id"]
+                st.session_state["role"] = token_data["role"]
+                st.session_state["nickname"] = token_data["nickname"]
                 st.session_state.authenticated = True
                 return True
-                    
-        # If we get here, the login was unsuccessful
-        error_message = "Unknown error"
-        try:
-            error_message = response.json().get("detail", error_message)
-        except requests.exceptions.JSONDecodeError:
-            # If JSON decoding fails, use the raw text of the response
-            error_message = response.text or error_message
+            except ExpiredSignatureError:
+                st.error("Your session has expired. Please log in again.")
+                return False
+            except (InvalidTokenError, DecodeError):
+                st.error("Invalid token. Please log in again.")
+                return False
         
-        st.error(f"Login failed: {error_message}")
+        # If we get here, the login was unsuccessful
+        st.error("Login failed. Please check your credentials.")
         return False
     
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection error: {str(e)}")
+        return False
+        
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection error: {str(e)}")
+        return False
+
     except requests.exceptions.RequestException as e:
         st.error(f"Connection error: {str(e)}")
         return False
@@ -54,22 +74,48 @@ def get_user_id(email: str = None) -> int:
         return None
     return user_id
     
-def register(email, password):
-    response = requests.post(f"{BACKEND_URL}/register", json={"email": email, "password": password})
+def register(email, password, first_name, last_name, nickname, role):
+    user_data = {
+        "email": email,
+        "password": password,
+        "first_name": first_name,
+        "last_name": last_name,
+        "nickname": nickname,
+        "role": role
+    }
+    response = requests.post(f"{BACKEND_URL}/register", json=user_data)
     if response.status_code == 200:
         return True, response.json()['message']
-    return False, response.json()['detail']
+    return False, response.json().get('detail', 'Registration failed. Please try again.')
 
 def logout():
     st.session_state.clear()
 
 def is_authenticated():
-    return 'token' in st.session_state
+    return 'token' in st.session_state and check_token_expiry()
+
+def check_token_expiry():
+    if "token" in st.session_state:
+        token = st.session_state["token"]
+        try:
+            # Use 'HS256' as the algorithm, or whichever algorithm your backend uses
+            decoded_token = jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
+            expiry = datetime.fromtimestamp(decoded_token['exp'], tz=UTC)
+            if expiry <= datetime.now(UTC):
+                st.warning("Your session has expired. Please log in again.")
+                logout()
+                return False
+            return True
+        except (ExpiredSignatureError, InvalidTokenError, DecodeError):
+            st.warning("Invalid token. Please log in again.")
+            logout()
+            return False
+    return False
 
 def login_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if not is_authenticated():
+        if not is_authenticated() or not check_token_expiry():
             st.warning("You need to login to access this page.")
             st.stop()
         return func(*args, **kwargs)

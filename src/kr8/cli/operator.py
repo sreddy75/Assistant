@@ -84,7 +84,6 @@ def initialize_phi(reset: bool = False, login: bool = False) -> bool:
     from kr8.utils.filesystem import delete_from_fs
     from kr8.api.user import create_anon_user
 
-    print_heading("Welcome to phidata!")
     if reset:
         delete_phidata_conf()
 

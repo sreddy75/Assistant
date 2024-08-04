@@ -41,8 +41,7 @@ def login_form():
     client_name = get_client_name()         
     col1, col2, col3 = st.columns([1,8,1])
     with col2:        
-        # Customize the app based on the client           
-        st.markdown(f"<h1 style='text-align: center;'>Welcome to {client_name.capitalize()}'s Assistant</h1>", unsafe_allow_html=True)
+        # Customize the app based on the client                   
         file_ = open(f"src/config/themes/{get_client_name()}/main_image.png", "rb")
         contents = file_.read()
         data_url = base64.b64encode(contents).decode("utf-8")
@@ -59,7 +58,7 @@ def login_form():
         
         with tab1:
             email = st.text_input("Email", key="login_email", value="suren@kr8it.com")
-            password = st.text_input("Password", type="password", key="login_password", value="Sur3n#12")
+            password = st.text_input("Password", type="password", key="login_password", value="password")
             if st.button("Log In"):
                 if is_valid_email(email):
                     if login(email, password):
@@ -81,13 +80,21 @@ def login_form():
         with tab2:
             new_email = st.text_input("Email", key="register_email")
             new_password = st.text_input("Password", type="password", key="register_password")
+            first_name = st.text_input("First Name", key="register_first_name")
+            last_name = st.text_input("Last Name", key="register_last_name")
+            nickname = st.text_input("Nickname", key="register_nickname")
+            role = st.selectbox("Role", options=["QA", "Product", "Delivery", "Manager"], key="register_role")
+            
             if st.button("Register"):
                 if is_valid_email(new_email):
-                    success, message = register(new_email, new_password)
-                    if success:
-                        st.success(message)
+                    if first_name and last_name and nickname:
+                        success, message = register(new_email, new_password, first_name, last_name, nickname, role)
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
                     else:
-                        st.error(message)
+                        st.error("Please fill in all fields.")
                 else:
                     st.error("Please enter a valid email address")
 
@@ -131,7 +138,7 @@ def initialize_app():
             key = f"{assistant.lower().replace(' ', '_')}_enabled"
             if key not in st.session_state:
                 st.session_state[key] = True
-                logger.debug(f"Initialized {key} with default value: True")
+                logger.debug(f"Initialized {key} with default value: True")        
             
         # Create a centered column for the spinner and status messages
         col1, col2, col3 = st.columns([1, 6, 1])
@@ -246,9 +253,6 @@ def check_token_validity():
             st.rerun()
             
 def main_app():
-    client_name = get_client_name()
-    st.title(f"Welcome to {client_name.capitalize()}'s AI Assistant")
-
     col1, col2 = st.sidebar.columns([2, 1])
 
     # Display welcome message in the first (wider) column
@@ -390,6 +394,8 @@ def main():
                     main_app()
     else:
         logger.debug("Showing login form")
+        client_name = get_client_name()
+        st.title(f"Welcome to {client_name.capitalize()}'s Quality Assistant")
         login_form()
 
 if __name__ == "__main__":
