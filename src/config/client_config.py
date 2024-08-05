@@ -34,7 +34,7 @@ AVAILABLE_ASSISTANTS = [
     "Product Owner",
     "Business Analyst",
     "Enhanced Quality Analyst",
-    "React Assistant",
+    "Code Assistant",
     "Web Search",
     "Research Assistant",
     "Investment Assistant",

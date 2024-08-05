@@ -6,7 +6,7 @@ import base64
 from streamlit.web.server.websocket_headers import _get_websocket_headers
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
-from ui.components.chat import render_chat, debug_knowledge_base
+from ui.components.chat import render_chat
 from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
 import logging
 from queue import Queue
@@ -61,7 +61,8 @@ def login_form():
             password = st.text_input("Password", type="password", key="login_password", value="password")
             if st.button("Log In"):
                 if is_valid_email(email):
-                    if login(email, password):
+                    login_result = login(email, password)
+                    if login_result == True:
                         st.session_state.authenticated = True
                         st.session_state.initialization_complete = False
                         st.session_state.user_id = get_user_id(email)
@@ -71,6 +72,8 @@ def login_form():
                         
                         logger.debug("User authenticated, initializing app")
                         st.rerun()
+                    elif login_result == "Trial period has ended":
+                        st.error("Your trial period has ended. Please contact support to extend your trial or upgrade your account.")
                     else:
                         st.error("Invalid email or password")
                 else:
@@ -124,6 +127,10 @@ def is_admin_user(email):
     admin_emails = ["admin@example.com", "suren@kr8it.com"]  
     return email in admin_emails
 
+import time
+import random
+import streamlit as st
+
 def initialize_app():
     if "app_initialized" not in st.session_state:
         logger.debug("Starting app initialization")
@@ -139,60 +146,83 @@ def initialize_app():
             if key not in st.session_state:
                 st.session_state[key] = True
                 logger.debug(f"Initialized {key} with default value: True")        
-            
+        
         # Create a centered column for the spinner and status messages
         col1, col2, col3 = st.columns([1, 6, 1])
         with col2:
-            st.markdown("<h1 style='text-align: center;'>Initializing...</h1>", unsafe_allow_html=True)
-            
-            status_placeholder = st.empty()
-            
-            initialization_messages = [                                
-                "language models...",                
-                "knowledge base...",
-                "AI assistants...",                
-                "natural language processing...",
-                "response algorithms...",                
-                "sentiment analysis...",                
-                "conversation history...",                
-                "analytics tools..."                                                              
-            ]
-
-            # Insert CSS for animation
-            css = """
+            # CSS for animations
+            st.markdown("""
             <style>
             @keyframes fadeInOut {
                 0% { opacity: 0; }
                 50% { opacity: 1; }
                 100% { opacity: 0; }
             }
-
+            @keyframes slideIn {
+                from { transform: translateY(-20px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
             .fade {
                 animation: fadeInOut 2s infinite;
-                color: #a61d0d;
+            }
+            .slide-in {
+                animation: slideIn 0.5s ease-out;
+            }
+            .status-message {
+                text-align: center;
+                color: #fcf8f7;
+                font-size: 1.5em;
+                margin-bottom: 20px;
+            }
+            .final-message {
+                text-align: center;
+                color: #75ffa5;
+                font-size: 2em;
+                font-weight: bold;
             }
             </style>
-            """
-            st.markdown(css, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+            
+            main_title = st.empty()
+            status_placeholder = st.empty()
+            progress_bar = st.progress(0)
 
-            # Ensure the user sees multiple messages before initialization completes
-            for _ in range(5):
-                status_message = f"<h3 class='fade' style='text-align: center;'>{random.choice(initialization_messages)}</h3>"
-                status_placeholder.markdown(status_message, unsafe_allow_html=True)
-                time.sleep(2)  # Reduced delay to 2 seconds for a faster experience
+            initialization_messages = [
+                "Initializing language models...",
+                "Loading knowledge base...",
+                "Configuring assistants...",
+                "Preparing natural language processing...",
+                "Optimizing algorithms...",
+                "Setting up sentiment analysis...",
+                "Loading conversation history...",
+                "Configuring analytics..."
+            ]
+
+            main_title.markdown("<h1 class='slide-in' style='text-align: center; color: #e67529;'>Initializing</h1>", unsafe_allow_html=True)
+
+            for i, message in enumerate(initialization_messages):
+                status_placeholder.markdown(f"<p class='status-message fade'>{message}</p>", unsafe_allow_html=True)
+                progress = (i + 1) / len(initialization_messages)
+                progress_bar.progress(progress)
+                time.sleep(0.5)  # Reduced delay for faster initialization
 
             perform_heavy_initialization()
 
             # Final status message
-            status_placeholder.markdown("<h3 style='text-align: center; color: #06752d;'>Assistant Ready!</h3>", unsafe_allow_html=True)
-            time.sleep(2)
-
+            main_title.empty()
+            status_placeholder.empty()
+            progress_bar.empty()            
+        
         st.session_state.initialization_complete = True
         st.session_state.app_initialized = True
         logger.debug("App initialization complete")
     else:
         logger.debug("App already initialized, skipping initialization")
-                
+
+    # Smooth transition to main app
+    st.empty()  # Clear the initialization messages
+    st.rerun()  # Rerun the app to show the main interface
+                    
 def reset_password_form():
     st.title("Reset Your Password")
 

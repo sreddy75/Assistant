@@ -72,8 +72,11 @@ class Claude(LLM):
         return _request_params
 
     def clean_response(self, response: str) -> str:
-        # Remove XML tags
+        # Remove XML-like tags
         response = re.sub(r'<[^>]+>', '', response)
+        
+        # Remove specific tags like <search_knowledge_base>
+        response = re.sub(r'<search_knowledge_base>.*?</search_knowledge_base>', '', response)
         
         # Convert newlines to proper Markdown line breaks
         response = response.replace('\n', '  \n')
@@ -84,25 +87,41 @@ class Claude(LLM):
         # Add Markdown formatting for bullet points
         response = re.sub(r'^\* ', '- ', response, flags=re.MULTILINE)
         
-        response += "\n\nSimples!"
+        # Remove duplicate content
+        lines = response.split('\n')
+        unique_lines = []
+        for line in lines:
+            if line not in unique_lines:
+                unique_lines.append(line)
+        response = '\n'.join(unique_lines)
+        
+        # Add the "Simples!" at the end only if it's not already there
+        if not response.strip().endswith("Simples!"):
+            response += "\n\nSimples!"
         
         return response.strip()
 
+    def _prepare_messages(self, messages: List[Message]) -> List[dict]:
+        prepared_messages = []
+        last_role = None
+        for message in messages:
+            if message.role == "system":
+                continue  # We'll handle system messages separately
+            if message.role != last_role:
+                prepared_messages.append({"role": message.role, "content": message.content or ""})
+                last_role = message.role
+        
+        # Ensure the conversation starts with a user message
+        if prepared_messages and prepared_messages[0]["role"] != "user":
+            prepared_messages.insert(0, {"role": "user", "content": "Hello"})
+        
+        return prepared_messages
+
     def invoke(self, messages: List[Message]) -> AnthropicMessage:
         api_kwargs: Dict[str, Any] = self.api_kwargs
-        api_messages: List[dict] = []
+        api_messages = self._prepare_messages(messages)
 
-        system_message = None
-        for m in messages:
-            if m.role == "system":
-                system_message = m.content
-            else:
-                api_messages.append({"role": m.role, "content": m.content or ""})
-
-        # Ensure the first message is a user message
-        if api_messages and api_messages[0]["role"] != "user":
-            api_messages.insert(0, {"role": "user", "content": "Hello"})
-
+        system_message = next((m.content for m in messages if m.role == "system"), None)
         if system_message:
             api_kwargs["system"] = system_message
 
@@ -114,19 +133,9 @@ class Claude(LLM):
 
     def invoke_stream(self, messages: List[Message]) -> Any:
         api_kwargs: Dict[str, Any] = self.api_kwargs
-        api_messages: List[dict] = []
+        api_messages = self._prepare_messages(messages)
 
-        system_message = None
-        for m in messages:
-            if m.role == "system":
-                system_message = m.content
-            else:
-                api_messages.append({"role": m.role, "content": m.content or ""})
-
-        # Ensure the first message is a user message
-        if api_messages and api_messages[0]["role"] != "user":
-            api_messages.insert(0, {"role": "user", "content": "Hello"})
-
+        system_message = next((m.content for m in messages if m.role == "system"), None)
         if system_message:
             api_kwargs["system"] = system_message
 
@@ -135,6 +144,7 @@ class Claude(LLM):
             messages=api_messages,
             **api_kwargs,
         )
+        
     def response(self, messages: List[Message]) -> str:
         logger.debug("---------- Claude Response Start ----------")
         # -*- Log messages for debugging
@@ -262,10 +272,9 @@ class Claude(LLM):
         response_timer = Timer()
         response_timer.start()
         response = self.invoke_stream(messages=messages)
+        
         with response as stream:
             for stream_delta in stream.text_stream:
-                # logger.debug(f"Stream Delta: {stream_delta}")
-
                 # Add response content to assistant message
                 if stream_delta is not None:
                     assistant_message_content += stream_delta
@@ -273,7 +282,6 @@ class Claude(LLM):
                 # Detect if response is a tool call
                 if not response_is_tool_call and ("<function" in stream_delta or "<invoke" in stream_delta):
                     response_is_tool_call = True
-                    # logger.debug(f"Response is tool call: {response_is_tool_call}")
 
                 # If response is a tool call, count the number of tool calls
                 if response_is_tool_call:
@@ -289,7 +297,6 @@ class Claude(LLM):
                     # tool call response is complete
                     if tool_calls_counter == 0 and stream_delta.strip().endswith(">"):
                         response_is_tool_call = False
-                        # logger.debug(f"Response is tool call: {response_is_tool_call}")
                         is_closing_tool_call_tag = True
 
                 # -*- Yield content if not a tool call and content is not None
@@ -298,7 +305,9 @@ class Claude(LLM):
                         is_closing_tool_call_tag = False
                         continue
 
-                    yield stream_delta
+                    # Clean the stream delta before yielding
+                    cleaned_delta = self.clean_response(stream_delta)
+                    yield cleaned_delta
 
         response_timer.stop()
         logger.debug(f"Time to generate response: {response_timer.elapsed:.4f}s")
@@ -374,12 +383,12 @@ class Claude(LLM):
 
             if self.show_tool_calls:
                 if len(function_calls_to_run) == 1:
-                    yield f"- Running: {function_calls_to_run[0].get_call_str()}\n\n"
+                    yield self.clean_response(f"- Running: {function_calls_to_run[0].get_call_str()}\n\n")
                 elif len(function_calls_to_run) > 1:
-                    yield "Running:"
+                    yield self.clean_response("Running:")
                     for _f in function_calls_to_run:
-                        yield f"\n - {_f.get_call_str()}"
-                    yield "\n\n"
+                        yield self.clean_response(f"\n - {_f.get_call_str()}")
+                    yield self.clean_response("\n\n")
 
             function_call_results = self.run_function_calls(function_calls_to_run, role="user")
             # Add results of the function calls to the messages

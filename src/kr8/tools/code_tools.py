@@ -1,22 +1,44 @@
 # code_tools.py
 
 import json
+import os
 from sqlite3 import IntegrityError
 from typing import Callable, Dict, Optional
 from kr8.tools import Toolkit
 from kr8.document import Document
 from kr8.utils.log import logger
-from utils.npm_utils import generate_dependency_graph
-
-import os
+from utils.npm_utils import generate_dependency_graph as generate_react_dependency_graph
+from utils.java_utils import generate_java_dependency_graph, analyze_java_project
 
 class CodeTools(Toolkit):
     def __init__(self, knowledge_base=None):
         super().__init__(name="code_tools")
         self.knowledge_base = knowledge_base
-        self.register(self.load_react_project)
 
-    def load_react_project(self, project_name: str, directory_content: Dict[str, str], progress_callback: Callable[[float, str], None] = None) -> str:
+    def _get_namespace(self, project_name, project_type):
+        return f"{project_type}_{project_name}"
+
+    def _upsert_document(self, doc, namespace):
+        try:
+            self.knowledge_base.vector_db.upsert([doc], namespace=namespace)
+            logger.info(f"Upserted file {doc.name} to vector database in namespace {namespace}")
+        except AttributeError:
+            try:
+                self.knowledge_base.vector_db.insert([doc], namespace=namespace)
+                logger.info(f"Inserted file {doc.name} to vector database in namespace {namespace}")
+            except IntegrityError:
+                logger.warning(f"Document {doc.name} already exists in the database. Skipping insertion.")
+
+    def load_project(self, project_name: str, project_type: str, directory_content: Dict[str, str], progress_callback: Callable[[float, str], None] = None) -> str:
+        namespace = self._get_namespace(project_name, project_type)
+        if project_type == "react":
+            return self._load_react_project(project_name, directory_content, progress_callback)
+        elif project_type == "java":
+            return self._load_java_project(project_name, directory_content, progress_callback)
+        else:
+            return f"Unsupported project type: {project_type}"
+
+    def _load_react_project(self, project_name: str, directory_content: Dict[str, str], progress_callback: Callable[[float, str], None] = None) -> str:
         project_namespace = f"react_project_{project_name}"
         supported_extensions = ['.js', '.jsx', '.ts', '.tsx', '.css', '.scss', '.json', '.html', '.md', '.yml', '.yaml', '.env']
         
@@ -27,7 +49,6 @@ class CodeTools(Toolkit):
         for file_path, file_content in directory_content.items():
             _, ext = os.path.splitext(file_path)
             
-            # Process package.json separately
             if file_path.endswith('package.json'):
                 package_json = json.loads(file_content)
                 continue
@@ -42,72 +63,114 @@ class CodeTools(Toolkit):
                         "file_type": ext
                     }
                 )
-                try:
-                    self.knowledge_base.vector_db.upsert([doc])
-                    logger.info(f"Upserted file {file_path} to vector database")
-                except AttributeError:
-                    try:
-                        self.knowledge_base.vector_db.insert([doc])
-                        logger.info(f"Inserted file {file_path} to vector database")
-                    except IntegrityError:
-                        logger.warning(f"Document {file_path} already exists in the database. Skipping insertion.")
+                self._upsert_document(doc)
 
             processed_files += 1
             if progress_callback:
                 progress = processed_files / total_files
                 progress_callback(progress, f"Processing file {processed_files} of {total_files}: {file_path}")
 
-        # Process dependency graph if package.json was found
         if package_json:
-            dependency_graph = generate_dependency_graph(package_json)
-            summary = {
-                "total_dependencies": len(dependency_graph),
-                "top_level_dependencies": list(dependency_graph.keys())[:10],
-                "complex_dependencies": [pkg for pkg, deps in dependency_graph.items() if len(deps) > 5][:5]
-            }
-            doc = Document(
-                name=f"{project_name}_dependency_graph",
-                content=json.dumps(summary, indent=2),
-                meta_data={
-                    "project": project_name,
-                    "type": "dependency_graph"
-                }
-            )
-            try:
-                self.knowledge_base.vector_db.upsert([doc])
-                logger.info(f"Upserted dependency graph summary for project {project_name}")
-            except AttributeError:
-                try:
-                    self.knowledge_base.vector_db.insert([doc])
-                    logger.info(f"Inserted dependency graph summary for project {project_name}")
-                except IntegrityError:
-                    logger.warning(f"Dependency graph summary for project {project_name} already exists. Skipping insertion.")
+            dependency_graph = generate_react_dependency_graph(package_json)
+            self._store_dependency_graph(project_name, dependency_graph, "react")
 
-            if progress_callback:
-                progress_callback(1.0, f"Processed dependency graph for {project_name}")
+        if progress_callback:
+            progress_callback(1.0, f"Processed all files for {project_name}")
 
-        logger.info(f"React project '{project_name}' loaded successfully")
         return f"React project '{project_name}' loaded successfully. Processed {processed_files} files and generated dependency graph."
-            
-    def analyze_project_structure(self, project_name: str) -> str:
-        project_namespace = f"react_project_{project_name}"
-        files = self.knowledge_base.search(query=f"project:{project_name}", num_documents=1000)
-        
-        structure = {}
-        for file in files:
-            path = file.name.split('/')
-            current = structure
-            for part in path[:-1]:
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
-            current[path[-1]] = "file"
-        
-        return json.dumps(structure, indent=2)
 
-    def find_component(self, project_name: str, component_name: str) -> str:
-        project_namespace = f"react_project_{project_name}"
-        files = self.knowledge_base.search(query=f"project:{project_name} {component_name}", num_documents=5)
+    def _load_java_project(self, project_name: str, directory_content: Dict[str, str], progress_callback: Callable[[float, str], None] = None) -> str:
+        project_namespace = f"java_project_{project_name}"
+        supported_extensions = ['.java', '.xml', '.properties', '.gradle', '.md', '.yml', '.yaml']
+        
+        total_files = len(directory_content)
+        processed_files = 0
+        pom_xml = None
+        build_gradle = None
+
+        for file_path, file_content in directory_content.items():
+            _, ext = os.path.splitext(file_path)
+            
+            if file_path.endswith('pom.xml'):
+                pom_xml = file_content
+            elif file_path.endswith('build.gradle'):
+                build_gradle = file_content
+
+            if ext in supported_extensions or os.path.basename(file_path) in ['pom.xml', 'build.gradle', '.gitignore']:
+                doc = Document(
+                    name=file_path,
+                    content=file_content,
+                    meta_data={
+                        "project": project_name,
+                        "type": "java_file",
+                        "file_type": ext
+                    }
+                )
+                self._upsert_document(doc)
+
+            processed_files += 1
+            if progress_callback:
+                progress = processed_files / total_files
+                progress_callback(progress, f"Processing file {processed_files} of {total_files}: {file_path}")
+
+        if pom_xml or build_gradle:
+            dependency_graph = generate_java_dependency_graph(pom_xml, build_gradle)
+            self._store_dependency_graph(project_name, dependency_graph, "java")
+
+        # Analyze Java project structure
+        project_analysis = analyze_java_project(directory_content)
+        self._store_project_analysis(project_name, project_analysis, "java")
+
+        if progress_callback:
+            progress_callback(1.0, f"Processed all files for {project_name}")
+
+        return f"Java project '{project_name}' loaded successfully. Processed {processed_files} files, generated dependency graph, and analyzed project structure."
+
+    def _upsert_document(self, doc):
+        try:
+            self.knowledge_base.vector_db.upsert([doc])
+            logger.info(f"Upserted file {doc.name} to vector database")
+        except AttributeError:
+            try:
+                self.knowledge_base.vector_db.insert([doc])
+                logger.info(f"Inserted file {doc.name} to vector database")
+            except IntegrityError:
+                logger.warning(f"Document {doc.name} already exists in the database. Skipping insertion.")
+
+    def _store_dependency_graph(self, project_name: str, dependency_graph: Dict, project_type: str):
+        doc = Document(
+            name=f"{project_name}_dependency_graph",
+            content=json.dumps(dependency_graph, indent=2),
+            meta_data={
+                "project": project_name,
+                "type": f"{project_type}_dependency_graph"
+            }
+        )
+        self._upsert_document(doc)
+        logger.info(f"Upserted dependency graph for project {project_name}")
+
+    def _store_project_analysis(self, project_name: str, project_analysis: Dict, project_type: str):
+        doc = Document(
+            name=f"{project_name}_project_analysis",
+            content=json.dumps(project_analysis, indent=2),
+            meta_data={
+                "project": project_name,
+                "type": f"{project_type}_project_analysis"
+            }
+        )
+        self._upsert_document(doc)
+        logger.info(f"Upserted project analysis for project {project_name}")
+
+    def analyze_project_structure(self, project_name: str, project_type: str) -> str:
+        analysis_doc = self.knowledge_base.search(query=f"project:{project_name} type:{project_type}_project_analysis", num_documents=1)
+        if analysis_doc:
+            return analysis_doc[0].content
+        else:
+            return f"No project analysis found for {project_type} project '{project_name}'"
+
+    def find_component(self, project_name: str, component_name: str, project_type: str) -> str:
+        namespace = self._get_namespace(project_name, project_type)
+        files = self.knowledge_base.search(query=f"{component_name}", num_documents=5, namespace=namespace)
         
         results = []
         for file in files:
@@ -116,14 +179,30 @@ class CodeTools(Toolkit):
         
         return "\n\n".join(results) if results else f"Component {component_name} not found"
 
-    def get_file_content(self, project_name: str, file_path: str) -> Optional[str]:
-        project_namespace = f"react_project_{project_name}"
-        files = self.knowledge_base.search(query=f"project:{project_name} name:{file_path}", num_documents=1)
+    def get_file_content(self, project_name: str, file_path: str, project_type: str) -> Optional[str]:
+        files = self.knowledge_base.search(query=f"project:{project_name} type:{project_type}_file name:{file_path}", num_documents=1)
         return files[0].content if files else None
 
-    def get_code_snippet(self, project_name: str, file_path: str, start_line: int, end_line: int) -> Optional[str]:
-        content = self.get_file_content(project_name, file_path)
+    def get_code_snippet(self, project_name: str, file_path: str, start_line: int, end_line: int, project_type: str) -> Optional[str]:
+        content = self.get_file_content(project_name, file_path, project_type)
         if content:
             lines = content.split('\n')
             return '\n'.join(lines[start_line-1:end_line])
         return None
+
+    def get_dependency_graph(self, project_name: str, project_type: str) -> Optional[Dict]:
+        graph_doc = self.knowledge_base.search(query=f"project:{project_name} type:{project_type}_dependency_graph", num_documents=1)
+        if graph_doc:
+            return json.loads(graph_doc[0].content)
+        return None
+    
+    def preprocess_query(query, current_project, current_project_type):
+       return f"In the context of the {current_project_type} project '{current_project}': {query}"
+   
+    def add_context_reminder(messages, current_project, current_project_type):
+        reminder = f"Remember, we are discussing the {current_project_type} project named '{current_project}'. Only use information relevant to this project."
+        messages.append({"role": "system", "content": reminder})
+        return messages
+    
+    def filter_results(results, current_project, current_project_type):
+        return [r for r in results if r.meta_data.get('project') == current_project and r.meta_data.get('type').startswith(current_project_type)]

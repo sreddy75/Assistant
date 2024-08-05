@@ -262,7 +262,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
     if user.trial_end.replace(tzinfo=UTC) < datetime.now(UTC):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Trial period has ended",
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

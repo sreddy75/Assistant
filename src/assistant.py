@@ -1,11 +1,13 @@
 import json
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import httpx
 import psutil
 from dotenv import load_dotenv
+from typing import Union, Any
+from pydantic import Field
 
 from kr8.tools.code_tools import CodeTools
 from kr8.assistant import Assistant
@@ -25,11 +27,11 @@ from kr8.tools.yfinance import YFinanceTools
 from team.data_analyst import EnhancedDataAnalyst
 from team.financial_analyst import EnhancedFinancialAnalyst
 from team.quality_analyst import EnhancedQualityAnalyst
-from team.react_assistant import ReactAssistant
 from team.research_assistant import EnhancedResearchAssistant
 from team.maintenance_engineer import EnhancedMaintenanceEngineer
 from team.investment_assistant import EnhancedInvestmentAssistant
 from team.company_analyst import EnhancedCompanyAnalyst
+from team.code_assistant import CodeAssistant
 from team.product_owner import EnhancedProductOwner
 from team.business_analyst import EnhancedBusinessAnalyst
 from config.client_config import get_client_name
@@ -112,6 +114,22 @@ def log_system_resources():
     except ImportError:
         logger.warning("psutil not installed. System resource logging is disabled.")
 
+def preprocess_query(query, current_project, current_project_type):
+    if current_project and current_project_type:
+        return f"In the context of the {current_project_type} project '{current_project}': {query}"
+    return query
+
+def add_context_reminder(messages, current_project, current_project_type):
+    if current_project and current_project_type:
+        reminder = f"Remember, we are discussing the {current_project_type} project named '{current_project}'. Only use information relevant to this project."
+        messages.append({"role": "system", "content": reminder})
+    return messages
+
+def filter_results(results, current_project, current_project_type):
+    if current_project and current_project_type:
+        return [r for r in results if r.meta_data.get('project') == current_project and r.meta_data.get('type').startswith(current_project_type)]
+    return results
+
 def get_llm_os(
     llm_id: str = "gpt-4o",
     fallback_model: str = "tinyllama",    
@@ -121,7 +139,7 @@ def get_llm_os(
     run_id: Optional[str] = None,
     debug_mode: bool = True,
     web_search: bool = True,
-) -> Assistant:
+) -> Union[Assistant, 'ContextAwareAssistant']:
     
     logger.info(f"-*- Creating {llm_id} LLM OS -*-")
 
@@ -145,7 +163,7 @@ def get_llm_os(
         tools.append(ExaTools(num_results=5, text_length_limit=2000))
             
     role_assistants = {
-        "Dev": ["Web Search", "React Assistant"],
+        "Dev": ["Web Search", "Code Assistant"],
         "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
         "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
         "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
@@ -169,6 +187,7 @@ def get_llm_os(
         "Enhanced Financial Analyst": EnhancedFinancialAnalyst,
         "Product Owner": EnhancedProductOwner,
         "Web Search": ExaTools,
+        "Code Assistant": CodeAssistant,
     }
 
     for assistant in available_assistants:
@@ -176,12 +195,16 @@ def get_llm_os(
             if assistant == "Web Search":
                 tools.append(assistant_mapping[assistant](num_results=5, text_length_limit=2000))
             else:
-                team.append(assistant_mapping[assistant](
-                    llm=llm, 
-                    tools=[pandas_tools, ExaTools()] if assistant in ["Business Analyst", "Product Owner"] else [pandas_tools], 
-                    knowledge_base=knowledge_base, 
-                    debug_mode=debug_mode
-                ))
+                assistant_kwargs = {
+                    "llm": llm,
+                    "tools": [pandas_tools, ExaTools()] if assistant in ["Business Analyst", "Product Owner"] else [pandas_tools],
+                    "debug_mode": debug_mode
+                }
+                if assistant == "Code Assistant":
+                    assistant_kwargs["code_tools"] = CodeTools(knowledge_base=knowledge_base)
+                else:
+                    assistant_kwargs["knowledge_base"] = knowledge_base
+                team.append(assistant_mapping[assistant](**assistant_kwargs))
 
     log_system_resources()        
 
@@ -194,7 +217,38 @@ def get_llm_os(
     # Add team description to instructions
     assistant_instructions['instructions'].append(f"\nYour current team:\n{team_description}")
 
-    llm_os = Assistant(
+    class ContextAwareAssistant(Assistant):
+        current_project: Optional[str] = Field(default=None, description="Current project name")
+        current_project_type: Optional[str] = Field(default=None, description="Current project type (react or java)")
+        last_search_results: Optional[List[Any]] = Field(default=None, description="Last search results")
+
+        def set_project_context(self, project_name: str, project_type: str):
+            self.current_project = project_name
+            self.current_project_type = project_type
+
+        def run(self, query: str, stream: bool = False, **kwargs) -> Union[str, Any]:
+            if self.current_project and self.current_project_type:
+                preprocessed_query = preprocess_query(query, self.current_project, self.current_project_type)
+                context_messages = add_context_reminder(kwargs.get('messages', []), self.current_project, self.current_project_type)
+                kwargs['messages'] = context_messages
+            else:
+                preprocessed_query = query
+
+            results = super().run(preprocessed_query, stream=stream, **kwargs)
+            
+            if self.knowledge_base and self.current_project and self.current_project_type:
+                filtered_results = filter_results(self.knowledge_base.search(preprocessed_query), self.current_project, self.current_project_type)
+                self.last_search_results = filtered_results
+
+            return results
+
+        def get_last_search_results(self) -> Optional[List[Any]]:
+            return self.last_search_results
+
+    # Determine whether to use ContextAwareAssistant or regular Assistant
+    AssistantClass = ContextAwareAssistant if "Code Assistant" in available_assistants else Assistant
+
+    llm_os = AssistantClass(
         name="llm_os",
         run_id=run_id,
         user_id=user_id,

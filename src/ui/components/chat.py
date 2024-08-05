@@ -1,7 +1,7 @@
 import base64
 import io
 import random
-import re
+import re, html
 from sqlite3 import IntegrityError
 import time
 from typing import Optional
@@ -22,6 +22,7 @@ from plotly.subplots import make_subplots
 import json
 import streamlit as st
 import plotly.graph_objects as go
+from transformers import GPT2Tokenizer
 import json
 import base64
 from io import BytesIO
@@ -35,12 +36,32 @@ from service.analytics_service import analytics_service
 # Load environment variables
 load_dotenv()
 
+# Initialize the tokenizer
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+
+MAX_TOKENS = 4096  # Adjust based on the model 
+BUFFER_TOKENS = 1000  # some room for the response
+
 client_name = os.getenv('CLIENT_NAME', 'default')
 
 # Load the custom icons
 meerkat_icon = Image.open(f"src/config/themes/{client_name}/chat_system_icon.png")
 user_icon = Image.open(f"src/config/themes/{client_name}/chat_user_icon.png")
 llm_os = None
+
+def count_tokens(text):
+    return len(tokenizer.encode(text))
+
+def truncate_conversation(messages, max_tokens):
+    total_tokens = 0
+    truncated_messages = []
+    for message in reversed(messages):
+        message_tokens = count_tokens(message['content'])
+        if total_tokens + message_tokens > max_tokens:
+            break
+        total_tokens += message_tokens
+        truncated_messages.insert(0, message)
+    return truncated_messages
 
 def display_base64_image(base64_string):
     try:
@@ -133,6 +154,28 @@ def sanitize_content(content):
 
     return content
 
+def render_markdown(content):
+    # Function to replace markdown code blocks with st.code()
+    def replace_code_block(match):
+        language = match.group(1) or ""
+        code = match.group(2)
+        return f"$CODE_BLOCK${language}${code}$CODE_BLOCK$"
+
+    # Replace code blocks with placeholders
+    content = re.sub(r'```(\w*)\n([\s\S]*?)```', replace_code_block, content)
+
+    # Split content by code block placeholders
+    parts = content.split('$CODE_BLOCK$')
+
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            # Render non-code parts as markdown
+            st.markdown(part)
+        else:
+            # Render code parts
+            language, code = part.split('$', 1)
+            st.code(code, language=language if language else None)
+            
 def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     st.markdown("""
         <style>
@@ -212,6 +255,9 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     if prompt := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": prompt})
         
+        # Truncate conversation history if necessary
+        truncated_messages = truncate_conversation(st.session_state["messages"], MAX_TOKENS - BUFFER_TOKENS)
+        
         start_time = time.time()
         
         # Log user query
@@ -222,7 +268,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                 st.markdown(prompt)
 
             with st.chat_message("assistant", avatar=meerkat_icon):
-                # Create a placeholder for the loading message
                 loading_placeholder = st.empty()
                 loading_placeholder.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
 
@@ -234,35 +279,60 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                 used_assistants = []
 
                 try:
+                    # Preprocess the query to include project context
+                    current_project = st.session_state.get('current_project')
+                    current_project_type = st.session_state.get('current_project_type')
+                    if current_project and current_project_type:
+                        context_prompt = f"In the context of the {current_project_type} project '{current_project}': {prompt}"
+                    else:
+                        context_prompt = prompt
+
+                    # Create a placeholder for the streaming response
+                    stream_placeholder = st.empty()
+
                     # Use streaming mode for responses
                     full_response = ""
-                    for chunk in llm_os.run(prompt, stream=True):
+                    for chunk in llm_os.run(context_prompt, messages=truncated_messages, stream=True):
                         full_response += chunk
                         # Update the UI to show the streaming response
-                        resp_container.markdown(sanitize_content(full_response))
-                    
+                        stream_placeholder.markdown(sanitize_content(full_response))
+                        time.sleep(0.01)  # Small delay to allow for visual updates
+
                     # Process the full response
                     sanitized_response = sanitize_content(full_response)
                     
-                    # Find all JSON-like structures
+                    # Clear the streaming placeholder
+                    stream_placeholder.empty()
+                    
+                    # Display the full sanitized response only once
+                    st.markdown(sanitized_response)
+                    
+                    # Find all code blocks
+                    code_pattern = re.compile(r'```[\s\S]*?```')
+                    code_blocks = code_pattern.findall(sanitized_response)
+                    text_parts = code_pattern.split(sanitized_response)
+
+                    # Display text parts and code blocks
+                    for i, part in enumerate(text_parts):
+                        if part.strip():
+                            st.markdown(part)
+                        if i < len(code_blocks):
+                            code = code_blocks[i].strip('`')
+                            language = code.split('\n')[0].strip().lower()
+                            if language:
+                                code = '\n'.join(code.split('\n')[1:])
+                            st.code(code, language=language if language else None)
+
+                    # Find and render any JSON structures that might be charts
                     json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
-                    parts = json_pattern.split(sanitized_response)
                     json_matches = json_pattern.findall(sanitized_response)
-                    
-                    # Clear the previous content
-                    resp_container.empty()
-                    
-                    for i, part in enumerate(parts):
-                        resp_container.markdown(part)
-                        if i < len(json_matches):
-                            try:
-                                chart_data = json.loads(json_matches[i])
-                                if 'chart_type' in chart_data and 'data' in chart_data:
-                                    render_chart(chart_data)
-                                else:
-                                    resp_container.code(json.dumps(chart_data, indent=2))
-                            except json.JSONDecodeError:
-                                resp_container.code(json_matches[i])
+                    for json_str in json_matches:
+                        try:
+                            chart_data = json.loads(json_str)
+                            if 'chart_type' in chart_data and 'data' in chart_data:
+                                render_chart(chart_data)
+                        except json.JSONDecodeError:
+                            pass  # Not a valid JSON, skip it
 
                     # Remove the loading message
                     loading_placeholder.empty()
@@ -271,8 +341,14 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     st.error(f"An unexpected error occurred: {str(e)}")
                     logger.error(f"Unexpected error: {str(e)}")
                     full_response = "I apologize, but I encountered an error while processing your request. Please try again."
-                
+
+                # Add the full response to the session state only once
                 st.session_state["messages"].append({"role": "assistant", "content": full_response})
+
+                # Log the response for debugging
+                logger.info(f"Full response length: {len(full_response)}")
+                logger.info(f"First 100 characters: {full_response[:100]}")
+                logger.info(f"Last 100 characters: {full_response[-100:]}")
         
         # Log assistant response
         response_time = time.time() - start_time
@@ -560,9 +636,6 @@ def manage_knowledge_base(llm_os):
     )
 
     if uploaded_files:
-        financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Financial Analyst"), None)
-        data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Data Analyst"), None)
-        
         for file in uploaded_files:
             with st.spinner(f"Processing {file.name}..."):
                 try:                    

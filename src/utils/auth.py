@@ -3,7 +3,7 @@ import os
 import streamlit as st
 import requests
 import jwt
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError
+from jwt.exceptions import InvalidTokenError, DecodeError
 from functools import wraps
 from typing import Tuple
 import re
@@ -12,7 +12,7 @@ load_dotenv()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-def login(email: str, password: str) -> bool:
+def login(email: str, password: str) -> bool | str:
     response = requests.post(
         f"{BACKEND_URL}/token",
         data={"username": email, "password": password},
@@ -24,6 +24,8 @@ def login(email: str, password: str) -> bool:
         st.session_state["role"] = data["role"]
         st.session_state["nickname"] = data["nickname"]
         return True
+    elif response.status_code in [401, 403]:
+        return response.json().get("detail", "An error occurred during login")
     return False
 
 def get_user_id(email: str = None) -> int:
@@ -72,7 +74,11 @@ def check_token_expiry():
                 logout()
                 return False
             return True
-        except (ExpiredSignatureError, InvalidTokenError, DecodeError):
+        except jwt.ExpiredSignatureError:
+            st.warning("Your session has expired. Please log in again.")
+            logout()
+            return False
+        except (InvalidTokenError, DecodeError):
             st.warning("Invalid token. Please log in again.")
             logout()
             return False
