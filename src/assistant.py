@@ -121,18 +121,6 @@ def get_llm_os(
     run_id: Optional[str] = None,
     debug_mode: bool = True,
     web_search: bool = True,
-    research_assistant: bool = False,
-    data_analyst: bool = True,
-    # python_assistant: bool = False,
-    react_assistant: bool = False,
-    # research_assistant: bool = False,
-    maintenance_engineer: bool = False,
-    financial_analyst: bool = True,
-    company_analyst: bool = False,
-    product_owner: bool = True,
-    business_analyst: bool = True,
-    quality_analyst: bool = True,
-    investment_assistant: bool = False,
 ) -> Assistant:
     
     logger.info(f"-*- Creating {llm_id} LLM OS -*-")
@@ -155,43 +143,44 @@ def get_llm_os(
 
     if web_search:
         tools.append(ExaTools(num_results=5, text_length_limit=2000))
-        
-    team: List[Assistant] = []
-    
+            
     role_assistants = {
-        "QA": ["EnhancedQualityAnalyst", "BusinessAnalyst"],
-        "Product": ["ProductOwner", "BusinessAnalyst", "DataAnalyst"],
-        "Delivery": ["BusinessAnalyst", "DataAnalyst"],
-        "Manager": ["FinancialAnalyst", "BusinessAnalyst", "DataAnalyst"]
+        "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
+        "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
+        "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
+        "Manager": ["Web Search", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
     }
 
     available_assistants = role_assistants.get(user_role, [])
-
+    
+    team: List[Assistant] = []
+    
+    team_description = "Your team consists of:\n"
+    for assistant in available_assistants:
+        team_description += f"- {assistant}\n"
+        
     llm = get_llm(llm_id, fallback_model)
 
-    if "EnhancedQualityAnalyst" in available_assistants:
-        team.append(EnhancedQualityAnalyst(llm=llm, tools=[pandas_tools], knowledge_base=knowledge_base))
+    assistant_mapping = {
+        "Enhanced Quality Analyst": EnhancedQualityAnalyst,
+        "Business Analyst": EnhancedBusinessAnalyst,
+        "Enhanced Data Analyst": EnhancedDataAnalyst,
+        "Enhanced Financial Analyst": EnhancedFinancialAnalyst,
+        "Product Owner": EnhancedProductOwner,
+        "Web Search": ExaTools,
+    }
 
-    if "BusinessAnalyst" in available_assistants:
-        team.append(EnhancedBusinessAnalyst(llm=llm, tools=[pandas_tools, ExaTools()], knowledge_base=knowledge_base, debug_mode=debug_mode))
-
-    if "DataAnalyst" in available_assistants:
-        team.append(EnhancedDataAnalyst(llm=llm, tools=[pandas_tools], knowledge_base=knowledge_base))
-
-    if "FinancialAnalyst" in available_assistants:
-        team.append(EnhancedFinancialAnalyst(llm=llm, tools=[pandas_tools], knowledge_base=knowledge_base))
-
-    if "ProductOwner" in available_assistants:
-        team.append(EnhancedProductOwner(llm=llm, tools=[pandas_tools, ExaTools()], knowledge_base=knowledge_base, debug_mode=debug_mode))
-
-    # Add other assistants as needed
-    team.extend([
-        EnhancedResearchAssistant(llm=llm, tools=[ExaTools()], debug_mode=debug_mode),
-        EnhancedMaintenanceEngineer(llm=llm, tools=[ExaTools()], knowledge_base=knowledge_base, db_url=db_url, debug_mode=debug_mode),
-        EnhancedInvestmentAssistant(llm=llm, tools=[YFinanceTools()], debug_mode=debug_mode),
-        EnhancedCompanyAnalyst(llm=llm, tools=[ExaTools(), YFinanceTools()], knowledge_base=knowledge_base, debug_mode=debug_mode),
-        ReactAssistant(llm=llm, tools=[CodeTools(knowledge_base=knowledge_base)])
-    ])
+    for assistant in available_assistants:
+        if assistant in assistant_mapping:
+            if assistant == "Web Search":
+                tools.append(assistant_mapping[assistant](num_results=5, text_length_limit=2000))
+            else:
+                team.append(assistant_mapping[assistant](
+                    llm=llm, 
+                    tools=[pandas_tools, ExaTools()] if assistant in ["Business Analyst", "Product Owner"] else [pandas_tools], 
+                    knowledge_base=knowledge_base, 
+                    debug_mode=debug_mode
+                ))
 
     log_system_resources()        
 
@@ -200,6 +189,9 @@ def get_llm_os(
     
     if 'introduction' in assistant_instructions:
         assistant_instructions['introduction'] = assistant_instructions['introduction'].replace('{user_nickname}', user_nickname)
+
+    # Add team description to instructions
+    assistant_instructions['instructions'].append(f"\nYour current team:\n{team_description}")
 
     llm_os = Assistant(
         name="llm_os",

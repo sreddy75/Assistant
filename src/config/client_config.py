@@ -29,11 +29,11 @@ def is_assistant_enabled(assistant_name):
 
 # List of all available assistants
 AVAILABLE_ASSISTANTS = [
-    "Data Analyst",
-    "Financial Analyst",
+    "Enhanced Data Analyst",
+    "Enhanced Financial Analyst",
     "Product Owner",
     "Business Analyst",
-    "Quality Analyst",
+    "Enhanced Quality Analyst",
     "React Assistant",
     "Web Search",
     "Research Assistant",

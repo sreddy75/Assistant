@@ -13,52 +13,18 @@ load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 def login(email: str, password: str) -> bool:
-    try:
-        response = requests.post(f"{BACKEND_URL}/token", data={"username": email, "password": password})
-        response.raise_for_status()
-        
-        if response.status_code == 200:
-            token_data = response.json()
-            token = token_data["access_token"]
-            
-            # Decode the token to check its expiry
-            try:
-                # Use 'HS256' as the algorithm, or whichever algorithm your backend uses
-                decoded_token = jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
-                expiry = datetime.fromtimestamp(decoded_token['exp'], tz=UTC)
-                if expiry <= datetime.now(UTC):
-                    st.error("Your session has expired. Please log in again.")
-                    return False
-                
-                st.session_state["token"] = token
-                st.session_state["email"] = email
-                st.session_state["user_id"] = token_data["user_id"]
-                st.session_state["role"] = token_data["role"]
-                st.session_state["nickname"] = token_data["nickname"]
-                st.session_state.authenticated = True
-                return True
-            except ExpiredSignatureError:
-                st.error("Your session has expired. Please log in again.")
-                return False
-            except (InvalidTokenError, DecodeError):
-                st.error("Invalid token. Please log in again.")
-                return False
-        
-        # If we get here, the login was unsuccessful
-        st.error("Login failed. Please check your credentials.")
-        return False
-    
-    except requests.exceptions.RequestException as e:
-        st.error(f"Connection error: {str(e)}")
-        return False
-        
-    except requests.exceptions.RequestException as e:
-        st.error(f"Connection error: {str(e)}")
-        return False
-
-    except requests.exceptions.RequestException as e:
-        st.error(f"Connection error: {str(e)}")
-        return False
+    response = requests.post(
+        f"{BACKEND_URL}/token",
+        data={"username": email, "password": password},
+    )
+    if response.status_code == 200:
+        data = response.json()
+        st.session_state["token"] = data["access_token"]
+        st.session_state["user_id"] = data["user_id"]
+        st.session_state["role"] = data["role"]
+        st.session_state["nickname"] = data["nickname"]
+        return True
+    return False
 
 def get_user_id(email: str = None) -> int:
     """

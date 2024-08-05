@@ -255,28 +255,26 @@ def check_token_validity():
 def main_app():
     col1, col2 = st.sidebar.columns([2, 1])
 
-    # Display welcome message in the first (wider) column
     with col1:
         if 'email' in st.session_state:
             st.write(f"Hi, {st.session_state['email']}!")
         else:   
             st.write("Welcome!")
 
-    # Display logout button in the second (narrower) column
     with col2:
         if st.button("Logout"):
             logout()
             st.session_state.pop('user_id', None)
             st.session_state.pop('email', None)
+            st.session_state.pop('role', None)
             st.rerun()
     
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider
+    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
-    # Create tabs
     chat_tab, analytics_tab = st.tabs(["Chat", "Analytics"])
 
     with chat_tab:
-        render_chat(user_id=st.session_state.get('user_id'))
+        render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
     
     with analytics_tab:
         if st.session_state.get('is_admin', False):

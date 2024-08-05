@@ -6,33 +6,54 @@ from ui.utils.helper import restart_assistant
 from utils.npm_utils import run_npm_command
 from config.client_config import ENABLED_ASSISTANTS
 
-def initialize_session_state():
+def initialize_session_state(user_role):
+    
+    role_assistants = {
+        "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
+        "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
+        "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
+        "Manager": ["Web Search", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
+    }
+    
+    available_assistants = role_assistants.get(user_role, [])
+    
     for assistant in ENABLED_ASSISTANTS:
         key = f"{assistant.lower().replace(' ', '_')}_enabled"
         if key not in st.session_state:
-            st.session_state[key] = True
+            st.session_state[key] = assistant in available_assistants
     
     if 'pandas_tools' not in st.session_state:
         st.session_state.pandas_tools = PandasTools()
 
 def render_sidebar():
-    initialize_session_state()    
+    user_role = st.session_state.get('role')
+    initialize_session_state(user_role)    
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
     
-    # In the sidebar, only show enabled assistants
-    with st.sidebar.expander("Available Assistants", expanded=True):
-        for assistant in ENABLED_ASSISTANTS:
-            key = f"{assistant.lower().replace(' ', '_')}_enabled"
-            enabled = st.checkbox(assistant, value=st.session_state.get(key, True))
-            if st.session_state.get(key) != enabled:
-                st.session_state[key] = enabled
-                restart_assistant()                    
+    role_assistants = {
+        "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
+        "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
+        "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
+        "Manager": ["Web Search", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
+    }
     
-        # Only show React Project Upload if React Assistant is enabled
-    if st.session_state.get("react_assistant_enabled", False):
+    available_assistants = role_assistants.get(user_role, [])
+    
+    # In the sidebar, only show enabled assistants for the user's role
+    with st.sidebar.expander("Available Assistants", expanded=False):
+        for assistant in ENABLED_ASSISTANTS:
+            if assistant in available_assistants:
+                key = f"{assistant.lower().replace(' ', '_')}_enabled"
+                enabled = st.checkbox(assistant, value=st.session_state.get(key, True))
+                if st.session_state.get(key) != enabled:
+                    st.session_state[key] = enabled
+                    restart_assistant()                    
+    
+    # Only show React Project Upload if React Assistant is enabled and available for the user's role
+    if st.session_state.get("react_assistant_enabled", False) and "ReactAssistant" in available_assistants:
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
         st.sidebar.subheader("React Project Upload")
-    
+            
         # Check if npm is installed
         if run_npm_command("--version") is None:
             st.sidebar.warning("npm is not installed or not in PATH. Some features may not work correctly.")

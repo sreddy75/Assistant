@@ -1,13 +1,13 @@
 {
-    "enable_data_analyst": false,
-    "enable_financial_analyst": false,
-    "enable_product_owner": false,
-    "enable_business_analyst": false,
-    "enable_quality_analyst": true,
+    "enable_enhanced_data_analyst": true,
+    "enable_enhanced_financial_analyst": true,
+    "enable_product_owner": true,
+    "enable_business_analyst": true,
+    "enable_enhanced_quality_analyst": true,
     "enable_react_assistant": false,
     "enable_web_search": true,
-    "enable_research_assistant": false,
+    "enable_research_assistant": true,
     "enable_investment_assistant": false,
-    "enable_company_analyst": false,
+    "enable_company_analyst": true,
     "enable_maintenance_engineer": false
   }

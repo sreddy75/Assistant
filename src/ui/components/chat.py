@@ -4,6 +4,7 @@ import random
 import re
 from sqlite3 import IntegrityError
 import time
+from typing import Optional
 import pandas as pd
 import streamlit as st
 from kr8.utils.log import logger
@@ -132,7 +133,7 @@ def sanitize_content(content):
 
     return content
 
-def render_chat(user_id=None):        
+def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     st.markdown("""
         <style>
         @keyframes pulse {
@@ -436,28 +437,15 @@ def initialize_assistant(llm_id, user_id=None):
         user_nickname = st.session_state.get("nickname", "friend")
         user_role = st.session_state.get("role", "default")
 
-        financial_analyst_enabled = st.session_state.get("financial_analyst_enabled", True)
-        data_analyst_enabled = st.session_state.get("data_analyst_enabled", True)
-        logger.debug(f"Financial Analyst enabled: {financial_analyst_enabled}")
-        logger.debug(f"Data Analyst enabled: {data_analyst_enabled}")
-        
         try:
             llm_os = get_llm_os(
-                llm_id=llm_id,  # Use the selected model
+                llm_id=llm_id,
                 user_id=user_id,
                 user_role=user_role,
                 user_nickname=user_nickname,
-                web_search=st.session_state.get("web_search_enabled", True),
-                research_assistant=st.session_state.get("research_assistant_enabled", False),
-                financial_analyst=financial_analyst_enabled,
-                data_analyst=data_analyst_enabled,
-                investment_assistant=st.session_state.get("investment_assistant_enabled", False),            
-                company_analyst=st.session_state.get("company_analyst_enabled", False),            
-                maintenance_engineer=st.session_state.get("maintenance_engineer_enabled", False),            
-                react_assistant=st.session_state.get("react_assistant_enabled", False),
-                product_owner=st.session_state.get("product_owner_enabled", True),
-                business_analyst=st.session_state.get("business_analyst_enabled", True),
-                quality_analyst=st.session_state.get("quality_analyst_enabled", True),
+                run_id=st.session_state.get("run_id"),
+                debug_mode=st.session_state.get("debug_mode", False),
+                web_search=st.session_state.get("web_search_enabled", True)
             )
             st.session_state["llm_os"] = llm_os
             logger.info(f"Initialized LLM OS with team: {[assistant.name for assistant in llm_os.team]}")

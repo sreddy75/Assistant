@@ -14,7 +14,7 @@ from kr8.knowledge.base import AssistantKnowledge
 class EnhancedDataAnalyst(Assistant, BaseModel):
     pandas_tools: Optional[PandasTools] = Field(default=None, description="PandasTools for data analysis")
 
-    def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None):
+    def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None, debug_mode: bool = False):
         super().__init__(
             name="Enhanced Data Analyst",
             role="Analyze data from uploaded CSV files with visualizations",
@@ -25,6 +25,7 @@ class EnhancedDataAnalyst(Assistant, BaseModel):
                 "Always check the knowledge base first before asking for CSV files.",
                 "If the required data is in the knowledge base, use it directly for analysis."                
             ],
+            debug_mode=debug_mode,
         )
         pandas_tools = next((tool for tool in tools if isinstance(tool, PandasTools)), None)
         if pandas_tools:

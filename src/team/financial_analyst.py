@@ -16,7 +16,7 @@ from kr8.knowledge.base import AssistantKnowledge
 class EnhancedFinancialAnalyst(Assistant, BaseModel):
     pandas_tools: Optional[PandasTools] = Field(default=None, description="PandasTools for data analysis")
 
-    def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None):
+    def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None, debug_mode: bool = False):
         super().__init__(
             name="Enhanced Financial Analyst",
             role="Analyze financial data and provide insights with visualizations",
@@ -48,6 +48,7 @@ class EnhancedFinancialAnalyst(Assistant, BaseModel):
                 """
             ),
             markdown=True,
+            debug_mode=debug_mode,
         )
         pandas_tools = next((tool for tool in tools if isinstance(tool, PandasTools)), None)
         if pandas_tools:
@@ -55,7 +56,7 @@ class EnhancedFinancialAnalyst(Assistant, BaseModel):
         else:
             raise ValueError("PandasTools not found in the provided tools")
         self.knowledge_base = knowledge_base
-        
+                
     def run(self, query: str, stream: bool = False) -> Union[str, Any]:
         if not self.pandas_tools:
             return "Error: PandasTools not initialized"
