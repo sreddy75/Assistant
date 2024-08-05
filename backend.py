@@ -287,7 +287,7 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks, db: Sess
     except EmailNotValidError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    if user.role not in ["QA", "Product", "Delivery", "Manager"]:
+    if user.role not in ["Dev", "QA", "Product", "Delivery", "Manager"]:
         raise HTTPException(status_code=400, detail="Invalid role")
     
     hashed_password = get_password_hash(user.password)

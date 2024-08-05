@@ -9,6 +9,7 @@ from config.client_config import ENABLED_ASSISTANTS
 def initialize_session_state(user_role):
     
     role_assistants = {
+        "Dev": ["Web Search", "React Assistant"],
         "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
         "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
         "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
@@ -31,6 +32,7 @@ def render_sidebar():
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)  # Add divider            
     
     role_assistants = {
+        "Dev": ["Web Search", "React Assistant"],
         "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
         "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
         "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
@@ -50,7 +52,7 @@ def render_sidebar():
                     restart_assistant()                    
     
     # Only show React Project Upload if React Assistant is enabled and available for the user's role
-    if st.session_state.get("react_assistant_enabled", False) and "ReactAssistant" in available_assistants:
+    if st.session_state.get("react_assistant_enabled", False) and "React Assistant" in available_assistants:
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
         st.sidebar.subheader("React Project Upload")
             

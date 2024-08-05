@@ -83,7 +83,7 @@ def login_form():
             first_name = st.text_input("First Name", key="register_first_name")
             last_name = st.text_input("Last Name", key="register_last_name")
             nickname = st.text_input("Nickname", key="register_nickname")
-            role = st.selectbox("Role", options=["QA", "Product", "Delivery", "Manager"], key="register_role")
+            role = st.selectbox("Role", options=["QA", "Dev", "Product", "Delivery", "Manager"], key="register_role")
             
             if st.button("Register"):
                 if is_valid_email(new_email):

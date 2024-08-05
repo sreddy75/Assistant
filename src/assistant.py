@@ -145,6 +145,7 @@ def get_llm_os(
         tools.append(ExaTools(num_results=5, text_length_limit=2000))
             
     role_assistants = {
+        "Dev": ["Web Search", "React Assistant"],
         "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
         "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
         "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
