@@ -1,5 +1,7 @@
-import random
+
+import datetime
 import time
+import pandas as pd
 import requests
 import streamlit as st
 import base64
@@ -9,6 +11,7 @@ from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat
 from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
 import logging
+from utils.auth import get_all_users, extend_user_trial
 from queue import Queue
 from threading import Thread
 from streamlit_autorefresh import st_autorefresh
@@ -292,7 +295,79 @@ def check_token_validity():
         except requests.exceptions.RequestException:
             logout()
             st.rerun()
-            
+
+def render_settings_tab():
+    st.header("User Management")
+    
+    # Display any stored messages
+    if "trial_extension_messages" in st.session_state:
+        for message, is_error in st.session_state["trial_extension_messages"]:
+            if is_error:
+                st.error(message)
+            else:
+                st.success(message)
+        # Clear the messages after displaying
+        st.session_state.pop("trial_extension_messages")
+
+    # Fetch all users from the database
+    users = get_all_users()
+    
+    if not users:
+        st.warning("No users found in the database.")
+        return
+    
+    # Create a dataframe from the user data
+    df = pd.DataFrame(users)
+    
+    # Convert Trial End Date to datetime if it's not already
+    df['trial_end'] = pd.to_datetime(df['trial_end'])
+    
+    # Add an "Extend Trial" button column
+    df['Extend Trial'] = False
+
+    # Render the interactive dataframe
+    edited_df = st.data_editor(
+        df,
+        column_config={
+            "id": st.column_config.NumberColumn("ID"),
+            "email": st.column_config.TextColumn("Email"),
+            "role": st.column_config.TextColumn("Role"),
+            "trial_end": st.column_config.DatetimeColumn("Trial End Date"),
+            "is_active": st.column_config.CheckboxColumn("Is Active"),
+            "Extend Trial": st.column_config.CheckboxColumn("Extend Trial")
+        },
+        disabled=["id", "email", "role", "trial_end", "is_active"],
+        hide_index=True,
+    )
+    
+    # Check if any trials need to be extended
+    changes_made = False
+    messages = []
+    for index, row in edited_df.iterrows():
+        if row['Extend Trial']:
+            user_id = row['id']
+            if extend_user_trial(user_id):
+                messages.append((f"Trial extended for {row['email']} by 7 days", False))
+                # Update the trial end date in the dataframe
+                edited_df.at[index, 'trial_end'] += datetime.timedelta(days=7)
+                changes_made = True
+            else:
+                messages.append((f"Failed to extend trial for {row['email']}", True))
+            # Reset the checkbox
+            edited_df.at[index, 'Extend Trial'] = False
+    
+    # If any changes were made, store the messages and rerun
+    if changes_made:
+        st.session_state["trial_extension_messages"] = messages
+        st.experimental_rerun()
+    elif messages:
+        # If there were only error messages, display them immediately
+        for message, is_error in messages:
+            if is_error:
+                st.error(message)
+            else:
+                st.success(message)
+                            
 def main_app():
     col1, col2 = st.sidebar.columns([2, 1])
 
@@ -312,17 +387,26 @@ def main_app():
     
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
-    chat_tab, analytics_tab = st.tabs(["Chat", "Analytics"])
+     # Determine which tabs to show based on user role
+    tabs = ["Chat", "Analytics"]
+    if st.session_state.get('is_admin', False):
+        tabs.append("Settings")
+    
+    selected_tab = st.tabs(tabs)
 
-    with chat_tab:
+    with selected_tab[0]:  # Chat tab
         render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
     
-    with analytics_tab:
+    with selected_tab[1]:  # Analytics tab
         if st.session_state.get('is_admin', False):
             from ui.components.chat import render_analytics_dashboard
             render_analytics_dashboard()
         else:
             st.warning("You don't have permission to view the analytics dashboard.")
+
+    if st.session_state.get('is_admin', False) and len(selected_tab) > 2:
+        with selected_tab[2]:  # Settings tab
+            render_settings_tab()
 
     render_sidebar()
 
@@ -338,24 +422,31 @@ def apply_custom_theme():
             background-color: {theme_config['theme']['backgroundColor']};
         }}
         .stTextInput > div > div > input {{
-            color: {theme_config['theme']['textColor']};
+            color: white !important;
+            background-color: black !important;
         }}
         .stButton > button {{
-            color: {theme_config['theme']['backgroundColor']};
+            color:  white !important;
             background-color: {theme_config['theme']['primaryColor']};
         }}
         .stTextArea > div > div > textarea {{
             color: {theme_config['theme']['textColor']};
         }}
+         /* Selectbox (dropdown) */
         .stSelectbox > div > div > div {{
-            color: {theme_config['theme']['textColor']};
-            background-color: {theme_config['theme']['secondaryBackgroundColor']};
+            color: white !important;
+            background-color: black !important;
         }}
         .stHeader {{
             color: {theme_config['theme']['primaryColor']};
         }}
         * {{
             font-family: {theme_config['theme']['font']};
+        }}
+        /* Style for password input fields */
+        input[type="password"] {{
+            color: white !important;
+            background-color: black !important;
         }}
     </style>
     """
@@ -434,7 +525,7 @@ def main():
     else:
         logger.debug("Showing login form")
         client_name = get_client_name()
-        st.markdown(f"<h1 style='color: #FF4B4B;'>Welcome to {client_name.upper()}'s Assistant</h1>", unsafe_allow_html=True)        
+        st.markdown(f"<h1 style='color: white'>Welcome to {client_name.upper()}'s Assistant</h1>", unsafe_allow_html=True)        
         login_form()
 
 if __name__ == "__main__":

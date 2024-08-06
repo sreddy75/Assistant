@@ -1,11 +1,11 @@
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 import os
 import streamlit as st
 import requests
 import jwt
 from jwt.exceptions import InvalidTokenError, DecodeError
 from functools import wraps
-from typing import Tuple
+from typing import List, Tuple
 import re
 from dotenv import load_dotenv
 load_dotenv()
@@ -132,3 +132,54 @@ def reset_password(token: str, new_password: str) -> Tuple[bool, str]:
 def is_valid_email(email):
     pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     return re.match(pattern, email) is not None
+
+def get_all_users() -> List[dict]:
+    """
+    Fetch all users from the database via the backend API.
+    
+    Returns:
+        A list of dictionaries containing user information.
+    """
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/users",
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 403:
+            st.error("You don't have permission to view all users.")
+            return []
+        else:
+            st.error(f"Failed to fetch users: {response.status_code} - {response.text}")
+            return []
+    except requests.RequestException as e:
+        st.error(f"Error connecting to the server: {str(e)}")
+        return []
+
+def extend_user_trial(user_id: int, days: int = 7) -> bool:
+    """
+    Extend the trial period for a specific user.
+    
+    Args:
+        user_id (int): The ID of the user whose trial is to be extended.
+        days (int): The number of days to extend the trial by. Defaults to 7.
+    
+    Returns:
+        bool: True if the trial was successfully extended, False otherwise.
+    """
+    try:
+        new_trial_end_date = (datetime.now() + timedelta(days=days)).isoformat()
+        response = requests.post(
+            f"{BACKEND_URL}/extend-trial/{user_id}",
+            json={"new_trial_end_date": new_trial_end_date},
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"Failed to extend trial: {response.json().get('detail', 'Unknown error')}")
+            return False
+    except requests.RequestException as e:
+        st.error(f"Error connecting to the server: {str(e)}")
+        return False

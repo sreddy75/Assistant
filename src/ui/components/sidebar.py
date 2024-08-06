@@ -50,50 +50,52 @@ def render_sidebar():
                     st.session_state[key] = enabled
                     restart_assistant()
     
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
-    st.sidebar.subheader("Project Upload")
+    # Check if Code Assistant is enabled
+    if "Code Assistant" in available_assistants:        
+        st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
+        st.sidebar.subheader("Project Upload")
     
-    project_type = st.sidebar.selectbox("Select Project Type", ["React", "Java"])
-    project_name = st.sidebar.text_input(f"Enter Project Name")
-    
-    file_types = ["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"]
-    if project_type == "Java":
-        file_types.extend(["java", "xml", "properties", "gradle"])
-    
-    project_files = st.sidebar.file_uploader(
-        f"Upload {project_type} Project Files", 
-        type=file_types,
-        key="project_file_uploader",
-        accept_multiple_files=True
-    )
-    
-    if project_files:
-        if 'project_files_processed' not in st.session_state:
+        project_type = st.sidebar.selectbox("Select Project Type", ["React", "Java"])
+        project_name = st.sidebar.text_input(f"Enter Project Name")
+        
+        file_types = ["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"]
+        if project_type == "Java":
+            file_types.extend(["java", "xml", "properties", "gradle"])
+        
+        project_files = st.sidebar.file_uploader(
+            f"Upload {project_type} Project Files", 
+            type=file_types,
+            key="project_file_uploader",
+            accept_multiple_files=True
+        )
+        
+        if project_files:
+            if 'project_files_processed' not in st.session_state:
+                st.session_state.project_files_processed = False
+            
+            if not st.session_state.project_files_processed:
+                st.sidebar.info(f"{project_type} files uploaded. Click 'Process {project_type} Project' to analyze them.")
+            
+            if st.sidebar.button(f"Process {project_type} Project"):
+                process_project(project_type, project_name, project_files)
+        else:
             st.session_state.project_files_processed = False
         
-        if not st.session_state.project_files_processed:
-            st.sidebar.info(f"{project_type} files uploaded. Click 'Process {project_type} Project' to analyze them.")
-        
-        if st.sidebar.button(f"Process {project_type} Project"):
-            process_project(project_type, project_name, project_files)
-    else:
-        st.session_state.project_files_processed = False
+        if st.session_state.get('current_project') and st.session_state.get('project_files_processed', False):
+            st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
+            st.sidebar.subheader(f"{project_type} Project Tools")
+            
+            if st.sidebar.button("Analyze Project Structure"):
+                analyze_project_structure(project_name, project_type.lower())
+            
+            if st.sidebar.button("Show Dependency Graph"):
+                show_dependency_graph(project_name, project_type.lower())
+            
+            if project_type == "Java":
+                if st.sidebar.button("Show Java Project Analysis"):
+                    show_java_project_analysis(project_name)
     
-    if st.session_state.get('current_project') and st.session_state.get('project_files_processed', False):
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
-        st.sidebar.subheader(f"{project_type} Project Tools")
-        
-        if st.sidebar.button("Analyze Project Structure"):
-            analyze_project_structure(project_name, project_type.lower())
-        
-        if st.sidebar.button("Show Dependency Graph"):
-            show_dependency_graph(project_name, project_type.lower())
-        
-        if project_type == "Java":
-            if st.sidebar.button("Show Java Project Analysis"):
-                show_java_project_analysis(project_name)
-    
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
     
     render_model_selection()
 

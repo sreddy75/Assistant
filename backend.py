@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, func
@@ -73,6 +74,21 @@ class Token(BaseModel):
     user_id: int
     role: str
     nickname: str
+    
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    first_name: str
+    last_name: str
+    nickname: str
+    role: str
+    is_active: bool
+    is_admin: bool
+    trial_end: datetime
+    email_verified: bool
+
+    class Config:
+        orm_mode = True    
     
 class TokenData(BaseModel):
     email: str | None = None
@@ -272,6 +288,21 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer", "user_id": user.id, "role": user.role, "nickname": user.nickname}
 
+
+@app.get("/users", response_model=List[UserResponse])
+async def get_all_users(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+    ):
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can access this endpoint"
+        )
+    
+    users = db.query(User).all()
+    return users
+
 @app.get("/users/me", response_model=UserInDB)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
@@ -366,12 +397,19 @@ async def reset_password(token: str = Body(...), new_password: str = Body(...), 
     
     return {"message": "Password reset successfully"}
 
-@app.post("/extend-trial")
-async def extend_trial(user_email: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@app.post("/extend-trial/{user_id}")
+async def extend_trial(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Only admins can extend trials")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can extend trials"
+        )
     
-    user = get_user(db, email=user_email)
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     

@@ -13,7 +13,7 @@ from kr8.utils.log import logger
 class EnhancedQualityAnalyst(Assistant, BaseModel):
     pandas_tools: Optional[PandasTools] = Field(default=None, description="PandasTools for quality data analysis")
 
-    def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None):
+    def __init__(self, llm, tools: List[Any], knowledge_base: Optional[AssistantKnowledge] = None, debug_mode: bool = False):
         super().__init__(
             name="Enhanced Quality Analyst",
             role="Ensure software quality through comprehensive testing strategies and data analysis",
@@ -37,6 +37,7 @@ class EnhancedQualityAnalyst(Assistant, BaseModel):
                 "When using information from the knowledge base, always cite the source.",
                 "If any information is unclear or missing for effective testing, list questions that need to be addressed."
             ],
+            debug_mode=debug_mode,
         )
         pandas_tools = next((tool for tool in tools if isinstance(tool, PandasTools)), None)
         if pandas_tools:
