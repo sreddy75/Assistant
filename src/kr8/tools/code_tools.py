@@ -80,6 +80,7 @@ class CodeTools(Toolkit):
         return f"React project '{project_name}' loaded successfully. Processed {processed_files} files and generated dependency graph."
 
     def _load_java_project(self, project_name: str, directory_content: Dict[str, str], progress_callback: Callable[[float, str], None] = None) -> str:
+        print(f"Starting to load Java project: {project_name}")
         project_namespace = f"java_project_{project_name}"
         supported_extensions = ['.java', '.xml', '.properties', '.gradle', '.md', '.yml', '.yaml']
         
@@ -88,38 +89,66 @@ class CodeTools(Toolkit):
         pom_xml = None
         build_gradle = None
 
+        print(f"Total files to process: {total_files}")
+
         for file_path, file_content in directory_content.items():
-            _, ext = os.path.splitext(file_path)
-            
-            if file_path.endswith('pom.xml'):
-                pom_xml = file_content
-            elif file_path.endswith('build.gradle'):
-                build_gradle = file_content
+            try:
+                _, ext = os.path.splitext(file_path)
+                
+                print(f"Processing file: {file_path}")
 
-            if ext in supported_extensions or os.path.basename(file_path) in ['pom.xml', 'build.gradle', '.gitignore']:
-                doc = Document(
-                    name=file_path,
-                    content=file_content,
-                    meta_data={
-                        "project": project_name,
-                        "type": "java_file",
-                        "file_type": ext
-                    }
-                )
-                self._upsert_document(doc)
+                if file_path.endswith('pom.xml'):
+                    pom_xml = file_content
+                    print("Found pom.xml")
+                elif file_path.endswith('build.gradle'):
+                    build_gradle = file_content
+                    print("Found build.gradle")
 
-            processed_files += 1
-            if progress_callback:
-                progress = processed_files / total_files
-                progress_callback(progress, f"Processing file {processed_files} of {total_files}: {file_path}")
+                if ext in supported_extensions or os.path.basename(file_path) in ['pom.xml', 'build.gradle', '.gitignore']:
+                    doc = Document(
+                        name=file_path,
+                        content=file_content,
+                        meta_data={
+                            "project": project_name,
+                            "type": "java_file",
+                            "file_type": ext
+                        }
+                    )
+                    self._upsert_document(doc)
+                    print(f"Upserted document: {file_path}")
 
-        if pom_xml or build_gradle:
-            dependency_graph = generate_java_dependency_graph(pom_xml, build_gradle)
-            self._store_dependency_graph(project_name, dependency_graph, "java")
+                processed_files += 1
+                if progress_callback:
+                    progress = processed_files / total_files
+                    progress_callback(progress, f"Processing file {processed_files} of {total_files}: {file_path}")
 
-        # Analyze Java project structure
-        project_analysis = analyze_java_project(directory_content)
-        self._store_project_analysis(project_name, project_analysis, "java")
+            except Exception as e:
+                print(f"Error processing file {file_path}: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+
+        print("Finished processing all files")
+
+        try:
+            if pom_xml or build_gradle:
+                print("Generating dependency graph")
+                dependency_graph = generate_java_dependency_graph(pom_xml, build_gradle)
+                self._store_dependency_graph(project_name, dependency_graph, "java")
+                print("Dependency graph generated and stored")
+        except Exception as e:
+            print(f"Error generating dependency graph: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+
+        try:
+            print("Analyzing Java project structure")
+            project_analysis = analyze_java_project(directory_content)
+            self._store_project_analysis(project_name, project_analysis, "java")
+            print("Project analysis completed and stored")
+        except Exception as e:
+            print(f"Error analyzing project structure: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
 
         if progress_callback:
             progress_callback(1.0, f"Processed all files for {project_name}")

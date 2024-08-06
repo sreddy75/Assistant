@@ -116,7 +116,10 @@ def analyze_java_file(file_content):
         
         return info
     except javalang.parser.JavaSyntaxError as e:
-        print(f"Error parsing Java file: {e}")
+        print(f"JavaSyntaxError: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error analyzing Java file: {e}")
         return None
 
 def get_java_project_structure(files):
@@ -143,15 +146,20 @@ def analyze_java_project(project_files):
     
     for file_path, content in project_files.items():
         file_info = analyze_java_file(content)
-        file_info["path"] = file_path
-        project_info["files"].append(file_info)
-        
-        if file_info["class_name"]:
-            if "interface" in content:
-                project_info["interfaces"].append(file_info["class_name"])
-            elif "enum" in content:
-                project_info["enums"].append(file_info["class_name"])
-            else:
-                project_info["classes"].append(file_info["class_name"])
+        if file_info is not None:
+            file_info["path"] = file_path
+            project_info["files"].append(file_info)
+            
+            if file_info["class_name"]:
+                if "interface" in content:
+                    project_info["interfaces"].append(file_info["class_name"])
+                elif "enum" in content:
+                    project_info["enums"].append(file_info["class_name"])
+                else:
+                    project_info["classes"].append(file_info["class_name"])
+        else:
+            # Handle the case where analyze_java_file returns None
+            print(f"Warning: Could not analyze file {file_path}")
+            project_info["files"].append({"path": file_path, "error": "Could not analyze file"})
     
     return project_info
