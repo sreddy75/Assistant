@@ -31,6 +31,7 @@ import os
 from dotenv import load_dotenv
 import json
 from team.data_analyst import EnhancedDataAnalyst
+from team.financial_analyst import EnhancedFinancialAnalyst
 from service.analytics_service import analytics_service
 
 # Load environment variables
@@ -167,16 +168,32 @@ def render_markdown(content):
     # Split content by code block placeholders
     parts = content.split('$CODE_BLOCK$')
 
+    st.markdown('<div class="chat-message assistant-response">', unsafe_allow_html=True)
     for i, part in enumerate(parts):
         if i % 2 == 0:
             # Render non-code parts as markdown
-            st.markdown(part)
+            st.markdown(part, unsafe_allow_html=True)
         else:
             # Render code parts
             language, code = part.split('$', 1)
             st.code(code, language=language if language else None)
+    st.markdown('</div>', unsafe_allow_html=True)
             
 def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
+    st.markdown("""
+        <style>
+        .chat-message, .chat-message p, .chat-message li, .chat-message h1, .chat-message h2, .chat-message h3, .chat-message h4, .chat-message h5, .chat-message h6 {
+            color: white !important;
+        }
+        .assistant-response, .assistant-response p, .assistant-response li, .assistant-response h1, .assistant-response h2, .assistant-response h3, .assistant-response h4, .assistant-response h5, .assistant-response h6 {
+            color: white !important;
+        }
+        .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {
+            color: white !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
     st.markdown("""
         <style>
         @keyframes pulse {
@@ -241,15 +258,15 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
             elif message["role"] == "assistant":
                 with st.chat_message(message["role"], avatar=meerkat_icon):
                     sanitized_content = sanitize_content(message["content"])
-                    st.markdown(sanitized_content)
+                    render_markdown(sanitized_content)
             elif message["role"] == "user":
                 with st.chat_message(message["role"], avatar=user_icon):
                     sanitized_content = sanitize_content(message["content"])
-                    st.markdown(sanitized_content)
+                    render_markdown(sanitized_content)
             else:
                 with st.chat_message(message["role"]):
                     sanitized_content = sanitize_content(message["content"])
-                    st.markdown(sanitized_content)
+                    render_markdown(sanitized_content)
 
     # Chat input at the bottom
     if prompt := st.chat_input("What would you like to know?"):
@@ -268,12 +285,16 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                 st.markdown(prompt)
 
             with st.chat_message("assistant", avatar=meerkat_icon):
-                loading_placeholder = st.empty()
-                loading_placeholder.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
-
-                response = ""
-                resp_container = st.empty()
-                start_time = time.time()
+                # Create a container for the pulsating dot and response
+                response_area = st.container()
+                
+                with response_area:
+                    # Add the pulsating dot
+                    pulsating_dot = st.empty()
+                    pulsating_dot.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
+                
+                    # Placeholder for the response
+                    response_placeholder = st.empty()
 
                 used_tools = []
                 used_assistants = []
@@ -282,73 +303,43 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     # Preprocess the query to include project context
                     current_project = st.session_state.get('current_project')
                     current_project_type = st.session_state.get('current_project_type')
-                    if current_project and current_project_type:
-                        context_prompt = f"In the context of the {current_project_type} project '{current_project}': {prompt}"
-                    else:
-                        context_prompt = prompt
-
-                    # Create a placeholder for the streaming response
-                    stream_placeholder = st.empty()
+                    context_prompt = f"In the context of the {current_project_type} project '{current_project}': {prompt}" if current_project and current_project_type else prompt
 
                     # Use streaming mode for responses
                     full_response = ""
                     for chunk in llm_os.run(context_prompt, messages=truncated_messages, stream=True):
                         full_response += chunk
                         # Update the UI to show the streaming response
-                        stream_placeholder.markdown(sanitize_content(full_response))
+                        with response_area:
+                            pulsating_dot.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
+                            response_placeholder.markdown(sanitize_content(full_response) + "▌")
                         time.sleep(0.01)  # Small delay to allow for visual updates
 
-                    # Process the full response
+                    # Process and display the full response
                     sanitized_response = sanitize_content(full_response)
                     
-                    # Clear the streaming placeholder
-                    stream_placeholder.empty()
+                    # Clear the pulsating dot and show the final response
+                    with response_area:
+                        pulsating_dot.empty()
+                        response_placeholder.markdown(
+                            f'<div class="chat-message">{sanitized_response}</div>',
+                            unsafe_allow_html=True
+                        )
                     
-                    # Display the full sanitized response only once
-                    st.markdown(sanitized_response)
-                    
-                    # Find all code blocks
-                    code_pattern = re.compile(r'```[\s\S]*?```')
-                    code_blocks = code_pattern.findall(sanitized_response)
-                    text_parts = code_pattern.split(sanitized_response)
-
-                    # Display text parts and code blocks
-                    for i, part in enumerate(text_parts):
-                        if part.strip():
-                            st.markdown(part)
-                        if i < len(code_blocks):
-                            code = code_blocks[i].strip('`')
-                            language = code.split('\n')[0].strip().lower()
-                            if language:
-                                code = '\n'.join(code.split('\n')[1:])
-                            st.code(code, language=language if language else None)
-
-                    # Find and render any JSON structures that might be charts
-                    json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
-                    json_matches = json_pattern.findall(sanitized_response)
-                    for json_str in json_matches:
-                        try:
-                            chart_data = json.loads(json_str)
-                            if 'chart_type' in chart_data and 'data' in chart_data:
-                                render_chart(chart_data)
-                        except json.JSONDecodeError:
-                            pass  # Not a valid JSON, skip it
-
-                    # Remove the loading message
-                    loading_placeholder.empty()
+                    # Handle charts if any
+                    process_response_content(sanitized_response)
 
                 except Exception as e:
-                    st.error(f"An unexpected error occurred: {str(e)}")
+                    # Clear the pulsating dot in case of an error
+                    with response_area:
+                        pulsating_dot.empty()
+                        st.error(f"An unexpected error occurred: {str(e)}")
                     logger.error(f"Unexpected error: {str(e)}")
                     full_response = "I apologize, but I encountered an error while processing your request. Please try again."
+                    response_placeholder.markdown(full_response)
 
                 # Add the full response to the session state only once
                 st.session_state["messages"].append({"role": "assistant", "content": full_response})
-
-                # Log the response for debugging
-                logger.info(f"Full response length: {len(full_response)}")
-                logger.info(f"First 100 characters: {full_response[:100]}")
-                logger.info(f"Last 100 characters: {full_response[-100:]}")
         
         # Log assistant response
         response_time = time.time() - start_time
@@ -361,6 +352,18 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
 
+def process_response_content(sanitized_response):
+    # Find and render any JSON structures that might be charts
+    json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
+    json_matches = json_pattern.findall(sanitized_response)
+    for json_str in json_matches:
+        try:
+            chart_data = json.loads(json_str)
+            if 'chart_type' in chart_data and 'data' in chart_data:
+                render_chart(chart_data)
+        except json.JSONDecodeError:
+            pass  # Not a valid JSON, skip it
+        
 def render_analytics_dashboard():
     st.header("Analytics Dashboard")
 
@@ -636,6 +639,9 @@ def manage_knowledge_base(llm_os):
     )
 
     if uploaded_files:
+        financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Financial Analyst"), None)
+        data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Data Analyst"), None)
+        
         for file in uploaded_files:
             with st.spinner(f"Processing {file.name}..."):
                 try:                    

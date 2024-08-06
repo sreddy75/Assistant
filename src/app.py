@@ -73,7 +73,18 @@ def login_form():
                         logger.debug("User authenticated, initializing app")
                         st.rerun()
                     elif login_result == "Trial period has ended":
-                        st.error("Your trial period has ended. Please contact support to extend your trial or upgrade your account.")
+                        st.markdown("""
+                            <style>
+                            .custom-error {
+                                padding: 1rem;
+                                border-radius: 0.5rem;
+                                background-color: #f5f1f0;
+                                color: #d12f06;
+                            }
+                            </style>
+                            """, unsafe_allow_html=True)
+
+                        st.markdown('<div class="custom-error">Your trial period has ended. Please contact support to extend your trial or upgrade your account.</div>', unsafe_allow_html=True)
                     else:
                         st.error("Invalid email or password")
                 else:
@@ -423,7 +434,7 @@ def main():
     else:
         logger.debug("Showing login form")
         client_name = get_client_name()
-        st.title(f"Welcome to {client_name.capitalize()}'s Quality Assistant")
+        st.markdown(f"<h1 style='color: #FF4B4B;'>Welcome to {client_name.upper()}'s Assistant</h1>", unsafe_allow_html=True)        
         login_form()
 
 if __name__ == "__main__":
