@@ -28,12 +28,24 @@ class CodeAssistant(Assistant):
         )
         self.code_tools = next((tool for tool in tools if isinstance(tool, CodeTools)), None)
 
+    def visualize_project(self, project_name: str, project_type: str) -> str:
+        return self.code_tools.visualize_project(project_name, project_type)
+
+    def get_project_summary(self, project_name: str, project_type: str) -> str:
+        return self.code_tools.generate_project_summary(project_name, project_type)
+    
     def run(self, query: str, stream: bool = False) -> Union[str, Any]:
         if not self.code_tools:
             return "Error: CodeTools not initialized"
         
         project_name, project_type = self.extract_project_info(query)
         dependency_summary = self.summarize_dependency_graph(project_name, project_type)
+        
+         #logic to detect visualization or summary requests
+        if "visualize project" in query.lower():
+            return self.visualize_project(project_name, project_type)
+        elif "project summary" in query.lower():
+            return self.get_project_summary(project_name, project_type)
         
         context = f"Project type: {project_type}\nDependency summary for project {project_name}:\n{dependency_summary}\n\n"
         full_query = context + query

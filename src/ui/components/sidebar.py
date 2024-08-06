@@ -1,11 +1,13 @@
 # sidebar.py
 
+import json
 import streamlit as st
 from kr8.tools.pandas import PandasTools
 from kr8.tools.code_tools import CodeTools
 from ui.utils.helper import restart_assistant
 from utils.npm_utils import run_npm_command
 from config.client_config import ENABLED_ASSISTANTS
+import matplotlib.pyplot as plt
 
 def initialize_session_state(user_role):
     role_assistants = {
@@ -53,7 +55,7 @@ def render_sidebar():
     # Check if Code Assistant is enabled
     if "Code Assistant" in available_assistants:        
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
-        st.sidebar.subheader("Project Upload")
+        st.sidebar.subheader("Project Management")
     
         project_type = st.sidebar.selectbox("Select Project Type", ["React", "Java"])
         project_name = st.sidebar.text_input(f"Enter Project Name")
@@ -63,7 +65,7 @@ def render_sidebar():
             file_types.extend(["java", "xml", "properties", "gradle"])
         
         project_files = st.sidebar.file_uploader(
-            f"Upload {project_type} Project Files", 
+            f"Upload {project_type} Project Files or Directory", 
             type=file_types,
             key="project_file_uploader",
             accept_multiple_files=True
@@ -74,27 +76,42 @@ def render_sidebar():
                 st.session_state.project_files_processed = False
             
             if not st.session_state.project_files_processed:
-                st.sidebar.info(f"{project_type} files uploaded. Click 'Process {project_type} Project' to analyze them.")
-            
-            if st.sidebar.button(f"Process {project_type} Project"):
-                process_project(project_type, project_name, project_files)
-        else:
-            st.session_state.project_files_processed = False
+                if st.sidebar.button(f"Process {project_type} Project"):
+                    process_project(project_type, project_name, project_files)
+            else:
+                st.sidebar.success(f"{project_type} project '{project_name}' is loaded and ready for analysis.")
         
+        # Project Tools section
         if st.session_state.get('current_project') and st.session_state.get('project_files_processed', False):
             st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
-            st.sidebar.subheader(f"{project_type} Project Tools")
+            st.sidebar.subheader(f"Project Analysis Tools")
             
-            if st.sidebar.button("Analyze Project Structure"):
-                analyze_project_structure(project_name, project_type.lower())
-            
-            if st.sidebar.button("Show Dependency Graph"):
-                show_dependency_graph(project_name, project_type.lower())
-            
+            tool_options = [
+                "Analyze Project Structure",
+                "Show Dependency Graph",
+                "Visualize Project Structure",
+                "Generate Class Diagram",
+                "Show Project Summary"
+            ]
             if project_type == "Java":
-                if st.sidebar.button("Show Java Project Analysis"):
+                tool_options.append("Show Java Project Analysis")
+            
+            selected_tool = st.sidebar.selectbox("Select Analysis Tool", tool_options)
+            
+            if st.sidebar.button("Run Analysis"):
+                if selected_tool == "Analyze Project Structure":
+                    analyze_project_structure(project_name, project_type.lower())
+                elif selected_tool == "Show Dependency Graph":
+                    show_dependency_graph(project_name, project_type.lower())
+                elif selected_tool == "Visualize Project Structure":
+                    visualize_project_structure(project_name, project_type.lower())
+                elif selected_tool == "Generate Class Diagram":
+                    generate_class_diagram(project_name, project_type.lower())
+                elif selected_tool == "Show Project Summary":
+                    show_project_summary(project_name, project_type.lower())
+                elif selected_tool == "Show Java Project Analysis":
                     show_java_project_analysis(project_name)
-    
+        
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
     
     render_model_selection()
@@ -108,13 +125,19 @@ def process_project(project_type, project_name, project_files):
             directory_content = {}
             total_files = len(project_files)
             
-            for i, file in enumerate(project_files):
-                file_content = file.read().decode('utf-8', errors='ignore')
-                directory_content[file.name] = file_content
-                
-                progress = (i + 1) / total_files
-                progress_bar.progress(progress)
-                status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
+            # Check if a directory was uploaded
+            if len(project_files) == 1 and project_files[0].type == "application/x-directory":
+                project_dir = project_files[0].name
+                directory_content = {"project_root": project_dir}
+            else:
+                # Process individual files
+                for i, file in enumerate(project_files):
+                    file_content = file.read().decode('utf-8', errors='ignore')
+                    directory_content[file.name] = file_content
+                    
+                    progress = (i + 1) / total_files
+                    progress_bar.progress(progress)
+                    status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
 
             llm_os = st.session_state.get("llm_os")
             if llm_os and llm_os.knowledge_base:
@@ -140,7 +163,31 @@ def analyze_project_structure(project_name, project_type):
     if llm_os:
         code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
         result = code_tools.analyze_project_structure(project_name, project_type)
-        st.json(result)
+        try:
+            structure = json.loads(result)
+            st.json(structure)
+            
+            # Display some key metrics
+            if 'file_count' in structure:
+                st.metric("Total Files", structure['file_count'])
+            if 'java_file_count' in structure:
+                st.metric("Java Files", structure['java_file_count'])
+            if 'packages' in structure:
+                st.metric("Packages", len(structure['packages']))
+            
+            # Display file lists
+            if 'source_files' in structure:
+                with st.expander("Source Files"):
+                    st.write(structure['source_files'])
+            if 'test_files' in structure:
+                with st.expander("Test Files"):
+                    st.write(structure['test_files'])
+            if 'config_files' in structure:
+                with st.expander("Configuration Files"):
+                    st.write(structure['config_files'])
+            
+        except json.JSONDecodeError:
+            st.text(result)  # Fallback to displaying as plain text
     else:
         st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
 
@@ -153,6 +200,41 @@ def show_dependency_graph(project_name, project_type):
             st.json(dependency_graph)
         else:
             st.warning(f"No dependency graph found for {project_type} project '{project_name}'")
+    else:
+        st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
+
+def visualize_project_structure(project_name, project_type):
+    llm_os = st.session_state.get("llm_os")
+    if llm_os:
+        code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
+        result = code_tools.visualize_project_structure(project_name, project_type)
+        st.image(f"{project_name}_structure.png")
+        st.success(result)
+    else:
+        st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
+
+def generate_class_diagram(project_name, project_type):
+    llm_os = st.session_state.get("llm_os")
+    if llm_os:
+        code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
+        result = code_tools.generate_class_diagram(project_name, project_type)
+        st.image(f"{project_name}_class_diagram.png")
+        st.success(result)
+    else:
+        st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
+
+def show_project_summary(project_name, project_type):
+    llm_os = st.session_state.get("llm_os")
+    if llm_os:
+        try:
+            code_tools = CodeTools(knowledge_base=llm_os.knowledge_base)
+            summary = code_tools.generate_project_summary(project_name, project_type)
+            if summary:
+                st.markdown(summary)
+            else:
+                st.warning("Unable to generate project summary. Please ensure the project is properly loaded.")
+        except Exception as e:
+            st.error(f"An error occurred while generating the project summary: {str(e)}")
     else:
         st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
 

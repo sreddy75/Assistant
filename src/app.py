@@ -40,7 +40,7 @@ def log_init_event(event):
     init_queue.put(event)
     logger.debug(event)
     
-def login_form():    
+def login_form():        
     client_name = get_client_name()         
     col1, col2, col3 = st.columns([1,8,1])
     with col2:        
@@ -62,6 +62,7 @@ def login_form():
         with tab1:
             email = st.text_input("Email", key="login_email", value="suren@kr8it.com")
             password = st.text_input("Password", type="password", key="login_password", value="password")
+            st.session_state.is_admin = is_admin_user(email)
             if st.button("Log In"):
                 if is_valid_email(email):
                     login_result = login(email, password)
@@ -137,10 +138,17 @@ def perform_heavy_initialization():
 
 
 def is_admin_user(email):
-    # Implement this function to check if the user is an admin
-    admin_emails = ["admin@example.com", "suren@kr8it.com"]  
-    return email in admin_emails
-
+    try:
+        response = requests.get(f"{BACKEND_URL}/users/{email}/is-admin", headers={"Authorization": f"Bearer {st.session_state['token']}"})
+        if response.status_code == 200:
+            return response.json()["is_admin"]
+        else:
+            logger.error(f"Failed to check admin status: {response.text}")
+            return False
+    except Exception as e:
+        logger.error(f"Error checking admin status: {str(e)}")
+        return False
+    
 import time
 import random
 import streamlit as st
@@ -387,24 +395,21 @@ def main_app():
     
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
-     # Determine which tabs to show based on user role
-    tabs = ["Chat", "Analytics"]
+    # Determine which tabs to show based on user role
+    tabs = ["Chat"]
     if st.session_state.get('is_admin', False):
-        tabs.append("Settings")
+        tabs.extend(["Analytics", "Settings"])
     
     selected_tab = st.tabs(tabs)
 
     with selected_tab[0]:  # Chat tab
         render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
-    
-    with selected_tab[1]:  # Analytics tab
-        if st.session_state.get('is_admin', False):
+
+    if st.session_state.get('is_admin', False):
+        with selected_tab[1]:  # Analytics tab
             from ui.components.chat import render_analytics_dashboard
             render_analytics_dashboard()
-        else:
-            st.warning("You don't have permission to view the analytics dashboard.")
-
-    if st.session_state.get('is_admin', False) and len(selected_tab) > 2:
+        
         with selected_tab[2]:  # Settings tab
             render_settings_tab()
 
@@ -415,6 +420,7 @@ def apply_custom_theme():
     with open(theme_path, 'r') as f:
         theme_config = toml.load(f)
     
+    # Apply the theme using custom CSS
     # Apply the theme using custom CSS
     theme_css = f"""
     <style>
@@ -447,6 +453,26 @@ def apply_custom_theme():
         input[type="password"] {{
             color: white !important;
             background-color: black !important;
+        }}        
+        /* Custom tab styling */
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 20px;
+            background-color: {theme_config['theme']['backgroundColor']};
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            height: 50px;
+            background-color: {theme_config['theme']['backgroundColor']};
+            border-radius: 4px 4px 0 0;
+            gap: 5px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            font-size: 16px;
+            font-weight: 500;
+            color: white !important;
+        }}
+        .stTabs [aria-selected="true"] {{
+            background-color: ;
+            color: white;
         }}
     </style>
     """

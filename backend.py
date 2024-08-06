@@ -397,6 +397,20 @@ async def reset_password(token: str = Body(...), new_password: str = Body(...), 
     
     return {"message": "Password reset successfully"}
 
+@app.get("/users/{email}/is-admin")
+async def check_user_is_admin(email: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can access this endpoint"
+        )
+    
+    user = get_user(db, email=email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {"is_admin": user.is_admin}
+
 @app.post("/extend-trial/{user_id}")
 async def extend_trial(
     user_id: int,
