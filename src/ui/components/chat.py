@@ -4,6 +4,7 @@ import random
 import re, html
 from sqlite3 import IntegrityError
 import time
+from collections import defaultdict
 from typing import Optional
 import pandas as pd
 import streamlit as st
@@ -363,7 +364,34 @@ def process_response_content(sanitized_response):
                 render_chart(chart_data)
         except json.JSONDecodeError:
             pass  # Not a valid JSON, skip it
+
+def get_user_documents(user_id):
+    try:
+        llm_os = st.session_state.get("llm_os")
+        if not llm_os or not hasattr(llm_os, 'knowledge_base') or not llm_os.knowledge_base or not hasattr(llm_os.knowledge_base, 'vector_db'):
+            logger.warning("LLM OS or knowledge base not properly initialized")
+            return []
         
+        if not hasattr(llm_os.knowledge_base.vector_db, 'list_document_names'):
+            logger.warning("Vector database does not have a list_document_names method")
+            return []
+        
+        document_names = llm_os.knowledge_base.vector_db.list_document_names()
+        
+        # Group document chunks
+        grouped_documents = defaultdict(int)
+        for name in document_names:
+            base_name = name.split('_chunk_')[0] if '_chunk_' in name else name
+            grouped_documents[base_name] += 1
+        
+        # Create a list of unique document names with chunk counts
+        unique_documents = [f"{name} ({count} chunks)" if count > 1 else name for name, count in grouped_documents.items()]
+        
+        return unique_documents
+    except Exception as e:
+        logger.error(f"Error retrieving user documents: {str(e)}", exc_info=True)
+        return []
+            
 def render_analytics_dashboard():
     st.header("Analytics Dashboard")
 
@@ -625,6 +653,7 @@ def manage_knowledge_base(llm_os):
                         llm_os.knowledge_base.load_documents(web_documents, upsert=True)
                         st.session_state[f"{input_url}_scraped"] = True
                         st.session_state["processed_files"].append(input_url)
+                        st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
                         st.sidebar.success(f"Successfully processed and added: {input_url}")
                         logger.info(f"Successfully processed and added URL: {input_url}")
                     else:
@@ -650,6 +679,7 @@ def manage_knowledge_base(llm_os):
                         if success:
                             st.success(message)
                             st.session_state["processed_files"].append(file.name)
+                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
                         else:
                             st.error(message)
                     elif file.name.endswith(('.csv', '.xlsx', '.xls')):
@@ -657,7 +687,7 @@ def manage_knowledge_base(llm_os):
                         analyst_type = determine_analyst(file, file_content)
                         
                         if analyst_type == 'financial' and financial_analyst:
-                            result = process_file_for_analyst(llm_os, file, file_content, financial_analyst)
+                            result = process_file_for_analyst(llm_os, file, file_content, financial_analyst)                            
                         elif data_analyst:
                             result = process_file_for_analyst(llm_os, file, file_content, data_analyst)
                         else:
@@ -672,6 +702,7 @@ def manage_knowledge_base(llm_os):
                                 "analyst_type": analyst_type
                             }
                             st.session_state["processed_files"].append(file.name)
+                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
                     logger.error(f"Error processing {file.name}: {str(e)}")
@@ -854,8 +885,7 @@ def test_knowledge_base_search(llm_os):
             logger.info("---")
     except Exception as e:
         logger.error(f"Error in knowledge base search: {str(e)}")
-        
-        
+                
 def inspect_random_documents(llm_os, num_docs=10):
     logger.info(f"Inspecting {num_docs} random documents from the knowledge base...")
     try:

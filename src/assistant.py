@@ -167,7 +167,7 @@ def get_llm_os(
         "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
         "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
         "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
-        "Manager": ["Web Search", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
+        "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
     }
 
     available_assistants = role_assistants.get(user_role, [])

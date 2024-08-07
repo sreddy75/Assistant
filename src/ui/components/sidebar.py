@@ -15,7 +15,7 @@ def initialize_session_state(user_role):
         "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
         "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
         "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
-        "Manager": ["Web Search", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
+        "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
     }
     
     available_assistants = role_assistants.get(user_role, [])
@@ -38,7 +38,7 @@ def render_sidebar():
         "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
         "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
         "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
-        "Manager": ["Web Search", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
+        "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
     }
     
     available_assistants = role_assistants.get(user_role, [])

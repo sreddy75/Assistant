@@ -1,4 +1,5 @@
 
+from collections import defaultdict
 import datetime
 import time
 import pandas as pd
@@ -9,12 +10,10 @@ from streamlit.web.server.websocket_headers import _get_websocket_headers
 from ui.components.layout import set_page_layout
 from ui.components.sidebar import render_sidebar
 from ui.components.chat import render_chat
-from utils.auth import BACKEND_URL, login, logout, is_authenticated, login_required, register, request_password_reset, reset_password, is_valid_email, verify_email
+from utils.auth import BACKEND_URL, login, logout, register, request_password_reset, reset_password, is_valid_email, verify_email
 import logging
 from utils.auth import get_all_users, extend_user_trial
 from queue import Queue
-from threading import Thread
-from streamlit_autorefresh import st_autorefresh
 from utils.auth import get_user_id
 import time
 from service.analytics_service import analytics_service
@@ -375,7 +374,34 @@ def render_settings_tab():
                 st.error(message)
             else:
                 st.success(message)
-                            
+
+def get_user_documents(user_id):
+    try:
+        llm_os = st.session_state.get("llm_os")
+        if not llm_os or not hasattr(llm_os, 'knowledge_base') or not llm_os.knowledge_base or not hasattr(llm_os.knowledge_base, 'vector_db'):
+            logger.warning("LLM OS or knowledge base not properly initialized")
+            return []
+        
+        if not hasattr(llm_os.knowledge_base.vector_db, 'list_document_names'):
+            logger.warning("Vector database does not have a list_document_names method")
+            return []
+        
+        document_names = llm_os.knowledge_base.vector_db.list_document_names()
+        
+        # Group document chunks
+        grouped_documents = defaultdict(int)
+        for name in document_names:
+            base_name = name.split('_chunk_')[0] if '_chunk_' in name else name
+            grouped_documents[base_name] += 1
+        
+        # Create a list of unique document names with chunk counts
+        unique_documents = [f"{name} ({count} chunks)" if count > 1 else name for name, count in grouped_documents.items()]
+        
+        return unique_documents
+    except Exception as e:
+        logger.error(f"Error retrieving user documents: {str(e)}", exc_info=True)
+        return []
+                                
 def main_app():
     col1, col2 = st.sidebar.columns([2, 1])
 
@@ -396,7 +422,7 @@ def main_app():
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
     # Determine which tabs to show based on user role
-    tabs = ["Chat"]
+    tabs = ["Chat", "My Documents"]
     if st.session_state.get('is_admin', False):
         tabs.extend(["Analytics", "Settings"])
     
@@ -405,12 +431,29 @@ def main_app():
     with selected_tab[0]:  # Chat tab
         render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
 
+    with selected_tab[1]:  # My Documents tab
+        st.header("My Uploaded Documents")
+        if st.button("Refresh Document List"):
+            st.session_state["user_documents"] = get_user_documents(st.session_state.get('user_id'))
+        
+        try:
+            user_documents = st.session_state.get("user_documents", get_user_documents(st.session_state.get('user_id')))
+            if user_documents:
+                for doc in user_documents:
+                    st.write(f"- {doc}")
+            else:
+                st.write("No documents uploaded yet.")
+        except Exception as e:
+            st.error(f"An error occurred while retrieving your documents: {str(e)}")
+            logger.error(f"Error displaying user documents: {str(e)}", exc_info=True)
+        
+
     if st.session_state.get('is_admin', False):
-        with selected_tab[1]:  # Analytics tab
+        with selected_tab[2]:  # Analytics tab
             from ui.components.chat import render_analytics_dashboard
             render_analytics_dashboard()
         
-        with selected_tab[2]:  # Settings tab
+        with selected_tab[3]:  # Settings tab
             render_settings_tab()
 
     render_sidebar()
@@ -420,7 +463,6 @@ def apply_custom_theme():
     with open(theme_path, 'r') as f:
         theme_config = toml.load(f)
     
-    # Apply the theme using custom CSS
     # Apply the theme using custom CSS
     theme_css = f"""
     <style>
@@ -477,8 +519,7 @@ def apply_custom_theme():
     </style>
     """
     st.markdown(theme_css, unsafe_allow_html=True)
-
-
+    
 def main():
     
     st.set_page_config(
