@@ -7,6 +7,7 @@ import time
 from collections import defaultdict
 from typing import Optional
 import pandas as pd
+import sqlalchemy
 import streamlit as st
 from kr8.utils.log import logger
 from assistant import get_llm_os
@@ -366,6 +367,7 @@ def process_response_content(sanitized_response):
             pass  # Not a valid JSON, skip it
 
 def get_user_documents(user_id):
+    logger.info(f"Retrieving documents for user_id: {user_id}")
     try:
         llm_os = st.session_state.get("llm_os")
         if not llm_os or not hasattr(llm_os, 'knowledge_base') or not llm_os.knowledge_base or not hasattr(llm_os.knowledge_base, 'vector_db'):
@@ -376,7 +378,16 @@ def get_user_documents(user_id):
             logger.warning("Vector database does not have a list_document_names method")
             return []
         
-        document_names = llm_os.knowledge_base.vector_db.list_document_names()
+        try:
+            document_names = llm_os.knowledge_base.vector_db.list_document_names()
+        except sqlalchemy.exc.ProgrammingError as e:
+            if "relation" in str(e) and "does not exist" in str(e):
+                logger.warning(f"Table for user {user_id} does not exist yet. This is normal if no documents have been uploaded.")
+                return []
+            else:
+                raise
+        
+        logger.info(f"Retrieved {len(document_names)} document names")
         
         # Group document chunks
         grouped_documents = defaultdict(int)
@@ -538,6 +549,7 @@ def render_analytics_dashboard():
     )
                 
 def initialize_assistant(llm_id, user_id=None):
+    logger.info(f"Initializing assistant for user_id: {user_id}")
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:
         logger.info(f"---*--- Creating {llm_id} LLM OS ---*---")
         
@@ -557,6 +569,10 @@ def initialize_assistant(llm_id, user_id=None):
             st.session_state["llm_os"] = llm_os
             logger.info(f"Initialized LLM OS with team: {[assistant.name for assistant in llm_os.team]}")
             
+            # Ensure knowledge base is initialized
+            if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
+                llm_os.knowledge_base.vector_db.create()
+                                    
             data_analyst = next((a for a in llm_os.team if isinstance(a, EnhancedDataAnalyst)), None)
             if data_analyst:
                 logger.info(f"EnhancedDataAnalyst initialized with pandas_tools: {data_analyst.pandas_tools is not None}")
@@ -632,6 +648,8 @@ def process_pdfs_parallel(uploaded_files, llm_os):
 
 def manage_knowledge_base(llm_os):
     
+    logger.info(f"Managing knowledge base for user_id: {llm_os.user_id}")
+
     if "loaded_dataframes" not in st.session_state:
         st.session_state["loaded_dataframes"] = {}
         
@@ -761,6 +779,10 @@ def process_pdf(file, llm_os):
     logger.info(f"Successfully read PDF: {file.name}. Found {len(auto_rag_documents)} documents.")
     
     try:
+        # Add user_id to the metadata of each document
+        for doc in auto_rag_documents:
+            doc.meta_data['user_id'] = llm_os.user_id
+        
         llm_os.knowledge_base.load_documents(auto_rag_documents)
         logger.info(f"Successfully added PDF content to knowledge base.")
         return True, f"Successfully processed {file.name}"
@@ -791,7 +813,7 @@ def process_file_for_analyst(llm_os, file, file_content, analyst):
             doc = Document(
                 name=file.name,
                 content=df.to_csv(index=False),
-                meta_data={"type": "csv", "shape": df.shape}
+                meta_data={"type": "csv", "shape": df.shape, "user_id": llm_os.user_id}
             )
             # Use upsert operation to handle existing documents
             try:

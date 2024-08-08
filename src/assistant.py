@@ -146,8 +146,9 @@ def get_llm_os(
     knowledge_base = AssistantKnowledge(
         vector_db=PgVector2(
             db_url=db_url,
-            collection=f"user_{user_id}_documents" if user_id is not None else "llm_os_documents",
+            collection="documents",
             embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2"),
+            user_id=user_id,
         ),
         num_documents=50,
         user_id=user_id,

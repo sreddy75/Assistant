@@ -40,13 +40,14 @@ class PgVector2(VectorDb):
         distance: Distance = Distance.cosine,
         index: Optional[Union[Ivfflat, HNSW]] = HNSW(),
         user_id: Optional[int] = None,
-        project_namespace: Optional[str] = None  # Add this line
+        project_namespace: Optional[str] = None
     ):
         self.project_namespace = project_namespace
         self.user_id = user_id
-        # Collection attributes
-        self.collection = f"user_{user_id}_{collection}" if user_id else collection
+        self.collection = collection  # Add this line
+        self.collection_name = self.get_collection_name()
         
+        # Collection attributes
         _engine: Optional[Engine] = db_engine
         if _engine is None and db_url is not None:
             _engine = create_engine(db_url)
@@ -64,7 +65,6 @@ class PgVector2(VectorDb):
         # Embedder for embedding the document contents
         _embedder = embedder
         if _embedder is None:            
-
             _embedder = OpenAIEmbedder()
         self.embedder: Embedder = _embedder
         self.dimensions: int = self.embedder.dimensions
@@ -80,14 +80,14 @@ class PgVector2(VectorDb):
 
         # Database table for the collection
         self.table: Table = self.get_table()
-    
+
     def get_collection_name(self):
         base_name = f"user_{self.user_id}_{self.collection}" if self.user_id else self.collection
         return f"{base_name}_{self.project_namespace}" if self.project_namespace else base_name
     
     def get_table(self) -> Table:
         return Table(
-            self.collection,
+            self.collection_name,
             self.metadata,
             Column("id", String, primary_key=True),
             Column("name", String),
@@ -103,24 +103,28 @@ class PgVector2(VectorDb):
         )
 
     def table_exists(self) -> bool:
-        logger.debug(f"Checking if table exists: {self.table.name}")
+        logger.debug(f"Checking if table exists: {self.collection_name}")
         try:
-            return inspect(self.db_engine).has_table(self.table.name, schema=self.schema)
+            return inspect(self.db_engine).has_table(self.collection_name, schema=self.schema)
         except Exception as e:
             logger.error(e)
             return False
 
     def create(self) -> None:
+        logger.info(f"Creating table: {self.collection_name}")
+        with self.Session() as sess:
+            with sess.begin():
+                logger.debug("Creating extension: vector")
+                sess.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                if self.schema is not None:
+                    logger.debug(f"Creating schema: {self.schema}")
+                    sess.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema};"))
+        
         if not self.table_exists():
-            with self.Session() as sess:
-                with sess.begin():
-                    logger.debug("Creating extension: vector")
-                    sess.execute(text("create extension if not exists vector;"))
-                    if self.schema is not None:
-                        logger.debug(f"Creating schema: {self.schema}")
-                        sess.execute(text(f"create schema if not exists {self.schema};"))
-            logger.debug(f"Creating table: {self.collection}")
+            logger.debug(f"Creating table: {self.collection_name}")
             self.table.create(self.db_engine)
+        else:
+            logger.debug(f"Table {self.collection_name} already exists")
 
     def doc_exists(self, document: Document) -> bool:
         """
@@ -477,8 +481,13 @@ class PgVector2(VectorDb):
                 return True
     
     def list_document_names(self) -> List[str]:
+        logger.info(f"Listing documents for collection: {self.collection_name}")
         with self.Session() as sess:
             with sess.begin():
+                if not self.table_exists():
+                    logger.info(f"Table {self.collection_name} does not exist. Creating it now.")
+                    self.create()
+                
                 stmt = select(self.table.c.name)
                 if self.user_id:
                     stmt = stmt.where(self.table.c.user_id == self.user_id)
