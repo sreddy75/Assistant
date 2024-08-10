@@ -21,6 +21,12 @@ def load_theme():
         theme_path = "src/themes/default_config.toml"
     return theme_path
 
+def is_feedback_sentiment_analysis_enabled():
+    env_var = "ENABLE_FEEDBACK_SENTIMENT_ANALYSIS"
+    env_enabled = os.getenv(env_var, 'false').lower() == 'true'
+    feature_flag_enabled = FEATURE_FLAGS.get("enable_feedback_sentiment_analysis", False)
+    return env_enabled and feature_flag_enabled
+
 def is_assistant_enabled(assistant_name):
     env_var = f"ENABLE_{assistant_name.upper().replace(' ', '_')}"
     env_enabled = os.getenv(env_var, 'false').lower() == 'true'

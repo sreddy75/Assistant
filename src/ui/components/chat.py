@@ -5,9 +5,13 @@ import re, html
 from sqlite3 import IntegrityError
 import time
 from collections import defaultdict
+import traceback
 from typing import Optional
+import requests
 import pandas as pd
 import streamlit as st
+from service.tuning import SessionLocal, adjust_response_based_on_feedback, analyze_feedback_text, get_sentiment_analysis, get_vote_analysis, plot_sentiment_analysis
+from utils.auth import BACKEND_URL
 from kr8.utils.log import logger
 from assistant import get_llm_os
 from kr8.document.reader.website import WebsiteReader
@@ -27,10 +31,12 @@ from transformers import GPT2Tokenizer
 import json
 import base64
 from io import BytesIO
+from kr8.vectordb.pgvector import PgVector2
 from PIL import Image
 import os
 from dotenv import load_dotenv
 import json
+from config.client_config import is_feedback_sentiment_analysis_enabled
 from team.data_analyst import EnhancedDataAnalyst
 from team.financial_analyst import EnhancedFinancialAnalyst
 from service.analytics_service import analytics_service
@@ -198,23 +204,12 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     st.markdown("""
         <style>
         @keyframes pulse {
-            0% {
-                transform: scale(0.8);
-                opacity: 0.7;
-            }
-            50% {
-                transform: scale(1);
-                opacity: 1;
-            }
-            100% {
-                transform: scale(0.8);
-                opacity: 0.7;
-            }
+            0% { transform: scale(0.8); opacity: 0.7; }
+            50% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.8); opacity: 0.7; }
         }
-
         .pulsating-dot {
-            width: 20px;
-            height: 20px;
+            width: 20px; height: 20px;
             background-color: #ff0000;
             border-radius: 50%;
             display: inline-block;
@@ -224,7 +219,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         """, unsafe_allow_html=True)
 
     if "llm_id" not in st.session_state:
-        st.session_state.llm_id = "gpt-4o"  # Set a default value
+        st.session_state.llm_id = "gpt-4o"
         logger.warning("llm_id not found in session state, using default value")
 
     llm_id = st.session_state.llm_id
@@ -248,37 +243,44 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         logger.debug("No chat history found")
         st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
 
-    # Create a container for chat messages
     chat_container = st.container()
 
-    # Render chat messages
     with chat_container:
-        for message in st.session_state["messages"]:
-            if message["role"] == "system":
-                continue
-            elif message["role"] == "assistant":
+        for i, message in enumerate(st.session_state["messages"]):
+            if message["role"] == "assistant":
                 with st.chat_message(message["role"], avatar=meerkat_icon):
                     sanitized_content = sanitize_content(message["content"])
                     render_markdown(sanitized_content)
+                    
+                    query = st.session_state["messages"][i-1]["content"] if i > 0 else ""
+                    
+                    with st.expander("Provide feedback", expanded=True):
+                        if is_feedback_sentiment_analysis_enabled():
+                            usefulness = st.slider("How useful was this response?", 1, 5, 3, key=f"usefulness_{i}")
+                            feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{i}")
+                            if st.button("Submit Feedback", key=f"feedback_button_{i}"):
+                                submit_feedback(user_id, query, sanitized_content, usefulness > 3, usefulness, feedback)
+                        else:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("👍", key=f"upvote_{i}"):
+                                    submit_simple_vote(user_id, query, sanitized_content, True)
+                            with col2:
+                                if st.button("👎", key=f"downvote_{i}"):
+                                    submit_simple_vote(user_id, query, sanitized_content, False)
+                                
             elif message["role"] == "user":
                 with st.chat_message(message["role"], avatar=user_icon):
                     sanitized_content = sanitize_content(message["content"])
                     render_markdown(sanitized_content)
-            else:
-                with st.chat_message(message["role"]):
-                    sanitized_content = sanitize_content(message["content"])
-                    render_markdown(sanitized_content)
 
-    # Chat input at the bottom
     if prompt := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": prompt})
         
-        # Truncate conversation history if necessary
         truncated_messages = truncate_conversation(st.session_state["messages"], MAX_TOKENS - BUFFER_TOKENS)
         
         start_time = time.time()
         
-        # Log user query
         analytics_service.log_event(user_id, "user_query", {"query": prompt})
         
         with chat_container:
@@ -286,52 +288,62 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                 st.markdown(prompt)
 
             with st.chat_message("assistant", avatar=meerkat_icon):
-                # Create a container for the pulsating dot and response
                 response_area = st.container()
                 
                 with response_area:
-                    # Add the pulsating dot
                     pulsating_dot = st.empty()
                     pulsating_dot.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
-                
-                    # Placeholder for the response
                     response_placeholder = st.empty()
 
                 used_tools = []
                 used_assistants = []
 
                 try:
-                    # Preprocess the query to include project context
                     current_project = st.session_state.get('current_project')
                     current_project_type = st.session_state.get('current_project_type')
                     context_prompt = f"In the context of the {current_project_type} project '{current_project}': {prompt}" if current_project and current_project_type else prompt
 
-                    # Use streaming mode for responses
                     full_response = ""
                     for chunk in llm_os.run(context_prompt, messages=truncated_messages, stream=True):
                         full_response += chunk
-                        # Update the UI to show the streaming response
                         with response_area:
                             pulsating_dot.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
                             response_placeholder.markdown(sanitize_content(full_response) + "▌")
-                        time.sleep(0.01)  # Small delay to allow for visual updates
+                        time.sleep(0.01)
 
-                    # Process and display the full response
                     sanitized_response = sanitize_content(full_response)
                     
-                    # Clear the pulsating dot and show the final response
+                    # Use feedback-adjusted response
+                    with SessionLocal() as db:
+                        adjusted_response = adjust_response_based_on_feedback(sanitized_response, prompt, db)
+                    
                     with response_area:
                         pulsating_dot.empty()
                         response_placeholder.markdown(
-                            f'<div class="chat-message">{sanitized_response}</div>',
+                            f'<div class="chat-message">{adjusted_response}</div>',
                             unsafe_allow_html=True
                         )
                     
-                    # Handle charts if any
-                    process_response_content(sanitized_response)
+                    process_response_content(adjusted_response)
+
+                    st.session_state["messages"].append({"role": "assistant", "content": adjusted_response})
+
+                    with st.expander("Provide feedback", expanded=True):
+                        if is_feedback_sentiment_analysis_enabled():
+                            usefulness = st.slider("How useful was this response?", 1, 5, 3, key=f"usefulness_{len(st.session_state['messages'])-1}")
+                            feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{len(st.session_state['messages'])-1}")
+                            if st.button("Submit Feedback", key=f"feedback_button_{len(st.session_state['messages'])-1}"):
+                                submit_feedback(user_id, prompt, adjusted_response, usefulness > 3, usefulness, feedback)
+                        else:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("👍", key=f"upvote_{len(st.session_state['messages'])-1}"):
+                                    submit_simple_vote(user_id, prompt, adjusted_response, True)
+                            with col2:
+                                if st.button("👎", key=f"downvote_{len(st.session_state['messages'])-1}"):
+                                    submit_simple_vote(user_id, prompt, adjusted_response, False)
 
                 except Exception as e:
-                    # Clear the pulsating dot in case of an error
                     with response_area:
                         pulsating_dot.empty()
                         st.error(f"An unexpected error occurred: {str(e)}")
@@ -339,10 +351,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     full_response = "I apologize, but I encountered an error while processing your request. Please try again."
                     response_placeholder.markdown(full_response)
 
-                # Add the full response to the session state only once
-                st.session_state["messages"].append({"role": "assistant", "content": full_response})
-        
-        # Log assistant response
         response_time = time.time() - start_time
         analytics_service.log_event(user_id, "assistant_response", {
             "response_length": len(full_response),
@@ -353,6 +361,46 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     if llm_os.knowledge_base:
         manage_knowledge_base(llm_os)
 
+def submit_feedback(user_id: int, query: str, response: str, is_upvote: bool, usefulness_rating: int, feedback_text: str):
+    headers = {"Authorization": f"Bearer {st.session_state.get('token', '')}"}
+    response = requests.post(
+        f"{BACKEND_URL}/submit-feedback",
+        json={
+            "user_id": user_id,
+            "query": query,
+            "response": response,
+            "is_upvote": is_upvote,
+            "usefulness_rating": usefulness_rating,
+            "feedback_text": feedback_text
+        },
+        headers=headers
+    )
+    if response.status_code == 200:
+        st.success("Feedback submitted successfully!")
+    elif response.status_code == 401:
+        st.error("Authentication failed. Please log in again.")
+        # Optionally, clear the token and redirect to login
+        st.session_state.token = None
+        st.experimental_rerun()
+    else:
+        st.error(f"Failed to submit feedback. Status code: {response.status_code}")
+
+def submit_simple_vote(user_id: int, query: str, response: str, is_upvote: bool):
+    response = requests.post(
+        f"{BACKEND_URL}/submit-vote",
+        json={
+            "user_id": user_id,
+            "query": query,
+            "response": response,
+            "is_upvote": is_upvote
+        },
+        headers={"Authorization": f"Bearer {st.session_state['token']}"}
+    )
+    if response.status_code == 200:
+        st.success("Vote submitted successfully!")
+    else:
+        st.error("Failed to submit vote. Please try again.")
+        
 def process_response_content(sanitized_response):
     # Find and render any JSON structures that might be charts
     json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
@@ -395,6 +443,49 @@ def get_user_documents(user_id):
 def render_analytics_dashboard():
     st.header("Analytics Dashboard")
 
+    sentiment_analysis = get_sentiment_analysis()
+    
+    print("Sentiment Analysis Result:", sentiment_analysis)
+    
+    if "error" in sentiment_analysis:
+        st.warning(f"No vote data available: {sentiment_analysis['error']}")
+        st.info("The analytics dashboard will populate with data once users start providing feedback.")
+    else:
+        if 'average_sentiment_score' in sentiment_analysis:
+            st.write(f"Average Sentiment Score: {sentiment_analysis['average_sentiment_score']:.2f}")
+        if 'average_usefulness_rating' in sentiment_analysis:
+            st.write(f"Average Usefulness Rating: {sentiment_analysis['average_usefulness_rating']:.2f}")
+        if 'upvote_percentage' in sentiment_analysis:
+            st.write(f"Upvote Percentage: {sentiment_analysis['upvote_percentage']:.2f}%")
+    
+    try:
+        fig = plot_sentiment_analysis(sentiment_analysis)
+        st.pyplot(fig)
+    except Exception as e:
+        st.error(f"Error plotting sentiment analysis: {str(e)}")
+        print(f"Error details: {traceback.format_exc()}")
+    
+    st.subheader("Common Themes in Feedback")
+    feedback_analysis = analyze_feedback_text()
+    if feedback_analysis and 'word_frequency' in feedback_analysis and feedback_analysis['word_frequency']:
+        st.bar_chart(feedback_analysis['word_frequency'])
+    else:
+        st.info("No feedback text available for analysis yet. This section will update as users provide feedback.")
+
+    # Display some placeholder or explanatory content when there's no data
+    if not sentiment_analysis or "error" in sentiment_analysis:
+        st.subheader("How to Use This Dashboard")
+        st.write("""
+        This analytics dashboard will provide insights into user feedback once data is available. Here's what you'll see:
+        
+        1. **Sentiment Analysis**: Average sentiment scores and their distribution over time.
+        2. **Usefulness Ratings**: How users rate the helpfulness of responses.
+        3. **Upvote/Downvote Ratio**: The percentage of positive vs. negative reactions.
+        4. **Common Themes**: Frequently occurring words or phrases in user feedback.
+        
+        Start interacting with the chatbot and providing feedback to populate this dashboard with meaningful data!
+        """)
+
     # Overview metrics
     total_users = analytics_service.get_unique_users()
     event_summary = analytics_service.get_event_summary()
@@ -415,7 +506,7 @@ def render_analytics_dashboard():
     st.subheader("Most Used Tools")
     most_used_tools = analytics_service.get_most_used_tools()
     st.bar_chart(dict(most_used_tools))        
-
+        
     st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
     
     # Event Summary as a horizontal bar chart

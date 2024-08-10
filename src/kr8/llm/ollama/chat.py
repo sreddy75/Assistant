@@ -1,4 +1,5 @@
 import json
+import httpx
 from textwrap import dedent
 from typing import Optional, List, Iterator, Dict, Any, Mapping, Union
 from kr8.llm.base import LLM
@@ -9,14 +10,12 @@ from kr8.utils.timer import Timer
 from kr8.utils.tools import get_function_call_for_tool_call
 from kr8.llm.offline_llm import OfflineLLM
 from tenacity import retry, stop_after_attempt, wait_fixed
-import httpx
 
 try:
     from ollama import Client as OllamaClient
 except ImportError:
     logger.error("`ollama` not installed")
     raise
-
 
 class Ollama(LLM):
     name: str = "Ollama"
@@ -32,7 +31,8 @@ class Ollama(LLM):
     function_call_limit: int = 5
     deactivate_tools_after_use: bool = False
     add_user_message_after_tool_call: bool = True
-    
+    max_context_tokens: int = 2048  # Adjust based on the specific Ollama model
+
     @property
     def client(self) -> OllamaClient:
         if self.ollama_client is None:
@@ -92,7 +92,7 @@ class Ollama(LLM):
         except httpx.ConnectError as e:
             logger.warning(f"invoke_stream - Failed to connect to Ollama service: {e}")
             logger.warning(f"Connection details: Base URL: {self.base_url}, Model: {self.model}")
-            raise  # This will trigger a retry
+            raise
         except Exception as e:
             logger.error(f"Unexpected error in invoke_stream: {e}")
             raise
@@ -105,20 +105,52 @@ class Ollama(LLM):
     def invoke(self, messages: List[Message]) -> Mapping[str, Any]:
         try:
             logger.debug(f"Attempting to connect to Ollama service at: {self.base_url}")
-            return self.client.chat(
+            logger.debug(f"Invoking Ollama model with messages: {messages}")
+            response = self.client.chat(
                 model=self.model,
                 messages=[self.to_llm_message(m) for m in messages],
                 **self.api_kwargs,
             )
+            logger.debug(f"Ollama model response: {response}")
+            return response
         except httpx.ConnectError as e:
             logger.warning(f"invoke - Failed to connect to Ollama service: {e}")
             logger.warning(f"Connection details: Base URL: {self.base_url}, Model: {self.model}")
-            raise  # This will trigger a retry
+            raise
         except Exception as e:
             logger.error(f"Unexpected error in invoke: {e}")
             raise
+
     def deactivate_function_calls(self) -> None:
         self.format = ""
+
+    def inject_context(self, messages: List[Message], context: str) -> List[Message]:
+        context_message = Message(
+            role="system",
+            content=f"Use the following context to answer the user's question:\n\n{context}\n\nNow, answer the user's question based on this context."
+        )
+        return [context_message] + messages
+
+    def truncate_context(self, context: str, max_tokens: int) -> str:
+        # Simple truncation, you might want to implement a more sophisticated method
+        words = context.split()
+        if len(words) > max_tokens:
+            return ' '.join(words[:max_tokens]) + "..."
+        return context
+
+    def validate_response_uses_context(self, response: str, context: str) -> bool:
+        # Implement a simple check for key phrases from the context
+        # You might want to use more sophisticated methods like semantic similarity
+        key_phrases = context.split('.')[:3]  # Use first 3 sentences as key phrases
+        return any(phrase.strip().lower() in response.lower() for phrase in key_phrases if phrase.strip())
+
+    def requery_with_context_emphasis(self, messages: List[Message], context: str) -> str:
+        emphasis_message = Message(
+            role="user",
+            content="Your previous response didn't use the provided context. Please answer the question using ONLY the information provided in the context."
+        )
+        messages.append(emphasis_message)
+        return self.response(self.inject_context(messages, context))
 
     def response(self, messages: List[Message]) -> str:
         logger.debug("---------- Ollama Response Start ----------")
@@ -144,6 +176,8 @@ class Ollama(LLM):
             role=response_role or "assistant",
             content=response_content,
         )
+
+        # Check for tool calls in the response
         try:
             if response_content is not None:
                 _tool_call_content = response_content.strip()
@@ -217,6 +251,7 @@ class Ollama(LLM):
         if assistant_message.content is not None:
             return assistant_message.get_content_string()
         return "Something went wrong, please try again."
+
     def response_stream(self, messages: List[Message]) -> Iterator[str]:
         logger.debug("---------- Ollama Response Start ----------")
         for m in messages:
@@ -376,7 +411,7 @@ class Ollama(LLM):
     def get_instructions_to_generate_tool_calls(self) -> List[str]:
         if self.functions is not None:
             return [
-                "To respond to the users message, you can use one or more of the tools provided above.",
+                "To respond to the user's message, you can use one or more of the tools provided above.",
                 "If you decide to use a tool, you must respond in the JSON format matching the following schema:\n"
                 + dedent(
                     """\
@@ -391,13 +426,13 @@ class Ollama(LLM):
                 "To use a tool, just respond with the JSON matching the schema. Nothing else. Do not add any additional notes or explanations",
                 "After you use a tool, the next message you get will contain the result of the tool call.",
                 "REMEMBER: To use a tool, you must respond only in JSON format.",
-                "After you use a tool and receive the result back, respond regularly to answer the users question.",
+                "After you use a tool and receive the result back, respond regularly to answer the user's question.",
             ]
         return []
 
     def get_tool_calls_definition(self) -> Optional[str]:
         if self.functions is not None:
-            _tool_choice_prompt = "To respond to the users message, you have access to the following tools:"
+            _tool_choice_prompt = "To respond to the user's message, you have access to the following tools:"
             for _f_name, _function in self.functions.items():
                 _function_definition = _function.get_definition_for_prompt()
                 if _function_definition:
@@ -407,7 +442,42 @@ class Ollama(LLM):
         return None
 
     def get_system_prompt_from_llm(self) -> Optional[str]:
-        return self.get_tool_calls_definition()
+        base_prompt = self.get_tool_calls_definition()
+        context_instruction = "\nAlways use the provided context to answer questions. If the context doesn't contain relevant information, say so."
+        return base_prompt + context_instruction if base_prompt else context_instruction
 
     def get_instructions_from_llm(self) -> Optional[List[str]]:
         return self.get_instructions_to_generate_tool_calls()
+
+    def process_with_context(self, messages: List[Message], context: str) -> str:
+        truncated_context = self.truncate_context(context, self.max_context_tokens)
+        context_messages = self.inject_context(messages, truncated_context)
+        
+        response = self.response(context_messages)
+        
+        if not self.validate_response_uses_context(response, truncated_context):
+            logger.warning("Response doesn't seem to use the provided context. Requerying with emphasis.")
+            response = self.requery_with_context_emphasis(context_messages, truncated_context)
+        
+        return response
+
+    def run_function_calls(self, function_calls: List[FunctionCall], role: str = "function") -> List[Message]:
+        results = []
+        for function_call in function_calls:
+            _function_call_timer = Timer()
+            _function_call_timer.start()
+            function_call.execute()
+            _function_call_timer.stop()
+            _function_call_message = Message(
+                role=role,
+                name=function_call.function.name,
+                content=function_call.result,
+                metrics={"time": _function_call_timer.elapsed},
+            )
+            if "function_call_times" not in self.metrics:
+                self.metrics["function_call_times"] = {}
+            if function_call.function.name not in self.metrics["function_call_times"]:
+                self.metrics["function_call_times"][function_call.function.name] = []
+            self.metrics["function_call_times"][function_call.function.name].append(_function_call_timer.elapsed)
+            results.append(_function_call_message)
+        return results

@@ -10,6 +10,16 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from pydantic import BaseModel, EmailStr
 from email_validator import validate_email, EmailNotValidError
+from textblob import TextBlob
+from sqlalchemy import Column, Integer, Boolean, ForeignKey, String, Text, DateTime, Float
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.client_config import FEATURE_FLAGS
+
 import os
 import yagmail
 from contextlib import asynccontextmanager
@@ -110,6 +120,22 @@ class UserCreate(BaseModel):
 
 class EmailSchema(BaseModel):
     email: str
+
+class Vote(Base):
+    __tablename__ = "votes"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id")) 
+    query = Column(Text)
+    response = Column(Text)
+    is_upvote = Column(Boolean)
+    sentiment_score = Column(Float)
+    usefulness_rating = Column(Integer)
+    feedback_text = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    user = relationship("User", back_populates="votes")
+
+User.votes = relationship("Vote", back_populates="user")
 
 # Helper functions
 def get_db():
@@ -224,6 +250,9 @@ def get_email_html_template(header, message, button_text, button_url):
     </body>
     </html>
     """
+
+def is_feedback_sentiment_analysis_enabled():
+    return FEATURE_FLAGS.get("enable_feedback_sentiment_analysis", False)
 
 def send_email(to_email: str, subject: str, html_content: str):
     try:
@@ -431,6 +460,53 @@ async def extend_trial(
     db.commit()
     return {"message": "Trial extended successfully"}
 
+@app.post("/submit-feedback")
+async def submit_feedback(
+    feedback_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if is_feedback_sentiment_analysis_enabled():
+        # Perform sentiment analysis on the feedback text
+        sentiment = TextBlob(feedback_data["feedback_text"]).sentiment.polarity
+
+        new_vote = Vote(
+            user_id=current_user.id,
+            query=feedback_data["query"],
+            response=feedback_data["response"],
+            is_upvote=feedback_data["is_upvote"],
+            sentiment_score=sentiment,
+            usefulness_rating=feedback_data["usefulness_rating"],
+            feedback_text=feedback_data["feedback_text"]
+        )
+    else:
+        new_vote = Vote(
+            user_id=current_user.id,
+            query=feedback_data["query"],
+            response=feedback_data["response"],
+            is_upvote=feedback_data["is_upvote"]
+        )
+    
+    db.add(new_vote)
+    db.commit()
+    return {"message": "Feedback submitted successfully"}
+
+@app.post("/submit-vote")
+async def submit_vote(
+    vote_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    new_vote = Vote(
+        user_id=current_user.id,
+        query=vote_data["query"],
+        response=vote_data["response"],
+        is_upvote=vote_data["is_upvote"]
+    )
+    db.add(new_vote)
+    db.commit()
+    return {"message": "Vote submitted successfully"}
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
@@ -482,10 +558,6 @@ def init_db():
     finally:
         db.close()
     logger.info("Database initialization complete.")
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
         
 if __name__ == "__main__":
     import uvicorn
