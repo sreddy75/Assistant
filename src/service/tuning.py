@@ -203,31 +203,96 @@ def get_vote_analysis(vector_db: PgVector2) -> Dict:
             "vote_distribution": vote_distribution
         }
     
+from typing import Dict, List
+from sqlalchemy import MetaData, Table, select, func
+from sqlalchemy.orm import sessionmaker
+from collections import Counter
+import pandas as pd
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.sentiment import SentimentIntensityAnalyzer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+
+# Download necessary NLTK data
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('vader_lexicon')
+
 def analyze_feedback_text() -> Dict:
     metadata = MetaData()
     votes_table = Table('votes', metadata, autoload_with=engine)
 
     with SessionLocal() as session:
         try:
-            query = select(votes_table.c.feedback_text).where(votes_table.c.feedback_text != '')
+            query = select(votes_table.c.feedback_text, votes_table.c.usefulness_rating).where(votes_table.c.feedback_text != '')
             result = session.execute(query)
             feedbacks = result.fetchall()
 
-            feedback_text = ' '.join([f[0] for f in feedbacks if f[0] is not None])
+            feedback_texts = [f[0] for f in feedbacks if f[0] is not None]
+            usefulness_ratings = [f[1] for f in feedbacks if f[1] is not None]
+
+            if not feedback_texts:
+                return {"message": "No feedback data available"}
+
+            # 1. Preprocessing
+            stop_words = set(stopwords.words('english'))
+            processed_texts = []
+            for text in feedback_texts:
+                tokens = word_tokenize(text.lower())
+                processed_text = ' '.join([word for word in tokens if word.isalnum() and word not in stop_words])
+                processed_texts.append(processed_text)
+
+            # 2. Word Frequency Analysis
+            all_words = ' '.join(processed_texts).split()
+            word_freq = Counter(all_words).most_common(20)
+
+            # 3. Sentiment Analysis
+            sia = SentimentIntensityAnalyzer()
+            sentiments = [sia.polarity_scores(text)['compound'] for text in feedback_texts]
+            avg_sentiment = sum(sentiments) / len(sentiments)
+
+            # 4. Topic Modeling
+            vectorizer = TfidfVectorizer(max_features=1000)
+            tfidf_matrix = vectorizer.fit_transform(processed_texts)
             
-            # Here you could implement more sophisticated text analysis,
-            # such as topic modeling or keyword extraction
-            # For this example, we'll just return word frequency
-            words = feedback_text.split()
-            word_freq = pd.Series(words).value_counts().head(20).to_dict()
+            lda = LatentDirichletAllocation(n_components=5, random_state=42)
+            lda.fit(tfidf_matrix)
             
-            return {'word_frequency': word_freq}
+            feature_names = vectorizer.get_feature_names_out()
+            topics = []
+            for topic_idx, topic in enumerate(lda.components_):
+                top_words = [feature_names[i] for i in topic.argsort()[:-10 - 1:-1]]
+                topics.append(f"Topic {topic_idx + 1}: {', '.join(top_words)}")
+
+            # 5. Correlation between sentiment and usefulness
+            sentiment_usefulness_corr = pd.DataFrame({'sentiment': sentiments, 'usefulness': usefulness_ratings}).corr().iloc[0, 1]
+
+            # 6. Keyword extraction using TF-IDF scores
+            tfidf_scores = tfidf_matrix.sum(axis=0).A1
+            tfidf_dict = dict(zip(feature_names, tfidf_scores))
+            top_keywords = sorted(tfidf_dict.items(), key=lambda x: x[1], reverse=True)[:20]
+
+            return {
+                'word_frequency': dict(word_freq),
+                'average_sentiment': avg_sentiment,
+                'sentiment_distribution': {
+                    'positive': sum(1 for s in sentiments if s > 0.05) / len(sentiments),
+                    'neutral': sum(1 for s in sentiments if -0.05 <= s <= 0.05) / len(sentiments),
+                    'negative': sum(1 for s in sentiments if s < -0.05) / len(sentiments)
+                },
+                'topics': topics,
+                'sentiment_usefulness_correlation': sentiment_usefulness_corr,
+                'top_keywords': dict(top_keywords),
+                'feedback_count': len(feedback_texts)
+            }
 
         except Exception as e:
             print(f"Error analyzing feedback text: {e}")
             import traceback
             traceback.print_exc()
-            return {'word_frequency': {}}
+            return {'error': str(e)}
 
 def adjust_response_based_on_feedback(base_response: str, query: str, db: Session) -> str:
     highly_rated = get_highly_rated_responses(db)

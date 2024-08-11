@@ -440,23 +440,37 @@ def get_user_documents(user_id):
         logger.error(f"Error retrieving user documents: {str(e)}", exc_info=True)
         return []
             
+from typing import Dict
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import traceback
+
 def render_analytics_dashboard():
     st.header("Analytics Dashboard")
 
     sentiment_analysis = get_sentiment_analysis()
+    feedback_analysis = analyze_feedback_text()
     
     print("Sentiment Analysis Result:", sentiment_analysis)
+    print("Feedback Analysis Result:", feedback_analysis)
     
     if "error" in sentiment_analysis:
         st.warning(f"No vote data available: {sentiment_analysis['error']}")
         st.info("The analytics dashboard will populate with data once users start providing feedback.")
     else:
-        if 'average_sentiment_score' in sentiment_analysis:
-            st.write(f"Average Sentiment Score: {sentiment_analysis['average_sentiment_score']:.2f}")
-        if 'average_usefulness_rating' in sentiment_analysis:
-            st.write(f"Average Usefulness Rating: {sentiment_analysis['average_usefulness_rating']:.2f}")
-        if 'upvote_percentage' in sentiment_analysis:
-            st.write(f"Upvote Percentage: {sentiment_analysis['upvote_percentage']:.2f}%")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if 'average_sentiment_score' in sentiment_analysis:
+                st.metric("Average Sentiment Score", f"{sentiment_analysis['average_sentiment_score']:.2f}")
+        with col2:
+            if 'average_usefulness_rating' in sentiment_analysis:
+                st.metric("Average Usefulness Rating", f"{sentiment_analysis['average_usefulness_rating']:.2f}")
+        with col3:
+            if 'upvote_percentage' in sentiment_analysis:
+                st.metric("Upvote Percentage", f"{sentiment_analysis['upvote_percentage']:.2f}%")
     
     try:
         fig = plot_sentiment_analysis(sentiment_analysis)
@@ -465,32 +479,43 @@ def render_analytics_dashboard():
         st.error(f"Error plotting sentiment analysis: {str(e)}")
         print(f"Error details: {traceback.format_exc()}")
     
-    st.subheader("Common Themes in Feedback")
-    feedback_analysis = analyze_feedback_text()
-    if feedback_analysis and 'word_frequency' in feedback_analysis and feedback_analysis['word_frequency']:
-        st.bar_chart(feedback_analysis['word_frequency'])
+    st.subheader("Feedback Analysis")
+    if feedback_analysis and feedback_analysis.get("feedback_count", 0) > 0:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("Top 10 Words")
+            word_freq = pd.DataFrame(list(feedback_analysis['word_frequency'].items()), columns=['Word', 'Frequency'])
+            word_freq = word_freq.sort_values('Frequency', ascending=False).head(10)
+            fig = px.bar(word_freq, x='Word', y='Frequency', title="Most Frequent Words in Feedback")
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.write("Sentiment Distribution")
+            sentiment_dist = pd.DataFrame(list(feedback_analysis['sentiment_distribution'].items()), columns=['Sentiment', 'Percentage'])
+            fig = px.pie(sentiment_dist, values='Percentage', names='Sentiment', title="Sentiment Distribution")
+            st.plotly_chart(fig, use_container_width=True)
+        
+        st.write(f"Average Sentiment: {feedback_analysis['average_sentiment']:.2f}")
+        st.write(f"Sentiment-Usefulness Correlation: {feedback_analysis['sentiment_usefulness_correlation']:.2f}")
+        
+        st.subheader("Main Topics")
+        for topic in feedback_analysis['topics']:
+            st.write(topic)
+        
+        st.subheader("Top Keywords")
+        keywords = pd.DataFrame(list(feedback_analysis['top_keywords'].items()), columns=['Keyword', 'Score'])
+        keywords = keywords.sort_values('Score', ascending=False).head(10)
+        fig = px.bar(keywords, x='Keyword', y='Score', title="Top Keywords in Feedback")
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No feedback text available for analysis yet. This section will update as users provide feedback.")
-
-    # Display some placeholder or explanatory content when there's no data
-    if not sentiment_analysis or "error" in sentiment_analysis:
-        st.subheader("How to Use This Dashboard")
-        st.write("""
-        This analytics dashboard will provide insights into user feedback once data is available. Here's what you'll see:
-        
-        1. **Sentiment Analysis**: Average sentiment scores and their distribution over time.
-        2. **Usefulness Ratings**: How users rate the helpfulness of responses.
-        3. **Upvote/Downvote Ratio**: The percentage of positive vs. negative reactions.
-        4. **Common Themes**: Frequently occurring words or phrases in user feedback.
-        
-        Start interacting with the chatbot and providing feedback to populate this dashboard with meaningful data!
-        """)
 
     # Overview metrics
     total_users = analytics_service.get_unique_users()
     event_summary = analytics_service.get_event_summary()
 
-    # Create three columns for key metrics
+    st.header("Usage Analytics")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total Users", total_users)
@@ -505,28 +530,40 @@ def render_analytics_dashboard():
     
     st.subheader("Most Used Tools")
     most_used_tools = analytics_service.get_most_used_tools()
-    st.bar_chart(dict(most_used_tools))        
+    if most_used_tools:
+        tools_df = pd.DataFrame(most_used_tools, columns=['Tool', 'Usage Count'])
+        fig = px.bar(tools_df, x='Tool', y='Usage Count', title='Most Used Tools')
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No tool usage data available yet.")
         
     st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
     
     # Event Summary as a horizontal bar chart
     st.subheader("Event Summary")
-    event_df = pd.DataFrame(list(event_summary.items()), columns=['Event', 'Count'])
-    fig = px.bar(event_df, x='Count', y='Event', orientation='h')
-    st.plotly_chart(fig, use_container_width=True)
+    if event_summary:
+        event_df = pd.DataFrame(list(event_summary.items()), columns=['Event', 'Count'])
+        fig = px.bar(event_df, x='Count', y='Event', orientation='h')
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No event summary data available yet.")
 
     st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
+    
     # User activity over time
     st.subheader("User Activity Over Time")
     all_events = analytics_service.get_user_events()
-    activity_data = [{"date": event['timestamp'].date(), "count": 1} for event in all_events]
-    activity_df = pd.DataFrame(activity_data)
-    activity_df = activity_df.groupby('date').sum().reset_index()
-    
-    # Use a line chart with markers for better visibility
-    fig = px.line(activity_df, x='date', y='count', markers=True, title='Daily User Activity')
-    fig.update_layout(xaxis_title='Date', yaxis_title='Number of Events')
-    st.plotly_chart(fig, use_container_width=True)
+    if all_events:
+        activity_data = [{"date": event['timestamp'].date(), "count": 1} for event in all_events]
+        activity_df = pd.DataFrame(activity_data)
+        activity_df = activity_df.groupby('date').sum().reset_index()
+        
+        # Use a line chart with markers for better visibility
+        fig = px.line(activity_df, x='date', y='count', markers=True, title='Daily User Activity')
+        fig.update_layout(xaxis_title='Date', yaxis_title='Number of Events')
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No user activity data available yet.")
 
     st.markdown('<hr class="dark-divider">', unsafe_allow_html=True)           
     
@@ -537,96 +574,110 @@ def render_analytics_dashboard():
     if user_id:
         events = analytics_service.get_user_events(user_id)
         
-        # User activity heatmap
-        st.subheader(f"Activity Heatmap for User {user_id}")
-        activity_data = [{"date": event['timestamp'].date(), "hour": event['timestamp'].hour, "count": 1} for event in events]
-        activity_df = pd.DataFrame(activity_data)
-        activity_df = activity_df.groupby(['date', 'hour']).sum().reset_index()
-        
-        # Create a pivot table for the heatmap
-        pivot_df = activity_df.pivot(index='date', columns='hour', values='count').fillna(0)
-        
-        fig = go.Figure(data=go.Heatmap(
-            z=pivot_df.values,
-            x=pivot_df.columns,
-            y=pivot_df.index,
-            colorscale='Viridis'))
-        
-        fig.update_layout(
-            title='User Activity Heatmap',
-            xaxis_title='Hour of Day',
-            yaxis_title='Date'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Most used tools and assistants
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Most Used Tools")
-            tool_usage = {}
-            for event in events:
-                if event['event_type'] == 'assistant_response':
-                    for tool in event['event_data'].get('tools_used', []):
-                        tool_usage[tool] = tool_usage.get(tool, 0) + 1
+        if events:
+            # User activity heatmap
+            st.subheader(f"Activity Heatmap for User {user_id}")
+            activity_data = [{"date": event['timestamp'].date(), "hour": event['timestamp'].hour, "count": 1} for event in events]
+            activity_df = pd.DataFrame(activity_data)
+            activity_df = activity_df.groupby(['date', 'hour']).sum().reset_index()
             
-            tool_df = pd.DataFrame(list(tool_usage.items()), columns=['Tool', 'Usage'])
-            fig = px.pie(tool_df, values='Usage', names='Tool', title='Tool Usage Distribution')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.subheader("Most Used Assistants")
-            assistant_usage = {}
-            for event in events:
-                if event['event_type'] == 'assistant_response':
-                    for assistant in event['event_data'].get('assistants_used', []):
-                        assistant_usage[assistant] = assistant_usage.get(assistant, 0) + 1
+            # Create a pivot table for the heatmap
+            pivot_df = activity_df.pivot(index='date', columns='hour', values='count').fillna(0)
             
-            assistant_df = pd.DataFrame(list(assistant_usage.items()), columns=['Assistant', 'Usage'])
-            fig = px.pie(assistant_df, values='Usage', names='Assistant', title='Assistant Usage Distribution')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Average response time over time
-        st.subheader("Average Response Time Trend")
-        response_times = [
-            {"timestamp": event['timestamp'], "duration": event['duration']}
-            for event in events
-            if event['event_type'] == 'assistant_response' and event['duration']
-        ]
-        if response_times:
-            response_df = pd.DataFrame(response_times)
-            response_df['date'] = response_df['timestamp'].dt.date
-            daily_avg = response_df.groupby('date')['duration'].mean().reset_index()
+            fig = go.Figure(data=go.Heatmap(
+                z=pivot_df.values,
+                x=pivot_df.columns,
+                y=pivot_df.index,
+                colorscale='Viridis'))
             
-            fig = px.line(daily_avg, x='date', y='duration', title='Daily Average Response Time')
-            fig.update_layout(xaxis_title='Date', yaxis_title='Average Response Time (seconds)')
+            fig.update_layout(
+                title='User Activity Heatmap',
+                xaxis_title='Hour of Day',
+                yaxis_title='Date'
+            )
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Most used tools and assistants
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Most Used Tools")
+                tool_usage = {}
+                for event in events:
+                    if event['event_type'] == 'assistant_response':
+                        for tool in event['event_data'].get('tools_used', []):
+                            tool_usage[tool] = tool_usage.get(tool, 0) + 1
+                
+                if tool_usage:
+                    tool_df = pd.DataFrame(list(tool_usage.items()), columns=['Tool', 'Usage'])
+                    fig = px.pie(tool_df, values='Usage', names='Tool', title='Tool Usage Distribution')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No tool usage data available for this user.")
+            
+            with col2:
+                st.subheader("Most Used Assistants")
+                assistant_usage = {}
+                for event in events:
+                    if event['event_type'] == 'assistant_response':
+                        for assistant in event['event_data'].get('assistants_used', []):
+                            assistant_usage[assistant] = assistant_usage.get(assistant, 0) + 1
+                
+                if assistant_usage:
+                    assistant_df = pd.DataFrame(list(assistant_usage.items()), columns=['Assistant', 'Usage'])
+                    fig = px.pie(assistant_df, values='Usage', names='Assistant', title='Assistant Usage Distribution')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No assistant usage data available for this user.")
+            
+            # Average response time over time
+            st.subheader("Average Response Time Trend")
+            response_times = [
+                {"timestamp": event['timestamp'], "duration": event['duration']}
+                for event in events
+                if event['event_type'] == 'assistant_response' and event['duration']
+            ]
+            if response_times:
+                response_df = pd.DataFrame(response_times)
+                response_df['date'] = response_df['timestamp'].dt.date
+                daily_avg = response_df.groupby('date')['duration'].mean().reset_index()
+                
+                fig = px.line(daily_avg, x='date', y='duration', title='Daily Average Response Time')
+                fig.update_layout(xaxis_title='Date', yaxis_title='Average Response Time (seconds)')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No response time data available for this user.")
+        else:
+            st.info(f"No activity data available for User {user_id}.")
 
     # Recent global activity
     st.subheader("Recent Global Activity")
     recent_events = analytics_service.get_user_events()[:50]  # Get last 50 events
     
-    # Create a DataFrame for recent events
-    recent_df = pd.DataFrame([
-        {
-            "User ID": event['user_id'],
-            "Timestamp": event['timestamp'],
-            "Event Type": event['event_type']
-        }
-        for event in recent_events
-    ])
-    
-    # Display recent events as an interactive table
-    st.dataframe(recent_df, use_container_width=True)
+    if recent_events:
+        # Create a DataFrame for recent events
+        recent_df = pd.DataFrame([
+            {
+                "User ID": event['user_id'],
+                "Timestamp": event['timestamp'],
+                "Event Type": event['event_type']
+            }
+            for event in recent_events
+        ])
+        
+        # Display recent events as an interactive table
+        st.dataframe(recent_df, use_container_width=True)
 
-    # Add a download button for the full activity log
-    csv = recent_df.to_csv(index=False)
-    st.download_button(
-        label="Download Full Activity Log",
-        data=csv,
-        file_name="activity_log.csv",
-        mime="text/csv",
-    )
+        # Add a download button for the full activity log
+        csv = recent_df.to_csv(index=False)
+        st.download_button(
+            label="Download Full Activity Log",
+            data=csv,
+            file_name="activity_log.csv",
+            mime="text/csv",
+        )
+    else:
+        st.info("No recent activity data available.")
                 
 def initialize_assistant(llm_id, user_id=None):
     if "llm_os" not in st.session_state or st.session_state["llm_os"] is None:

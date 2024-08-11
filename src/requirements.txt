@@ -41,6 +41,7 @@ matplotlib==3.8.4
 mdurl==0.1.2
 multitasking==0.0.11
 nest-asyncio==1.6.0
+nltk==3.8.1
 numpy==1.26.4
 ollama==0.2.0
 openai==1.28.1
@@ -73,6 +74,7 @@ referencing==0.35.1
 requests==2.31.0
 rich==13.7.1
 rpds-py==0.18.1
+scikit-learn==1.5.1
 seaborn==0.13.2
 shellingham==1.5.4
 six==1.16.0
