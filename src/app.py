@@ -1,6 +1,7 @@
 
 from collections import defaultdict
 import datetime
+import socket
 import time
 import pandas as pd
 import requests
@@ -44,6 +45,7 @@ def login_form():
     col1, col2, col3 = st.columns([1,8,1])
     with col2:        
         # Customize the app based on the client                   
+        st.markdown(f"<h1 style='color: white; text-align: center;'>{client_name.upper()}'s Assistant</h1>", unsafe_allow_html=True)
         file_ = open(f"src/config/themes/{get_client_name()}/main_image.png", "rb")
         contents = file_.read()
         data_url = base64.b64encode(contents).decode("utf-8")
@@ -519,7 +521,33 @@ def apply_custom_theme():
     </style>
     """
     st.markdown(theme_css, unsafe_allow_html=True)
-    
+
+def get_client_ip():
+    try:
+        response = requests.get('https://api.ipify.org')
+        return response.text
+    except requests.RequestException:
+        return "Unable to get IP"
+
+def get_user_agent():
+    return st.get_option("browser.serverAddress")
+
+def get_hostname():
+    try:
+        return socket.gethostname()
+    except:
+        return "Unable to get hostname"
+
+def hide_streamlit_style():
+    hide_st_style = """
+                <style>
+                #MainMenu {visibility: hidden;}
+                footer {visibility: hidden;}
+                header {visibility: hidden;}
+                </style>
+                """
+    st.markdown(hide_st_style, unsafe_allow_html=True)
+            
 def main():
     
     st.set_page_config(
@@ -529,11 +557,17 @@ def main():
     
      # Apply custom theme
     apply_custom_theme()    
+    hide_streamlit_style()
 
     # Track user information
-    headers = _get_websocket_headers()
-    st.session_state['user_agent'] = headers.get('User-Agent', '')
-    st.session_state['client_ip'] = headers.get('X-Forwarded-For', '').split(',')[0].strip()
+    if 'user_agent' not in st.session_state:
+        st.session_state['user_agent'] = get_user_agent()
+
+    if 'client_ip' not in st.session_state:
+        st.session_state['client_ip'] = get_client_ip()
+
+    if 'hostname' not in st.session_state:
+        st.session_state['hostname'] = get_hostname()            
     
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -576,7 +610,8 @@ def main():
                 # Log app access
                 analytics_service.log_event(user_id, "app_access", {
                     "user_agent": st.session_state.get('user_agent', ''),
-                    "ip_address": st.session_state.get('client_ip', '')
+                    "ip_address": st.session_state.get('client_ip', ''),
+                    "hostname": st.session_state.get('hostname', '')
                 })
 
                 if not st.session_state.initialization_complete:
@@ -589,10 +624,7 @@ def main():
                     st.rerun()
                 else:
                     main_app()
-    else:
-        logger.debug("Showing login form")
-        client_name = get_client_name()
-        st.markdown(f"<h1 style='color: white'>Welcome to {client_name.upper()}'s Assistant</h1>", unsafe_allow_html=True)        
+    else:        
         login_form()
 
 if __name__ == "__main__":

@@ -1,0 +1,14 @@
+{
+    "enable_enhanced_data_analyst": true,
+    "enable_enhanced_financial_analyst": true,
+    "enable_product_owner": false,
+    "enable_business_analyst": false,
+    "enable_enhanced_quality_analyst": false,
+    "enable_code_assistant": false,
+    "enable_web_search": true,
+    "enable_research_assistant": true,
+    "enable_investment_assistant": false,
+    "enable_company_analyst": false,
+    "enable_maintenance_engineer": false,
+    "enable_feedback_sentiment_analysis": true
+  }
