@@ -71,32 +71,22 @@ class Claude(LLM):
             _request_params.update(self.request_params)
         return _request_params
 
-    def clean_response(self, response: str) -> str:
+    def clean_response(self, response: str, is_final: bool = False) -> str:
         # Remove XML-like tags
         response = re.sub(r'<[^>]+>', '', response)
         
         # Remove specific tags like <search_knowledge_base>
         response = re.sub(r'<search_knowledge_base>.*?</search_knowledge_base>', '', response)
         
-        # Convert newlines to proper Markdown line breaks
-        response = response.replace('\n', '  \n')
+        # Add Markdown formatting for headers (modified to avoid look-behind)
+        response = re.sub(r'^(\w[^:\n]*):(?=\s|$)', r'### \1', response, flags=re.MULTILINE)
+        response = re.sub(r'\n(\w.+):(?=\s|$)', r'\n### \1', response)
         
-        # Add Markdown formatting for headers
-        response = re.sub(r'^(\w.+):$', r'### \1', response, flags=re.MULTILINE)
+        # Add Markdown formatting for bullet points (modified to avoid look-behind)
+        response = re.sub(r'(^|\n)\* ', r'\1- ', response)
         
-        # Add Markdown formatting for bullet points
-        response = re.sub(r'^\* ', '- ', response, flags=re.MULTILINE)
-        
-        # Remove duplicate content
-        lines = response.split('\n')
-        unique_lines = []
-        for line in lines:
-            if line not in unique_lines:
-                unique_lines.append(line)
-        response = '\n'.join(unique_lines)
-        
-        # Add the "Simples!" at the end only if it's not already there
-        if not response.strip().endswith("Simples!"):
+        # Only add "Simples!" at the end of the complete response
+        if is_final and not response.strip().endswith("Simples!"):
             response += "\n\nSimples!"
         
         return response.strip()
@@ -121,9 +111,15 @@ class Claude(LLM):
         api_kwargs: Dict[str, Any] = self.api_kwargs
         api_messages = self._prepare_messages(messages)
 
-        system_message = next((m.content for m in messages if m.role == "system"), None)
+        # Only use the most recent system message and user query
+        system_message = next((m.content for m in reversed(messages) if m.role == "system"), None)
+        user_message = next((m for m in reversed(messages) if m.role == "user"), None)
+
         if system_message:
             api_kwargs["system"] = system_message
+
+        # Use only the most recent user message to start a fresh conversation
+        api_messages = [{"role": "user", "content": user_message.content}] if user_message else []
 
         return self.client.messages.create(
             model=self.model,
@@ -135,9 +131,15 @@ class Claude(LLM):
         api_kwargs: Dict[str, Any] = self.api_kwargs
         api_messages = self._prepare_messages(messages)
 
-        system_message = next((m.content for m in messages if m.role == "system"), None)
+        # Only use the most recent system message and user query
+        system_message = next((m.content for m in reversed(messages) if m.role == "system"), None)
+        user_message = next((m for m in reversed(messages) if m.role == "user"), None)
+
         if system_message:
             api_kwargs["system"] = system_message
+
+        # Use only the most recent user message to start a fresh conversation
+        api_messages = [{"role": "user", "content": user_message.content}] if user_message else []
 
         return self.client.messages.stream(
             model=self.model,
@@ -273,45 +275,51 @@ class Claude(LLM):
         response_timer.start()
         response = self.invoke_stream(messages=messages)
         
+        buffer = ""
         with response as stream:
             for stream_delta in stream.text_stream:
-                # Add response content to assistant message
                 if stream_delta is not None:
+                    buffer += stream_delta
                     assistant_message_content += stream_delta
 
-                # Detect if response is a tool call
-                if not response_is_tool_call and ("<function" in stream_delta or "<invoke" in stream_delta):
-                    response_is_tool_call = True
+                    # Detect if response is a tool call
+                    if not response_is_tool_call and ("<function" in buffer or "<invoke" in buffer):
+                        response_is_tool_call = True
 
-                # If response is a tool call, count the number of tool calls
-                if response_is_tool_call:
-                    # If the response is an opening tool call tag, increment the tool call counter
-                    if "<invoke" in stream_delta:
-                        tool_calls_counter += 1
+                    # If response is a tool call, count the number of tool calls
+                    if response_is_tool_call:
+                        if "<invoke" in buffer:
+                            tool_calls_counter += 1
+                        if buffer.strip().endswith("</invoke>"):
+                            tool_calls_counter -= 1
+                        if tool_calls_counter == 0 and buffer.strip().endswith(">"):
+                            response_is_tool_call = False
+                            is_closing_tool_call_tag = True
 
-                    # If the response is a closing tool call tag, decrement the tool call counter
-                    if assistant_message_content.strip().endswith("</invoke>"):
-                        tool_calls_counter -= 1
+                    # Yield content if not a tool call
+                    if not response_is_tool_call:
+                        if is_closing_tool_call_tag and buffer.strip().endswith(">"):
+                            is_closing_tool_call_tag = False
+                            buffer = ""
+                            continue
 
-                    # If the response is a closing tool call tag and the tool call counter is 0,
-                    # tool call response is complete
-                    if tool_calls_counter == 0 and stream_delta.strip().endswith(">"):
-                        response_is_tool_call = False
-                        is_closing_tool_call_tag = True
+                        # Clean and yield the buffer when it reaches a certain size or contains a full sentence
+                        if len(buffer) > 50 or re.search(r'[.!?\n](?=\s|$)', buffer):
+                            cleaned_buffer = self.clean_response(buffer, is_final=False)
+                            if cleaned_buffer:
+                                yield cleaned_buffer + " "  # Add a space for smoother rendering
+                            buffer = ""
 
-                # -*- Yield content if not a tool call and content is not None
-                if not response_is_tool_call and stream_delta is not None:
-                    if is_closing_tool_call_tag and stream_delta.strip().endswith(">"):
-                        is_closing_tool_call_tag = False
-                        continue
-
-                    # Clean the stream delta before yielding
-                    cleaned_delta = self.clean_response(stream_delta)
-                    yield cleaned_delta
+        # Yield any remaining content in the buffer
+        if buffer:
+            cleaned_buffer = self.clean_response(buffer, is_final=True)
+            if cleaned_buffer:
+                yield cleaned_buffer
 
         response_timer.stop()
         logger.debug(f"Time to generate response: {response_timer.elapsed:.4f}s")
 
+        
         # Add function call closing tag to the assistant message
         if assistant_message_content.count("<function_calls>") == 1:
             assistant_message_content += "</function_calls>"

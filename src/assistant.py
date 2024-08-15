@@ -74,13 +74,17 @@ def create_pandas_tools(user_id: Optional[int]) -> PandasTools:
     return PandasTools(user_id=user_id)
 
 def get_llm(llm_id: str, fallback_model: str):
-    if llm_id in ["tinyllama", "llama3"]:
+    if llm_id in ["llama3"]:
         ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
         try:
             return Ollama(
                 model=llm_id,
                 base_url=ollama_base_url,
-                options={"num_ctx": 2048, "temperature": 0.7, "top_p": 0.9}
+                options={
+                    "num_ctx": 4096, 
+                    "temperature": 0.7,
+                    "top_p": 0.9
+                }
             )
         except Exception as e:
             logger.warning(f"Failed to initialize {llm_id}: {e}")
@@ -234,6 +238,10 @@ def get_llm_os(
             else:
                 preprocessed_query = query
 
+            # Clear previous conversation history only for Claude
+            if isinstance(self.llm, Claude):
+                self.memory.clear()
+                
             results = super().run(preprocessed_query, stream=stream, **kwargs)
             
             if self.knowledge_base and self.current_project and self.current_project_type:

@@ -47,6 +47,15 @@ class AssistantMemory(BaseModel):
             _memory_dict["memories"] = [memory.to_dict() for memory in self.memories]
         return _memory_dict
 
+    def clear(self) -> None:
+        """Clear all stored messages and other memory data."""
+        self.chat_history = []
+        self.llm_messages = []
+        self.references = []
+        if self.memories is not None:
+            self.memories = []        
+        self.updating = False
+        
     def add_chat_message(self, message: Message) -> None:
         """Adds a Message to the chat_history."""
         self.chat_history.append(message)

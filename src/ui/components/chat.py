@@ -11,7 +11,7 @@ import requests
 import pandas as pd
 import streamlit as st
 from service.tuning import SessionLocal, adjust_response_based_on_feedback, analyze_feedback_text, get_sentiment_analysis, get_vote_analysis, plot_sentiment_analysis
-from utils.auth import BACKEND_URL
+from utils.auth import BACKEND_URL, is_authenticated
 from kr8.utils.log import logger
 from assistant import get_llm_os
 from kr8.document.reader.website import WebsiteReader
@@ -40,6 +40,10 @@ from config.client_config import is_feedback_sentiment_analysis_enabled
 from team.data_analyst import EnhancedDataAnalyst
 from team.financial_analyst import EnhancedFinancialAnalyst
 from service.analytics_service import analytics_service
+from kr8.document import Document
+from docx import Document as DocxDocument
+from datetime import datetime
+
 
 # Load environment variables
 load_dotenv()
@@ -254,12 +258,42 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     
                     query = st.session_state["messages"][i-1]["content"] if i > 0 else ""
                     
-                    with st.expander("Provide feedback", expanded=True):
+                    with st.expander("Please Provide feedback to help improve future answers", expanded=False):
                         if is_feedback_sentiment_analysis_enabled():
-                            usefulness = st.slider("How useful was this response?", 1, 5, 3, key=f"usefulness_{i}")
+                            # Create unique keys for this feedback instance
+                            slider_key = f"usefulness_slider_{i}"
+                            value_key = f"usefulness_value_{i}"
+                            
+                            # Initialize the value in session state if it doesn't exist
+                            if value_key not in st.session_state:
+                                st.session_state[value_key] = 3
+                            
+                            # Define a callback function to update the value
+                            def update_usefulness():
+                                st.session_state[value_key] = st.session_state[slider_key]
+                            
+                            st.write(f"Before slider: {st.session_state[value_key]}")
+                                                        
+                            # Use the session state value for the slider
+                            usefulness = st.slider(
+                                "How useful was this response?",
+                                1, 5, 
+                                value=st.session_state[value_key],
+                                key=slider_key,
+                                on_change=update_usefulness
+                            )
+                            
+                            st.write(f"After slider: {usefulness}")
+                            
+                            # Update the session state immediately after the slider
+                            st.session_state[value_key] = usefulness
+                            st.write(f"After update: {st.session_state[value_key]}")
+                            
                             feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{i}")
                             if st.button("Submit Feedback", key=f"feedback_button_{i}"):
                                 submit_feedback(user_id, query, sanitized_content, usefulness > 3, usefulness, feedback)
+                                # Reset the value after submission
+                                st.session_state[value_key] = 3
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
@@ -301,10 +335,20 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                 try:
                     current_project = st.session_state.get('current_project')
                     current_project_type = st.session_state.get('current_project_type')
-                    context_prompt = f"In the context of the {current_project_type} project '{current_project}': {prompt}" if current_project and current_project_type else prompt
-
+                    context_prompt = f"In the context of the {current_project_type} project '{current_project}': {prompt}" if current_project and current_project_type else prompt                                        
+                            
+                    # For Claude, use only the current user message
+                    if llm_id.startswith("claude"):
+                        current_messages = [{"role": "user", "content": prompt}]
+                    else:
+                        current_messages = st.session_state["messages"]
+                    
                     full_response = ""
-                    for chunk in llm_os.run(context_prompt, messages=truncated_messages, stream=True):
+                    for chunk in llm_os.run(context_prompt, messages=current_messages, stream=True):
+                        if isinstance(chunk, tuple):
+                            chunk = chunk[0] if chunk else ""
+                        elif not isinstance(chunk, str):
+                            chunk = str(chunk)
                         full_response += chunk
                         with response_area:
                             pulsating_dot.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
@@ -313,41 +357,42 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
 
                     sanitized_response = sanitize_content(full_response)
                     
-                    # Use feedback-adjusted response
-                    with SessionLocal() as db:
-                        adjusted_response = adjust_response_based_on_feedback(sanitized_response, prompt, db)
+                    # # Use feedback-adjusted response
+                    # with SessionLocal() as db:
+                    #     adjusted_response = adjust_response_based_on_feedback(sanitized_response, prompt, db)
                     
-                    with response_area:
-                        pulsating_dot.empty()
-                        response_placeholder.markdown(
-                            f'<div class="chat-message">{adjusted_response}</div>',
-                            unsafe_allow_html=True
-                        )
+                    # with response_area:
+                    #     pulsating_dot.empty()
+                    #     response_placeholder.markdown(
+                    #         f'<div class="chat-message">{adjusted_response}</div>',
+                    #         unsafe_allow_html=True
+                    #     )
                     
-                    process_response_content(adjusted_response)
+                    # process_response_content(adjusted_response)
 
-                    st.session_state["messages"].append({"role": "assistant", "content": adjusted_response})
+                    # st.session_state["messages"].append({"role": "assistant", "content": adjusted_response})
 
-                    with st.expander("Provide feedback", expanded=True):
+                    with st.expander("Please Provide feedback to improve future answers", expanded=False):
                         if is_feedback_sentiment_analysis_enabled():
                             usefulness = st.slider("How useful was this response?", 1, 5, 3, key=f"usefulness_{len(st.session_state['messages'])-1}")
                             feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{len(st.session_state['messages'])-1}")
                             if st.button("Submit Feedback", key=f"feedback_button_{len(st.session_state['messages'])-1}"):
-                                submit_feedback(user_id, prompt, adjusted_response, usefulness > 3, usefulness, feedback)
+                                submit_feedback(user_id, prompt, sanitized_response, usefulness > 3, usefulness, feedback)
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.button("👍", key=f"upvote_{len(st.session_state['messages'])-1}"):
-                                    submit_simple_vote(user_id, prompt, adjusted_response, True)
+                                    submit_simple_vote(user_id, prompt, sanitized_response, True)
                             with col2:
                                 if st.button("👎", key=f"downvote_{len(st.session_state['messages'])-1}"):
-                                    submit_simple_vote(user_id, prompt, adjusted_response, False)
+                                    submit_simple_vote(user_id, prompt, sanitized_response, False)
 
                 except Exception as e:
                     with response_area:
                         pulsating_dot.empty()
                         st.error(f"An unexpected error occurred: {str(e)}")
                     logger.error(f"Unexpected error: {str(e)}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     full_response = "I apologize, but I encountered an error while processing your request. Please try again."
                     response_placeholder.markdown(full_response)
 
@@ -362,7 +407,18 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         manage_knowledge_base(llm_os)
 
 def submit_feedback(user_id: int, query: str, response: str, is_upvote: bool, usefulness_rating: int, feedback_text: str):
-    headers = {"Authorization": f"Bearer {st.session_state.get('token', '')}"}
+    
+    if not is_authenticated():
+        st.error("You're not authenticated. Please log in again.")
+        st.session_state.clear()
+        st.experimental_rerun()
+        return
+
+    token = st.session_state.get('token', '')
+    print(f"Token being used for feedback: {token[:10]}...")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    
     response = requests.post(
         f"{BACKEND_URL}/submit-feedback",
         json={
@@ -376,7 +432,7 @@ def submit_feedback(user_id: int, query: str, response: str, is_upvote: bool, us
         headers=headers
     )
     if response.status_code == 200:
-        st.success("Feedback submitted successfully!")
+        st.success("Feedback submitted successfully!")                        
     elif response.status_code == 401:
         st.error("Authentication failed. Please log in again.")
         # Optionally, clear the token and redirect to login
@@ -402,6 +458,8 @@ def submit_simple_vote(user_id: int, query: str, response: str, is_upvote: bool)
         st.error("Failed to submit vote. Please try again.")
         
 def process_response_content(sanitized_response):
+    if isinstance(sanitized_response, (list, tuple)):
+        sanitized_response = ' '.join(map(str, sanitized_response))
     # Find and render any JSON structures that might be charts
     json_pattern = re.compile(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}')
     json_matches = json_pattern.findall(sanitized_response)
@@ -762,7 +820,7 @@ async def process_pdf_async(uploaded_file, llm_os):
         logger.error(f"Error adding chunks to knowledge base: {str(e)}")
     
     logger.info(f"Finished processing {uploaded_file.name}. Total time: {time.time() - start_time:.2f} seconds.")
-    return True, f"Successfully processed {uploaded_file.name}"
+    return True
 
 
 def process_pdfs_parallel(uploaded_files, llm_os):
@@ -770,7 +828,7 @@ def process_pdfs_parallel(uploaded_files, llm_os):
         results = pool.starmap(PDFReader().read, [(file,) for file in uploaded_files])
     all_documents = [doc for result in results for doc in result]
     llm_os.knowledge_base.load_documents(all_documents, upsert=True)
-    return True, f"Successfully processed {len(uploaded_files)} files"
+    return True
 
 def manage_knowledge_base(llm_os):
     
@@ -795,8 +853,7 @@ def manage_knowledge_base(llm_os):
                         llm_os.knowledge_base.load_documents(web_documents, upsert=True)
                         st.session_state[f"{input_url}_scraped"] = True
                         st.session_state["processed_files"].append(input_url)
-                        st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
-                        st.sidebar.success(f"Successfully processed and added: {input_url}")
+                        st.session_state["user_documents"] = get_user_documents(llm_os.user_id)                        
                         logger.info(f"Successfully processed and added URL: {input_url}")
                     else:
                         st.sidebar.error("Could not read website")
@@ -806,7 +863,8 @@ def manage_knowledge_base(llm_os):
         st.session_state["file_uploader_key"] = 100
 
     uploaded_files = st.sidebar.file_uploader(
-        "Upload Documents", type=["pdf", "json", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
+        "Upload Documents", type=["pdf", "json", "csv", "xlsx", "xls", "zip", "docx", "txt"], 
+        key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
 
     if uploaded_files:
@@ -817,13 +875,20 @@ def manage_knowledge_base(llm_os):
             with st.spinner(f"Processing {file.name}..."):
                 try:                    
                     if file.name.endswith('.pdf'):
-                        success, message = process_pdf(file, llm_os)
-                        if success:
-                            st.success(message)
+                        success = process_pdf(file, llm_os)
+                        if success:                            
                             st.session_state["processed_files"].append(file.name)
                             st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
-                        else:
-                            st.error(message)
+                    elif file.name.endswith('.docx'):
+                        success = process_docx(file, llm_os)
+                        if success:
+                            st.session_state["processed_files"].append(file.name)
+                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
+                    elif file.name.endswith('.txt'):
+                        success = process_txt(file, llm_os)
+                        if success:
+                            st.session_state["processed_files"].append(file.name)
+                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
                     elif file.name.endswith(('.csv', '.xlsx', '.xls')):
                         file_content = base64.b64encode(file.read()).decode('utf-8')
                         analyst_type = determine_analyst(file, file_content)
@@ -852,10 +917,10 @@ def manage_knowledge_base(llm_os):
         # Increment the file uploader key to force a refresh
         st.session_state["file_uploader_key"] += 1
 
-    if st.session_state["processed_files"]:
-        st.sidebar.markdown("### You are chatting with these files:")
-        for file in st.session_state["processed_files"]:
-            st.sidebar.write(file)
+    # if st.session_state["processed_files"]:
+    #     st.sidebar.markdown("### You are chatting with these files:")
+    #     for file in st.session_state["processed_files"]:
+    #         st.sidebar.write(file)
 
     if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
         if st.sidebar.button("Clear Knowledge Base"):
@@ -892,7 +957,67 @@ def determine_analyst(file, file_content):
         return 'financial'
     else:
         return 'data' 
-    
+
+def process_txt(file, llm_os):
+    try:
+        content = file.getvalue().decode("utf-8")
+        
+        doc = Document(
+            content=content,
+            name=file.name,
+            meta_data={
+                "type": "txt",
+                "size": len(content),
+                "uploaded_at": datetime.now().isoformat()
+            },
+            usage={
+                "access_count": 0,
+                "last_accessed": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "relevance_scores": [],
+                "token_count": None
+            }
+        )
+        llm_os.knowledge_base.load_documents([doc])
+        logger.info(f"Processed and added TXT file {file.name} to knowledge base")
+        return True
+    except Exception as e:
+        logger.error(f"Error processing TXT file {file.name}: {str(e)}")
+        return False
+
+def process_docx(file, llm_os):
+    try:
+        doc = DocxDocument(file)
+        full_text = []
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+        content = ' '.join(full_text)
+        
+        doc = Document(
+            content=content,
+            name=file.name,
+            meta_data={
+                "type": "docx",
+                "size": len(content),
+                "uploaded_at": datetime.now().isoformat()
+            },
+            usage={
+                "access_count": 0,
+                "last_accessed": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "relevance_scores": [],
+                "token_count": None
+            }
+        )
+        llm_os.knowledge_base.load_documents([doc])
+        logger.info(f"Processed and added DOCX file {file.name} to knowledge base")
+        return True
+    except Exception as e:
+        logger.error(f"Error processing DOCX file {file.name}: {str(e)}")
+        return False
+        
 def process_pdf(file, llm_os):
     reader = PDFReader()
     auto_rag_documents = reader.read(file)
@@ -905,7 +1030,7 @@ def process_pdf(file, llm_os):
     try:
         llm_os.knowledge_base.load_documents(auto_rag_documents)
         logger.info(f"Successfully added PDF content to knowledge base.")
-        return True, f"Successfully processed {file.name}"
+        return True
     except Exception as e:
         logger.error(f"Error adding PDF content to knowledge base: {str(e)}")
         return False, f"Error processing {file.name}: {str(e)}"

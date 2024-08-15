@@ -21,6 +21,10 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from config.client_config import is_feedback_sentiment_analysis_enabled
 from kr8.vectordb.pgvector.pgvector2 import PgVector2
+from sqlalchemy import func
+from typing import Dict
+import pandas as pd
+
 
 # Assuming you have these environment variables set
 DB_URL = os.getenv("DB_URL", "postgresql+psycopg://ai:ai@pgvector:5432/ai")
@@ -63,16 +67,14 @@ def get_highly_rated_responses(db: Session, threshold: float = 0.7) -> List[Tupl
 
     return [(r.query, r.response) for r in results]
 
-def find_similar_queries(query: str, rated_queries: List[str], top_n: int = 5) -> List[int]:
+def find_similar_queries(query: str, rated_queries: Tuple[str, ...], top_n: int = 5) -> List[int]:
     vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform([query] + rated_queries)
+    # Convert rated_queries tuple to a list before concatenation
+    all_queries = [query] + list(rated_queries)
+    tfidf_matrix = vectorizer.fit_transform(all_queries)
     cosine_similarities = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
     similar_indices = cosine_similarities.argsort()[:-top_n-1:-1]
     return similar_indices.tolist()
-
-from sqlalchemy import func
-from typing import Dict
-import pandas as pd
 
 def get_sentiment_analysis() -> Dict[str, Any]:
     metadata = MetaData()
@@ -301,9 +303,12 @@ def adjust_response_based_on_feedback(base_response: str, query: str, db: Sessio
 
     rated_queries, rated_responses = zip(*highly_rated)
     
-    similar_indices = find_similar_queries(query, rated_queries)
-    similar_responses = [rated_responses[i] for i in similar_indices]
+    # Convert rated_queries to a list
+    rated_queries_list = list(rated_queries)
     
+    similar_indices = find_similar_queries(query, rated_queries_list)
+    similar_responses = [rated_responses[i] for i in similar_indices]
+        
     if is_feedback_sentiment_analysis_enabled():
         # Use sentiment and usefulness to weight the responses
         weights = []

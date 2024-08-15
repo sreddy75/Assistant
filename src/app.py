@@ -68,7 +68,7 @@ def login_form():
                     if login_result == True:
                         st.session_state.authenticated = True
                         st.session_state.initialization_complete = False
-                        st.session_state.user_id = get_user_id(email)
+                        st.session_state.user_id = get_user_id(email)                        
                         
                         # Set admin flag
                         st.session_state.is_admin = is_admin_user(email)
