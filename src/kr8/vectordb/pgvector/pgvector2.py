@@ -45,7 +45,7 @@ class PgVector2(VectorDb):
         self.project_namespace = project_namespace
         self.user_id = user_id
         # Collection attributes
-        self.collection = f"user_{user_id}_{collection}" if user_id else collection
+        self.collection = f"user_{user_id}_{collection}" if user_id else collection                
         
         _engine: Optional[Engine] = db_engine
         if _engine is None and db_url is not None:
@@ -80,6 +80,7 @@ class PgVector2(VectorDb):
 
         # Database table for the collection
         self.table: Table = self.get_table()
+        
     
     def get_collection_name(self):
         base_name = f"user_{self.user_id}_{self.collection}" if self.user_id else self.collection
@@ -111,17 +112,31 @@ class PgVector2(VectorDb):
             return False
 
     def create(self) -> None:
-        if not self.table_exists():
+        try:
+            if not self.table_exists():
+                with self.Session() as sess:
+                    with sess.begin():
+                        logger.debug("Creating extension: vector")
+                        sess.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                        if self.schema is not None:
+                            logger.debug(f"Creating schema: {self.schema}")
+                            sess.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema};"))
+                logger.debug(f"Creating table: {self.collection}")
+                self.table.create(self.db_engine)
+                logger.info(f"Successfully created table: {self.schema}.{self.collection}")
+            else:
+                logger.info(f"Table {self.schema}.{self.collection} already exists")
+        except Exception as e:
+            logger.error(f"Error creating table {self.schema}.{self.collection}: {str(e)}")
+            raise
+    
+    def ensure_schema_exists(self) -> None:
+        if self.schema is not None:
             with self.Session() as sess:
                 with sess.begin():
-                    logger.debug("Creating extension: vector")
-                    sess.execute(text("create extension if not exists vector;"))
-                    if self.schema is not None:
-                        logger.debug(f"Creating schema: {self.schema}")
-                        sess.execute(text(f"create schema if not exists {self.schema};"))
-            logger.debug(f"Creating table: {self.collection}")
-            self.table.create(self.db_engine)
-
+                    sess.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema};"))
+                    logger.info(f"Ensured schema {self.schema} exists")
+                                
     def doc_exists(self, document: Document) -> bool:
         """
         Validating if the document exists or not
