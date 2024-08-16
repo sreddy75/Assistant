@@ -3,11 +3,13 @@ import os
 from pathlib import Path
 from typing import List, Optional, Union
 
+from fastapi import Depends
 import httpx
 import psutil
 from dotenv import load_dotenv
 from typing import Union, Any
 from pydantic import Field
+from sqlalchemy.orm import Session
 
 from kr8.tools.code_tools import CodeTools
 from kr8.assistant import Assistant
@@ -24,6 +26,7 @@ from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
 
 from kr8.tools.yfinance import YFinanceTools
+from backend.backend import get_db, load_org_config
 from team.data_analyst import EnhancedDataAnalyst
 from team.financial_analyst import EnhancedFinancialAnalyst
 from team.quality_analyst import EnhancedQualityAnalyst
@@ -138,19 +141,26 @@ def get_llm_os(
     llm_id: str = "gpt-4o",
     fallback_model: str = "tinyllama",    
     user_id: Optional[int] = None,
+    org_id: Optional[int] = None,
     user_role: Optional[str] = None,
     user_nickname: Optional[str] = "friend",
     run_id: Optional[str] = None,
     debug_mode: bool = True,
     web_search: bool = True,
-) -> Union[Assistant, 'ContextAwareAssistant']:
+    db: Session = Depends(get_db)
+
+) -> Union[Assistant, 'ContextAwareAssistant']: # type: ignore
     
     logger.info(f"-*- Creating {llm_id} LLM OS -*-")
+    org_config = load_org_config(db, org_id)
+    # Use org_config to determine available assistants and feature flags
+    available_assistants = org_config['assistants'].get(user_role, [])
+    feature_flags = org_config['feature_flags']
 
     knowledge_base = AssistantKnowledge(
         vector_db=PgVector2(
             db_url=db_url,
-            collection=f"user_{user_id}_documents" if user_id is not None else "llm_os_documents",
+            collection=f"org_{org_id}_user_{user_id}_documents" if user_id is not None else "llm_os_documents",
             embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2"),
         ),
         num_documents=50,
@@ -164,17 +174,7 @@ def get_llm_os(
     ]    
 
     if web_search:
-        tools.append(ExaTools(num_results=5, text_length_limit=2000))
-            
-    role_assistants = {
-        "Dev": ["Web Search", "Code Assistant"],
-        "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
-        "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
-        "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
-        "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
-    }
-
-    available_assistants = role_assistants.get(user_role, [])
+        tools.append(ExaTools(num_results=5, text_length_limit=2000))                            
     
     team: List[Assistant] = []
     

@@ -1,32 +1,32 @@
+ #Standard library imports
+import os
+import sys
+import json
+import logging
+from datetime import datetime, timedelta, UTC
 from typing import List
+from contextlib import asynccontextmanager
+
+# Third-party imports
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, func
-from sqlalchemy.types import DateTime as SQLDateTime
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from datetime import datetime, timedelta
 from pydantic import BaseModel, EmailStr
 from email_validator import validate_email, EmailNotValidError
 from textblob import TextBlob
-from sqlalchemy import Column, Integer, Boolean, ForeignKey, String, Text, DateTime, Float
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
-
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config.client_config import FEATURE_FLAGS
-
-import os
 import yagmail
-from contextlib import asynccontextmanager
-import logging
-from datetime import datetime, timedelta, UTC
-from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
+
+# Local imports
+from config.client_config import FEATURE_FLAGS, get_db
+from backend.models import Base, User, Organization, OrganizationConfig, Vote
+from backend.schemas.user_schema import EmailSchema, Token, UserCreate, UserInDB, UserResponse
+from backend.schemas.organization_schema import OrganizationCreate, OrganizationUpdate
+from backend.helpers.auth_helper import authenticate_user, create_access_token, get_current_user, get_password_hash, get_user
+from backend.helpers.email_helper import send_password_reset_email, send_verification_email
 
 load_dotenv()
 
@@ -34,7 +34,6 @@ load_dotenv()
 SQLALCHEMY_DATABASE_URL = os.getenv("DB_URL", "postgresql+psycopg://ai:ai@pgvector:5432/ai")
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 # Security setup
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")  # Change this!
@@ -63,232 +62,22 @@ if not GMAIL_USER or not GMAIL_PASSWORD:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Models
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    first_name = Column(String)
-    last_name = Column(String)
-    nickname = Column(String)
-    role = Column(String)
-    is_active = Column(Boolean, default=True)
-    is_admin = Column(Boolean, default=False)
-    trial_end = Column(SQLDateTime(timezone=True), default=func.now() + timedelta(days=7))
-    email_verified = Column(Boolean, default=False)
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    user_id: int
-    role: str
-    nickname: str
-    
-class UserResponse(BaseModel):
-    id: int
-    email: str
-    first_name: str
-    last_name: str
-    nickname: str
-    role: str
-    is_active: bool
-    is_admin: bool
-    trial_end: datetime
-    email_verified: bool
-
-    class Config:
-        orm_mode = True    
-    
-class TokenData(BaseModel):
-    email: str | None = None
-
-class UserInDB(BaseModel):
-    email: str
-    is_active: bool
-    is_admin: bool
-    trial_end: datetime
-    email_verified: bool
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-    first_name: str
-    last_name: str
-    nickname: str
-    role: str
-
-class EmailSchema(BaseModel):
-    email: str
-
-class Vote(Base):
-    __tablename__ = "votes"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id")) 
-    query = Column(Text)
-    response = Column(Text)
-    is_upvote = Column(Boolean)
-    sentiment_score = Column(Float)
-    usefulness_rating = Column(Integer)
-    feedback_text = Column(Text)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    user = relationship("User", back_populates="votes")
-
-User.votes = relationship("Vote", back_populates="user")
-
-# Helper functions
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-def get_user(db: Session, email: str):
-    return db.query(User).filter(User.email == email).first()
-
-def authenticate_user(db: Session, email: str, password: str):
-    user = get_user(db, email=email)
-    if not user or not verify_password(password, user.hashed_password):
-        return False
-    return user
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
-    else:
-        expire = datetime.now(UTC) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-        token_data = TokenData(email=email)
-    except JWTError:
-        raise credentials_exception
-    user = get_user(db, email=token_data.email)
-    if user is None:
-        raise credentials_exception
-    return user
-
-def get_email_html_template(header, message, button_text, button_url):
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{header}</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                color: #333333;
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-            }}
-            .header {{
-                background-color: #4CAF50;
-                color: white;
-                text-align: center;
-                padding: 20px;
-                font-size: 24px;
-            }}
-            .content {{
-                background-color: #f9f9f9;
-                border: 1px solid #dddddd;
-                padding: 20px;
-                margin-top: 20px;
-            }}
-            .button {{
-                display: inline-block;
-                background-color: #4CAF50;
-                color: white;
-                padding: 10px 20px;
-                text-decoration: none;
-                border-radius: 5px;
-                margin-top: 20px;
-            }}
-            .footer {{
-                margin-top: 20px;
-                text-align: center;
-                font-size: 12px;
-                color: #888888;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>{header}</h1>
-        </div>
-        <div class="content">
-            <p>{message}</p>
-            <a href="{button_url}" class="button">{button_text}</a>
-        </div>
-        <div class="footer">
-            <p>This is an automated message from Compare the Meerkat. Please do not reply to this email.</p>
-        </div>
-    </body>
-    </html>
-    """
 
 def is_feedback_sentiment_analysis_enabled():
     return FEATURE_FLAGS.get("enable_feedback_sentiment_analysis", False)
 
-def send_email(to_email: str, subject: str, html_content: str):
-    try:
-        # Initialize the SMTP object with user and password
-        yag = yagmail.SMTP(user=GMAIL_USER, password=GMAIL_PASSWORD)
-        yag.send(
-            to=to_email,
-            subject=subject,
-            contents=[html_content]
-        )
-        logger.info(f"Email sent successfully to {to_email}")
-    except Exception as e:
-        logger.error(f"Failed to send email to {to_email}: {str(e)}")
-        raise
+def load_org_config(db: Session, org_id: int):
+    org_config = db.query(OrganizationConfig).join(Organization).filter(Organization.id == org_id).first()
+    if not org_config:
+        raise ValueError(f"No configuration found for organization {org_id}")
     
-def send_verification_email(email: str, token: str):
-    subject = "Verify Your Email for Compare the Meerkat"
-    verification_url = f"{FRONTEND_URL}?token={token}&verify=true"
-    html_content = get_email_html_template(
-        header="Email Verification",
-        message="Thank you for registering with Compare the Meerkat! Please click the button below to verify your email address and activate your account.",
-        button_text="Verify Email",
-        button_url=verification_url
-    )
-    send_email(email, subject, html_content)
+    config = {
+        "roles": json.loads(org_config.roles),
+        "assistants": json.loads(org_config.assistants),
+        "feature_flags": json.loads(org_config.feature_flags)
+    }
+    return config
 
-def send_password_reset_email(email: str, token: str):
-    subject = "Reset Your Compare the Meerkat Password"
-    reset_url = f"{FRONTEND_URL}?token={token}&reset=true"
-    html_content = get_email_html_template(
-        header="Password Reset",
-        message="You have requested to reset your password for Compare the Meerkat. Click the button below to set a new password. If you didn't request this, please ignore this email.",
-        button_text="Reset Password",
-        button_url=reset_url
-    )
-    send_email(email, subject, html_content)
 
 # Routes
 @app.post("/token", response_model=Token)
@@ -299,7 +88,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        )    
     if not user.email_verified:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -312,11 +101,91 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email, "role": user.role, "nickname": user.nickname}, 
+        data={"sub": user.email, "org_id": user.organization_id},
         expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer", "user_id": user.id, "role": user.role, "nickname": user.nickname}
+    
+    org = db.query(Organization).filter(Organization.id ==  user.organization_id).first()
+    
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer", 
+        "user_id": user.id,
+        "role": user.role, 
+        "nickname": user.nickname,
+        "organization": org.name,
+    }
 
+
+
+@app.post("/organizations")
+async def create_organization(org: OrganizationCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="Only super admins can create organizations")
+    
+    org_config = OrganizationConfig(
+        roles=json.dumps(org.roles),
+        assistants=json.dumps(org.assistants),
+        feature_flags=json.dumps(org.feature_flags)
+    )
+    db.add(org_config)
+    db.flush()
+
+    new_org = Organization(name=org.name, config_id=org_config.id)
+    db.add(new_org)
+    db.commit()
+    return {"message": f"Organization '{org.name}' created successfully"}
+
+@app.put("/organizations/{org_id}")
+async def update_organization(org_id: int, org_update: OrganizationUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="Only super admins can update organizations")
+    
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    config = db.query(OrganizationConfig).filter(OrganizationConfig.id == org.config_id).first()
+    if org_update.roles is not None:
+        config.roles = json.dumps(org_update.roles)
+    if org_update.assistants is not None:
+        config.assistants = json.dumps(org_update.assistants)
+    if org_update.feature_flags is not None:
+        config.feature_flags = json.dumps(org_update.feature_flags)
+
+    db.commit()
+    return {"message": f"Organization updated successfully"}
+
+@app.get("/organizations")
+async def list_organizations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="Only super admins can list organizations")
+    
+    orgs = db.query(Organization).all()
+    return [{"id": org.id, "name": org.name} for org in orgs]
+
+@app.get("/organizations/{org_id}")
+async def get_organization(org_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="Only super admins can view organization details")
+    
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    config = db.query(OrganizationConfig).filter(OrganizationConfig.id == org.config_id).first()
+    return {
+        "id": org.id,
+        "name": org.name,
+        "roles": json.loads(config.roles),
+        "assistants": json.loads(config.assistants),
+        "feature_flags": json.loads(config.feature_flags)
+    }
+    
+@app.get("/org-config")
+async def get_org_config(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    config = load_org_config(db, current_user.organization_id)
+    return config
 
 @app.get("/users", response_model=List[UserResponse])
 async def get_all_users(
@@ -336,19 +205,37 @@ async def get_all_users(
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+@app.get("/organizations/{org_name}/roles")
+async def get_organization_roles(org_name: str, db: Session = Depends(get_db)):
+    organization = db.query(Organization).filter(Organization.name == org_name).first()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    
+    org_config = load_org_config(db, organization.id)
+    roles = org_config.get("roles", [])
+    return {"roles": roles}
+
 @app.post("/register")
-async def register(user: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def register(user: UserCreate, org_name: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_user = get_user(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+    
+    organization = db.query(Organization).filter(Organization.name == org_name).first()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    
+    org_config = load_org_config(db, organization.id)
+    available_roles = org_config.get("roles", [])
+    
+    if user.role not in available_roles:
+        raise HTTPException(status_code=400, detail="Invalid role for this organization")
+    
     try:
         valid = validate_email(user.email)
         email = valid.email
     except EmailNotValidError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
-    if user.role not in ["Dev", "QA", "Product", "Delivery", "Manager"]:
-        raise HTTPException(status_code=400, detail="Invalid role")
     
     hashed_password = get_password_hash(user.password)
     new_user = User(
@@ -358,6 +245,7 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks, db: Sess
         last_name=user.last_name,
         nickname=user.nickname,
         role=user.role,
+        organization_id=organization.id,
         trial_end=datetime.now(UTC) + timedelta(days=7)
     )
     db.add(new_user)
@@ -534,27 +422,73 @@ def init_db():
     logger.info("Database tables created.")
     db = SessionLocal()
     try:
-        # Check if admin user exists, if not create one
-        admin_user = db.query(User).filter(User.is_admin == True).first()
-        if not admin_user:
-            hashed_password = get_password_hash("password") 
-            admin_user = User(
-                email="suren@kr8it.com", 
+        # Check if super admin user exists, if not create one
+        super_admin_user = db.query(User).filter(User.is_super_admin == True).first()
+        if not super_admin_user:
+            # Create default organization
+            default_org_config = OrganizationConfig(
+                roles=json.dumps(["Super Admin", "Admin", "User"]),
+                assistants=json.dumps({"default_assistant": True}),
+                feature_flags=json.dumps({"enable_feedback_sentiment_analysis": True})
+            )
+            db.add(default_org_config)
+            db.flush()
+
+            default_org = Organization(
+                name="Default Organization",
+                config_id=default_org_config.id
+            )
+            db.add(default_org)
+            db.flush()
+
+            hashed_password = get_password_hash("superadmin123")  # Change this password!
+            super_admin_user = User(
+                email="superadmin@example.com",  # Change this email!
                 hashed_password=hashed_password,
-                first_name="Suren",
-                last_name="Reddy",
-                nickname="Suren",
-                role="QA",
+                first_name="Super",
+                last_name="Admin",
+                nickname="SuperAdmin",
+                role="Super Admin",
                 is_active=True,
                 is_admin=True,
-                trial_end=datetime.now(UTC) + timedelta(days=1),
-                email_verified=True
+                is_super_admin=True,
+                trial_end=datetime.now(UTC) + timedelta(days=365),  # Set a long trial period for super admin
+                email_verified=True,
+                organization_id=default_org.id
+            )
+            db.add(super_admin_user)
+            db.commit()
+            logger.info("Super Admin user and Default Organization created.")
+        else:
+            logger.info("Super Admin user already exists.")
+
+        # Check if regular admin user exists, if not create one
+        admin_user = db.query(User).filter(User.is_admin == True, User.is_super_admin == False).first()
+        if not admin_user:
+            hashed_password = get_password_hash("adminpassword")  # Change this password!
+            admin_user = User(
+                email="admin@example.com",  # Change this email!
+                hashed_password=hashed_password,
+                first_name="Admin",
+                last_name="User",
+                nickname="Admin",
+                role="Admin",
+                is_active=True,
+                is_admin=True,
+                is_super_admin=False,
+                trial_end=datetime.now(UTC) + timedelta(days=30),
+                email_verified=True,
+                organization_id=db.query(Organization).filter(Organization.name == "Default Organization").first().id
             )
             db.add(admin_user)
             db.commit()
-            logger.info("Admin user created.")
+            logger.info("Regular Admin user created.")
         else:
-            logger.info("Admin user already exists.")
+            logger.info("Regular Admin user already exists.")
+
+    except Exception as e:
+        logger.error(f"Error during database initialization: {str(e)}")
+        db.rollback()
     finally:
         db.close()
     logger.info("Database initialization complete.")

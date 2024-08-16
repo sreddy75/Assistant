@@ -1,8 +1,10 @@
 
 from collections import defaultdict
 import datetime
+import json
 import socket
 import time
+from typing import List
 import pandas as pd
 import requests
 import streamlit as st
@@ -39,7 +41,16 @@ def load_meerkat_logo():
 def log_init_event(event):
     init_queue.put(event)
     logger.debug(event)
-    
+
+def get_available_roles(org_name: str) -> List[str]:
+    try:
+        response = requests.get(f"{BACKEND_URL}/organizations/{org_name}/roles")
+        response.raise_for_status()
+        return response.json()["roles"]
+    except requests.RequestException as e:
+        st.error(f"Failed to fetch roles: {str(e)}")
+        return []
+        
 def login_form():        
     client_name = get_client_name()         
     col1, col2, col3 = st.columns([1,8,1])
@@ -72,8 +83,10 @@ def login_form():
                         st.session_state.initialization_complete = False
                         st.session_state.user_id = get_user_id(email)                        
                         
-                        # Set admin flag
-                        st.session_state.is_admin = is_admin_user(email)
+                        # Set admin and super admin flags
+                        user_info = get_user_info(email)
+                        st.session_state.is_admin = user_info["is_admin"]
+                        st.session_state.is_super_admin = user_info["is_super_admin"]
                         
                         logger.debug("User authenticated, initializing app")
                         st.rerun()
@@ -102,16 +115,38 @@ def login_form():
             first_name = st.text_input("First Name", key="register_first_name")
             last_name = st.text_input("Last Name", key="register_last_name")
             nickname = st.text_input("Nickname", key="register_nickname")
-            role = st.selectbox("Role", options=["QA", "Dev", "Product", "Delivery", "Manager"], key="register_role")
+            
+            # Get the organization name from the config
+            org_name = get_client_name()
+            
+            # Fetch and display available roles based on the configured organization
+            available_roles = get_available_roles(org_name)
+            if available_roles:
+                role = st.selectbox("Role", options=available_roles, key="register_role")
+            else:
+                st.error("Unable to fetch roles. Please try again later.")
+                role = None
             
             if st.button("Register"):
                 if is_valid_email(new_email):
-                    if first_name and last_name and nickname:
-                        success, message = register(new_email, new_password, first_name, last_name, nickname, role)
-                        if success:
-                            st.success(message)
-                        else:
-                            st.error(message)
+                    if first_name and last_name and nickname and role:
+                        try:
+                            response = requests.post(
+                                f"{BACKEND_URL}/register",
+                                json={
+                                    "email": new_email,
+                                    "password": new_password,
+                                    "first_name": first_name,
+                                    "last_name": last_name,
+                                    "nickname": nickname,
+                                    "role": role
+                                },
+                                params={"org_name": org_name}
+                            )
+                            response.raise_for_status()
+                            st.success("Registration successful! Please check your email for verification.")
+                        except requests.RequestException as e:
+                            st.error(f"Registration failed: {str(e)}")
                     else:
                         st.error("Please fill in all fields.")
                 else:
@@ -129,6 +164,18 @@ def login_form():
                 else:
                     st.error("Please enter a valid email address")
 
+def get_user_info(email):
+    try:
+        response = requests.get(f"{BACKEND_URL}/users/{email}/info", headers={"Authorization": f"Bearer {st.session_state['token']}"})
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Failed to fetch user info: {response.text}")
+            return {"is_admin": False, "is_super_admin": False}
+    except Exception as e:
+        logger.error(f"Error fetching user info: {str(e)}")
+        return {"is_admin": False, "is_super_admin": False}
+    
 @st.cache_resource
 def perform_heavy_initialization():
     log_init_event("Setting up page layout...")
@@ -305,9 +352,81 @@ def check_token_validity():
             logout()
             st.rerun()
 
+def render_org_management():
+    st.header("Organization Management")
+    
+    # List organizations
+    response = requests.get(f"{BACKEND_URL}/organizations", headers={"Authorization": f"Bearer {st.session_state['token']}"})
+    if response.status_code == 200:
+        organizations = response.json()
+        selected_org = st.selectbox("Select Organization", options=[org["name"] for org in organizations], format_func=lambda x: x)
+        selected_org_id = next(org["id"] for org in organizations if org["name"] == selected_org)
+        
+        if st.button("View Organization Details"):
+            org_response = requests.get(f"{BACKEND_URL}/organizations/{selected_org_id}", headers={"Authorization": f"Bearer {st.session_state['token']}"})
+            if org_response.status_code == 200:
+                org_details = org_response.json()
+                st.json(org_details)
+            else:
+                st.error("Failed to fetch organization details")
+        
+        # Update organization
+        st.subheader("Update Organization")
+        roles = st.text_input("Roles (comma-separated)")
+        assistants = st.text_area("Assistants (JSON)")
+        feature_flags = st.text_area("Feature Flags (JSON)")
+        
+        if st.button("Update Organization"):
+            update_data = {}
+            if roles:
+                update_data["roles"] = [role.strip() for role in roles.split(",")]
+            if assistants:
+                update_data["assistants"] = json.loads(assistants)
+            if feature_flags:
+                update_data["feature_flags"] = json.loads(feature_flags)
+            
+            update_response = requests.put(
+                f"{BACKEND_URL}/organizations/{selected_org_id}",
+                json=update_data,
+                headers={"Authorization": f"Bearer {st.session_state['token']}"}
+            )
+            if update_response.status_code == 200:
+                st.success("Organization updated successfully")
+            else:
+                st.error("Failed to update organization")
+    
+    # Create new organization
+    st.subheader("Create New Organization")
+    new_org_name = st.text_input("Organization Name")
+    new_org_roles = st.text_input("Roles (comma-separated)")
+    new_org_assistants = st.text_area("Assistants (JSON)")
+    new_org_feature_flags = st.text_area("Feature Flags (JSON)")
+    
+    if st.button("Create Organization"):
+        create_data = {
+            "name": new_org_name,
+            "roles": [role.strip() for role in new_org_roles.split(",")],
+            "assistants": json.loads(new_org_assistants),
+            "feature_flags": json.loads(new_org_feature_flags)
+        }
+        create_response = requests.post(
+            f"{BACKEND_URL}/organizations",
+            json=create_data,
+            headers={"Authorization": f"Bearer {st.session_state['token']}"}
+        )
+        if create_response.status_code == 200:
+            st.success("Organization created successfully")
+        else:
+            st.error("Failed to create organization")
+            
 def render_settings_tab():
     st.header("User Management")
     
+    if st.session_state.get('is_super_admin', False):
+        render_org_management()
+    else:
+        st.warning("You do not have permission to access these settings.")
+        
     # Display any stored messages
     if "trial_extension_messages" in st.session_state:
         for message, is_error in st.session_state["trial_extension_messages"]:
@@ -406,10 +525,10 @@ def get_user_documents(user_id):
                                 
 def main_app():
     col1, col2 = st.sidebar.columns([2, 1])
-
     with col1:
-        if 'email' in st.session_state:
-            st.write(f"Hi, {st.session_state['email']}!")
+        if 'email' in st.session_state:            
+            st.sidebar.title(f"Welcome, {st.session_state.get('nickname')}")
+            st.sidebar.text(f"Organization: {st.session_state.get('organization')}")
         else:   
             st.write("Welcome!")
 
@@ -426,7 +545,9 @@ def main_app():
     # Determine which tabs to show based on user role
     tabs = ["Chat", "My Documents"]
     if st.session_state.get('is_admin', False):
-        tabs.extend(["Analytics", "Settings"])
+        tabs.extend(["Analytics"])
+    if st.session_state.get('is_super_admin', False):
+        tabs.append("Settings")    
     
     selected_tab = st.tabs(tabs)
 
@@ -455,7 +576,8 @@ def main_app():
             from ui.components.chat import render_analytics_dashboard
             render_analytics_dashboard()
         
-        with selected_tab[3]:  # Settings tab
+    if st.session_state.get('is_super_admin', False) and "Settings" in tabs:
+        with selected_tab[tabs.index("Settings")]:
             render_settings_tab()
 
     render_sidebar()

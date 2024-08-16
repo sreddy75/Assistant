@@ -8,40 +8,56 @@ from ui.utils.helper import restart_assistant
 from utils.npm_utils import run_npm_command
 from config.client_config import ENABLED_ASSISTANTS
 import matplotlib.pyplot as plt
+from backend.backend import get_db, load_org_config
 
 def initialize_session_state(user_role):
-    role_assistants = {
-        "Dev": ["Web Search", "Code Assistant"],
-        "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
-        "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
-        "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
-        "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
-    }
-    
-    available_assistants = role_assistants.get(user_role, [])
-    
+    # Fetch the organization ID from the session state
+    org_id = st.session_state.get('org_id')
+    if not org_id:
+        st.error("Organization ID not found in session state.")
+        return
+
+    # Load the organization-specific config
+    db = next(get_db())
+    try:
+        org_config = load_org_config(db, org_id)
+    except Exception as e:
+        st.error(f"Failed to load organization config: {str(e)}")
+        return
+    finally:
+        db.close()
+
+    # Get the role-specific assistants from the org config
+    role_assistants = org_config.get('assistants', {}).get(user_role, [])
+
+    # Initialize assistant states based on the config
     for assistant in ENABLED_ASSISTANTS:
         key = f"{assistant.lower().replace(' ', '_')}_enabled"
         if key not in st.session_state:
-            st.session_state[key] = assistant in available_assistants
-    
+            st.session_state[key] = assistant in role_assistants
+
+    # Initialize PandasTools if not already done
     if 'pandas_tools' not in st.session_state:
         st.session_state.pandas_tools = PandasTools()
 
+    # Store the full org config in the session state for later use
+    st.session_state['org_config'] = org_config
+
 def render_sidebar():
     user_role = st.session_state.get('role')
-    initialize_session_state(user_role)    
+    if not user_role:
+        st.sidebar.error("User role not found. Please log in again.")
+        return
+
+    initialize_session_state(user_role)
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
     
-    role_assistants = {
-        "Dev": ["Web Search", "Code Assistant"],
-        "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
-        "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
-        "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
-        "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
-    }
-    
-    available_assistants = role_assistants.get(user_role, [])
+    org_config = st.session_state.get('org_config')
+    if not org_config:
+        st.sidebar.error("Organization configuration not loaded. Please refresh the page.")
+        return
+
+    available_assistants = org_config.get('assistants', {}).get(user_role, [])
     
     with st.sidebar.expander("Available Assistants", expanded=False):
         for assistant in ENABLED_ASSISTANTS:

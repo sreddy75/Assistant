@@ -23,6 +23,7 @@ def login(email: str, password: str) -> bool | str:
         st.session_state["user_id"] = data["user_id"]
         st.session_state["role"] = data["role"]
         st.session_state["nickname"] = data["nickname"]
+        st.session_state["organization"] = data["organization"]
         return True
     elif response.status_code in [401, 403]:
         return response.json().get("detail", "An error occurred during login")
