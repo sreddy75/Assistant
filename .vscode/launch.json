@@ -6,6 +6,25 @@
     "configurations": [
 
         {
+            "name": "FastAPI: Assistant",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "src.backend.main:app",
+                "--reload",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000"
+            ],
+            "jinja": true,
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
             "name": "Python Debugger: Current File",
             "type": "debugpy",
             "request": "launch",
@@ -22,7 +41,10 @@
                 "${workspaceFolder}/src/app.py" // Replace with the path to your Streamlit app
             ],
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${env:PYTHONPATH}:${workspaceFolder}"
+            }
         }
     ]
 }

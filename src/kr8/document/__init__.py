@@ -1,1 +1,1 @@
-from kr8.document.base import Document
+from src.kr8.document.base import Document

@@ -1,3 +1,22 @@
+from datetime import datetime, timedelta
+from fastapi import Depends, HTTPException, status
+from jose import JWTError
+import jwt
+from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from src.backend.models.models import User
+from src.backend.core.config import settings
+from src.backend.db.session import get_db
+
+# Security setup
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)

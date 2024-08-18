@@ -1,17 +1,10 @@
-import datetime
 from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from typing import Optional
 
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    user_id: int
-    role: str
-    nickname: str
-    
 class UserResponse(BaseModel):
     id: int
-    email: str
+    email: EmailStr
     first_name: str
     last_name: str
     nickname: str
@@ -22,17 +15,14 @@ class UserResponse(BaseModel):
     email_verified: bool
 
     class Config:
-        orm_mode = True    
-    
-class TokenData(BaseModel):
-    email: str | None = None
+        from_attributes = True
 
-class UserInDB(BaseModel):
-    email: str
-    is_active: bool
-    is_admin: bool
-    trial_end: datetime
-    email_verified: bool
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user_id: int
+    role: str
+    nickname: str
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -42,5 +32,12 @@ class UserCreate(BaseModel):
     nickname: str
     role: str
 
-class EmailSchema(BaseModel):
+class UserInDB(BaseModel):
     email: str
+    is_active: bool
+    is_admin: bool
+    trial_end: datetime
+    email_verified: bool
+
+class EmailSchema(BaseModel):
+    email: EmailStr

@@ -1,7 +1,7 @@
 from asyncio.log import logger
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, ConfigDict, Field
-from kr8.embedder import Embedder
+from src.kr8.embedder import Embedder
 from datetime import datetime
 
 class Usage(BaseModel):

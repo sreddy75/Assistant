@@ -1,8 +1,8 @@
 from typing import Optional, Dict, List, Tuple, Any
 from typing_extensions import Literal
 
-from kr8.embedder.base import Embedder
-from kr8.utils.log import logger
+from src.kr8.embedder.base import Embedder
+from src.kr8.utils.log import logger
 
 try:
     from openai import OpenAI as OpenAIClient

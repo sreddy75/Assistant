@@ -1,6 +1,6 @@
 import datetime
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, func
+from sqlalchemy import Column, Float, Integer, String, Boolean, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 

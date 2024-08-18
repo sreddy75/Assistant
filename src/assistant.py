@@ -26,7 +26,8 @@ from kr8.utils.log import logger
 from kr8.vectordb.pgvector import PgVector2
 
 from kr8.tools.yfinance import YFinanceTools
-from backend.backend import get_db, load_org_config
+from backend.db.session import get_db 
+from backend.utils.org_utils import load_org_config
 from team.data_analyst import EnhancedDataAnalyst
 from team.financial_analyst import EnhancedFinancialAnalyst
 from team.quality_analyst import EnhancedQualityAnalyst
@@ -37,7 +38,7 @@ from team.company_analyst import EnhancedCompanyAnalyst
 from team.code_assistant import CodeAssistant
 from team.product_owner import EnhancedProductOwner
 from team.business_analyst import EnhancedBusinessAnalyst
-from config.client_config import get_client_name
+from src.backend.core.client_config import get_client_name
 
 load_dotenv()
 client_name = get_client_name()         
@@ -50,7 +51,7 @@ if not scratch_dir.exists():
     scratch_dir.mkdir(exist_ok=True, parents=True)
 
 def load_assistant_instructions(client_name: str, user_nickname: str) -> dict:
-    instructions_path = Path(f"src/config/themes/{client_name}/assistant_instructions.json")
+    instructions_path = Path(f"src/backend/config/themes/{client_name}/assistant_instructions.json")
     if not instructions_path.exists():
         raise FileNotFoundError(f"Instructions file not found at {instructions_path}")
     
@@ -147,12 +148,13 @@ def get_llm_os(
     run_id: Optional[str] = None,
     debug_mode: bool = True,
     web_search: bool = True,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    org_config: Optional[dict] = None
+
 
 ) -> Union[Assistant, 'ContextAwareAssistant']: # type: ignore
     
-    logger.info(f"-*- Creating {llm_id} LLM OS -*-")
-    org_config = load_org_config(db, org_id)
+    logger.info(f"-*- Creating {llm_id} LLM OS -*-")    
     # Use org_config to determine available assistants and feature flags
     available_assistants = org_config['assistants'].get(user_role, [])
     feature_flags = org_config['feature_flags']

@@ -1,6 +1,6 @@
 from typing import Optional, Dict, List, Tuple, Any
-from kr8.embedder.base import Embedder
-from kr8.utils.log import logger
+from src.kr8.embedder.base import Embedder
+from src.kr8.utils.log import logger
 from functools import lru_cache
 from pydantic import BaseModel, Field
 import numpy as np

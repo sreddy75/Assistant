@@ -5,10 +5,12 @@ import streamlit as st
 from kr8.tools.pandas import PandasTools
 from kr8.tools.code_tools import CodeTools
 from ui.utils.helper import restart_assistant
+from ui.components.knowledge_base_manager import manage_knowledge_base
 from utils.npm_utils import run_npm_command
-from config.client_config import ENABLED_ASSISTANTS
+from backend.core.client_config import ENABLED_ASSISTANTS
 import matplotlib.pyplot as plt
-from backend.backend import get_db, load_org_config
+from backend.db.session import get_db
+from backend.utils.org_utils import load_org_config
 
 def initialize_session_state(user_role):
     # Fetch the organization ID from the session state
@@ -20,7 +22,7 @@ def initialize_session_state(user_role):
     # Load the organization-specific config
     db = next(get_db())
     try:
-        org_config = load_org_config(db, org_id)
+        org_config = load_org_config(org_id)
     except Exception as e:
         st.error(f"Failed to load organization config: {str(e)}")
         return
@@ -49,6 +51,9 @@ def render_sidebar():
         st.sidebar.error("User role not found. Please log in again.")
         return
 
+    st.sidebar.header("Knowledge Base")
+    manage_knowledge_base(st.session_state.get("llm_os"))
+    
     initialize_session_state(user_role)
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
     

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from kr8.document import Document
+from src.kr8.document import Document
 
 
 class VectorDb(ABC):

@@ -3,7 +3,7 @@ from hashlib import md5
 from datetime import datetime
 from sqlalchemy import Integer, delete, update
 from ...document.base import Usage
-from kr8.embedder.openai import OpenAIEmbedder
+from src.kr8.embedder.openai import OpenAIEmbedder
 
 try:
     from sqlalchemy.dialects import postgresql
@@ -21,12 +21,12 @@ try:
 except ImportError:
     raise ImportError("`pgvector` not installed")
 
-from kr8.document import Document
-from kr8.embedder import Embedder
-from kr8.vectordb.base import VectorDb
-from kr8.vectordb.distance import Distance
-from kr8.vectordb.pgvector.index import Ivfflat, HNSW
-from kr8.utils.log import logger
+from src.kr8.document import Document
+from src.kr8.embedder import Embedder
+from src.kr8.vectordb.base import VectorDb
+from src.kr8.vectordb.distance import Distance
+from src.kr8.vectordb.pgvector.index import Ivfflat, HNSW
+from src.kr8.utils.log import logger
 
 
 class PgVector2(VectorDb):
@@ -155,6 +155,25 @@ class PgVector2(VectorDb):
                     )
         return None
 
+    def get_all_documents(self) -> List[Document]:
+        with self.Session() as sess:
+            with sess.begin():
+                stmt = select(self.table)
+                if self.user_id:
+                    stmt = stmt.where(self.table.c.user_id == self.user_id)
+                results = sess.execute(stmt).fetchall()
+                return [
+                    Document(
+                        id=result.id,
+                        name=result.name,
+                        meta_data=result.meta_data,
+                        content=result.content,
+                        embedder=self.embedder,
+                        embedding=result.embedding,
+                        usage=Usage.from_dict(result.usage),
+                    ) for result in results
+                ]
+                
     def name_exists(self, name: str) -> bool:
         """
         Validate if a row with this name exists or not
@@ -356,26 +375,61 @@ class PgVector2(VectorDb):
 
         return search_results
 
-    def delete_document_by_name(self, name: str) -> bool:
+    def update_document_content(self, id: str, new_content: str) -> Optional[Document]:
+        document = self.get_document_by_id(id)
+        if document:
+            document.content = new_content
+            document.embed(embedder=self.embedder)
+            self.update_document(document)
+            return document
+        return None
+
+    def delete_document(self, identifier: str) -> bool:
         with self.Session() as sess:
             with sess.begin():
-                stmt = delete(self.table).where(self.table.c.name == name)
+                stmt = delete(self.table).where(
+                    (self.table.c.name == identifier) | (self.table.c.id == identifier)
+                )
                 if self.user_id:
                     stmt = stmt.where(self.table.c.user_id == self.user_id)
                 result = sess.execute(stmt)
                 return result.rowcount > 0
-            
-    def update_document_usage(self, documents: List[Document]):
+    
+    def update_document(self, document: Document) -> None:
         with self.Session() as sess:
-            for doc in documents:
-                stmt = (
-                    update(self.table)
-                    .where(self.table.c.name == doc.name)
-                    .values(usage=doc.usage)
+            stmt = (
+                update(self.table)
+                .where(self.table.c.id == document.id)
+                .values(
+                    name=document.name,
+                    meta_data=document.meta_data,
+                    content=document.content,
+                    embedding=document.embedding,
+                    usage=document.usage,
                 )
-                sess.execute(stmt)
+            )
+            sess.execute(stmt)
             sess.commit()
-
+    
+    def get_document_by_id(self, id: str) -> Optional[Document]:
+        with self.Session() as sess:
+            with sess.begin():
+                stmt = select(self.table).where(self.table.c.id == id)
+                if self.user_id:
+                    stmt = stmt.where(self.table.c.user_id == self.user_id)
+                result = sess.execute(stmt).first()
+                if result:
+                    return Document(
+                        id=result.id,
+                        name=result.name,
+                        meta_data=result.meta_data,
+                        content=result.content,
+                        embedder=self.embedder,
+                        embedding=result.embedding,
+                        usage=Usage.from_dict(result.usage),
+                    )
+        return None
+                        
     def update_document_usage(self, documents: List[Document]):
         with self.Session() as sess:
             for doc in documents:

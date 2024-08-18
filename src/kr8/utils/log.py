@@ -1,6 +1,6 @@
 import logging
 
-from kr8.cli.settings import phi_cli_settings
+from src.kr8.cli.settings import phi_cli_settings
 from rich.logging import RichHandler
 
 LOGGER_NAME = "phi"

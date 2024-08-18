@@ -17,12 +17,12 @@ try:
 except ImportError:
     raise ImportError("`pgvector` not installed")
 
-from kr8.document import Document
-from kr8.embedder import Embedder
-from kr8.vectordb.base import VectorDb
-from kr8.vectordb.distance import Distance
-from kr8.vectordb.pgvector.index import Ivfflat, HNSW
-from kr8.utils.log import logger
+from src.kr8.document import Document
+from src.kr8.embedder import Embedder
+from src.kr8.vectordb.base import VectorDb
+from src.kr8.vectordb.distance import Distance
+from src.kr8.vectordb.pgvector.index import Ivfflat, HNSW
+from src.kr8.utils.log import logger
 
 
 class PgVector(VectorDb):
