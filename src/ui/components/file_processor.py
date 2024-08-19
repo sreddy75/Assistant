@@ -1,5 +1,7 @@
 import base64
 import io
+
+import sqlalchemy
 from kr8.document.reader.pdf import PDFReader
 from kr8.document import Document
 from docx import Document as DocxDocument
@@ -19,8 +21,18 @@ def process_pdf(file, llm_os):
     
     try:
         llm_os.knowledge_base.load_documents(auto_rag_documents)
-        logger.info(f"Successfully added PDF content to knowledge base.")
-        return True
+        logger.info("Successfully added PDF content to knowledge base.")
+        return True, "Successfully added PDF content to knowledge base."
+    
+    except sqlalchemy.exc.ProgrammingError as e:
+        if "relation" in str(e) and "does not exist" in str(e):
+            # Table doesn't exist, try to create it
+            llm_os.knowledge_base.vector_db.create()
+            # Retry loading documents
+            llm_os.knowledge_base.load_documents(auto_rag_documents)
+            return True, "Created table and added PDF content to knowledge base."
+        else:
+            raise
     except Exception as e:
         logger.error(f"Error adding PDF content to knowledge base: {str(e)}")
         return False

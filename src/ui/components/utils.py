@@ -11,6 +11,8 @@ from io import BytesIO
 import plotly.graph_objects as go
 import requests
 
+from src.kr8.vectordb.pgvector.pgvector2 import PgVector2
+
 BACKEND_URL = "http://localhost:8000"  # Update with your backend URL
 
 def logout():
@@ -101,18 +103,23 @@ def render_markdown(content):
             st.code(code, language=language if language else None)
     st.markdown('</div>', unsafe_allow_html=True)
 
-def get_user_documents(user_id):
+def get_user_documents(user_id, org_id=None):
     try:
         llm_os = st.session_state.get("llm_os")
-        if not llm_os or not hasattr(llm_os, 'knowledge_base') or not llm_os.knowledge_base or not hasattr(llm_os.knowledge_base, 'vector_db'):
+        if not llm_os or not hasattr(llm_os, 'knowledge_base') or not llm_os.knowledge_base:
             logger.warning("LLM OS or knowledge base not properly initialized")
             return []
         
-        if not hasattr(llm_os.knowledge_base.vector_db, 'list_document_names'):
-            logger.warning("Vector database does not have a list_document_names method")
-            return []
+        # Initialize PgVector2 with the correct parameters
+        vector_db = PgVector2(
+            collection="documents",
+            schema="ai",
+            db_url=llm_os.knowledge_base.vector_db.db_url,
+            user_id=user_id,
+            org_id=org_id
+        )
         
-        document_names = llm_os.knowledge_base.vector_db.list_document_names()
+        document_names = vector_db.list_document_names()
         
         # Group document chunks
         grouped_documents = defaultdict(int)
@@ -127,7 +134,7 @@ def get_user_documents(user_id):
     except Exception as e:
         logger.error(f"Error retrieving user documents: {str(e)}", exc_info=True)
         return []
-
+    
 def determine_analyst(file, file_content):
     # Read a sample of the file to determine its content
     if file.name.endswith('.csv'):

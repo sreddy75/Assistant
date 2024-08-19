@@ -8,6 +8,11 @@ from ui.components.utils import get_user_documents, determine_analyst
 import base64
 
 def manage_knowledge_base(llm_os):
+    
+    # Ensure the table exists
+    if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
+        llm_os.knowledge_base.vector_db.create()
+        
     if "loaded_dataframes" not in st.session_state:
         st.session_state["loaded_dataframes"] = {}
         
@@ -26,7 +31,7 @@ def manage_knowledge_base(llm_os):
                     scraper = WebsiteReader(max_links=2, max_depth=1)
                     web_documents = scraper.read(input_url)
                     if web_documents:
-                        llm_os.knowledge_base.load_documents(web_documents, upsert=True)
+                        llm_os.knowledge_base.load_documents(web_documents)
                         st.session_state[f"{input_url}_scraped"] = True
                         st.session_state["processed_files"].append(input_url)
                         st.session_state["user_documents"] = get_user_documents(llm_os.user_id)                        
@@ -37,3 +42,68 @@ def manage_knowledge_base(llm_os):
 
     if "file_uploader_key" not in st.session_state:
         st.session_state["file_uploader_key"] = 100
+        
+    uploaded_files = st.sidebar.file_uploader(
+        "Upload Documents", type=["pdf", "json", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
+    )
+
+    if uploaded_files:
+        financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Financial Analyst"), None)
+        data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Data Analyst"), None)
+        
+        for file in uploaded_files:
+            with st.spinner(f"Processing {file.name}..."):
+                try:                    
+                    if file.name.endswith('.pdf'):
+                        success, message = process_pdf(file, llm_os)
+                        if success:
+                            st.success(message)
+                            st.session_state["processed_files"].append(file.name)
+                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
+                        else:
+                            st.error(message)
+                    elif file.name.endswith(('.csv', '.xlsx', '.xls')):
+                        file_content = base64.b64encode(file.read()).decode('utf-8')
+                        analyst_type = determine_analyst(file, file_content)
+                        
+                        if analyst_type == 'financial' and financial_analyst:
+                            result = process_file_for_analyst(llm_os, file, file_content, financial_analyst)                            
+                        elif data_analyst:
+                            result = process_file_for_analyst(llm_os, file, file_content, data_analyst)
+                        else:
+                            result = "Error: No data analyst available to process this file"
+
+                        if result.startswith("Error:"):
+                            st.error(result)
+                        else:
+                            st.success(f"Loaded {file.name}: {result}")
+                            st.session_state["loaded_dataframes"][result] = {
+                                "file_name": file.name,
+                                "analyst_type": analyst_type
+                            }
+                            st.session_state["processed_files"].append(file.name)
+                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
+                except Exception as e:
+                    st.error(f"Error processing {file.name}: {str(e)}")
+                    logger.error(f"Error processing {file.name}: {str(e)}")
+                                        
+        # Increment the file uploader key to force a refresh
+        st.session_state["file_uploader_key"] += 1
+
+    if st.session_state["processed_files"]:
+        st.sidebar.markdown("### You are chatting with these files:")
+        for file in st.session_state["processed_files"]:
+            st.sidebar.write(file)
+
+    if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
+        if st.sidebar.button("Clear Knowledge Base"):
+            llm_os.knowledge_base.vector_db.clear()
+            st.session_state["processed_files"] = []
+            st.sidebar.success("Knowledge base cleared")
+            logger.info("Knowledge base cleared")
+    
+    if llm_os.team and len(llm_os.team) > 0:
+        for team_member in llm_os.team:
+            if len(team_member.memory.chat_history) > 0:
+                with st.expander(f"{team_member.name} Memory", expanded=False):
+                    st.container().json(team_member.memory.get_llm_messages())    

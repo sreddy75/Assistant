@@ -7,15 +7,41 @@ from ui.components.assistant_initializer import initialize_assistant
 from src.backend.core.client_config import is_feedback_sentiment_analysis_enabled
 from kr8.utils.log import logger
 from PIL import Image
+from dotenv import load_dotenv
+from transformers import GPT2Tokenizer
 import time
 from src.backend.core.client_config import get_client_name
 
+# Load environment variables
+load_dotenv()
+
 client_name = get_client_name()    
+
+# Initialize the tokenizer
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+
+MAX_TOKENS = 4096  # Adjust based on the model 
+BUFFER_TOKENS = 1000  # some room for the response
 
 # Load the custom icons
 meerkat_icon = Image.open(f"src/backend/config/themes/{client_name}/chat_system_icon.png")
 user_icon = Image.open(f"src/backend/config/themes/{client_name}/chat_user_icon.png")
 llm_os = None
+
+
+def count_tokens(text):
+    return len(tokenizer.encode(text))
+
+def truncate_conversation(messages, max_tokens):
+    total_tokens = 0
+    truncated_messages = []
+    for message in reversed(messages):
+        message_tokens = count_tokens(message['content'])
+        if total_tokens + message_tokens > max_tokens:
+            break
+        total_tokens += message_tokens
+        truncated_messages.insert(0, message)
+    return truncated_messages
 
 def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     

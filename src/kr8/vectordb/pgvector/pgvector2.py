@@ -40,12 +40,15 @@ class PgVector2(VectorDb):
         distance: Distance = Distance.cosine,
         index: Optional[Union[Ivfflat, HNSW]] = HNSW(),
         user_id: Optional[int] = None,
+        org_id: Optional[int] = None,
         project_namespace: Optional[str] = None  # Add this line
     ):
         self.project_namespace = project_namespace
         self.user_id = user_id
+        self.org_id = org_id
+        
         # Collection attributes
-        self.collection = f"user_{user_id}_{collection}" if user_id else collection
+        self.collection = self.get_collection_name(collection)
         
         _engine: Optional[Engine] = db_engine
         if _engine is None and db_url is not None:
@@ -81,9 +84,16 @@ class PgVector2(VectorDb):
         # Database table for the collection
         self.table: Table = self.get_table()
     
-    def get_collection_name(self):
-        base_name = f"user_{self.user_id}_{self.collection}" if self.user_id else self.collection
-        return f"{base_name}_{self.project_namespace}" if self.project_namespace else base_name
+    def get_collection_name(self, base_collection: str) -> str:
+        parts = []
+        if self.org_id:
+            parts.append(f"org_{self.org_id}")
+        if self.user_id:
+            parts.append(f"user_{self.user_id}")
+        parts.append(base_collection)
+        if self.project_namespace:
+            parts.append(self.project_namespace)
+        return "_".join(parts)
     
     def get_table(self) -> Table:
         return Table(
@@ -99,6 +109,7 @@ class PgVector2(VectorDb):
             Column("updated_at", DateTime(timezone=True), onupdate=text("now()")),
             Column("content_hash", String),
             Column("user_id", Integer),
+            Column("org_id", Integer),
             extend_existing=True,
         )
 
@@ -114,13 +125,18 @@ class PgVector2(VectorDb):
         if not self.table_exists():
             with self.Session() as sess:
                 with sess.begin():
-                    logger.debug("Creating extension: vector")
-                    sess.execute(text("create extension if not exists vector;"))
-                    if self.schema is not None:
-                        logger.debug(f"Creating schema: {self.schema}")
-                        sess.execute(text(f"create schema if not exists {self.schema};"))
-            logger.debug(f"Creating table: {self.collection}")
-            self.table.create(self.db_engine)
+                    try:
+                        logger.debug("Creating extension: vector")
+                        sess.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                        if self.schema is not None:
+                            logger.debug(f"Creating schema: {self.schema}")
+                            sess.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema};"))
+                        logger.debug(f"Creating table: {self.collection}")
+                        self.table.create(self.db_engine)
+                        logger.info(f"Successfully created table: {self.collection}")
+                    except Exception as e:
+                        logger.error(f"Error creating table: {e}")
+                        raise
 
     def doc_exists(self, document: Document) -> bool:
         """
@@ -536,6 +552,8 @@ class PgVector2(VectorDb):
                 stmt = select(self.table.c.name)
                 if self.user_id:
                     stmt = stmt.where(self.table.c.user_id == self.user_id)
+                if self.org_id:
+                    stmt = stmt.where(self.table.c.org_id == self.org_id)
                 results = sess.execute(stmt).fetchall()
                 return [result[0] for result in results]
                         

@@ -49,10 +49,7 @@ def render_sidebar():
     user_role = st.session_state.get('role')
     if not user_role:
         st.sidebar.error("User role not found. Please log in again.")
-        return
-
-    st.sidebar.header("Knowledge Base")
-    manage_knowledge_base(st.session_state.get("llm_os"))
+        return    
     
     initialize_session_state(user_role)
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
