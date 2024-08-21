@@ -1,11 +1,15 @@
+import codecs
+import html
+import json
+import os
 import traceback
+import requests
 import streamlit as st
 from typing import Optional
 from ui.components.feedback_handler import submit_feedback, submit_simple_vote
-from ui.components.utils import sanitize_content, render_markdown
-from ui.components.assistant_initializer import initialize_assistant
+from ui.components.utils import BACKEND_URL, sanitize_content, render_markdown
 from src.backend.core.client_config import is_feedback_sentiment_analysis_enabled
-from kr8.utils.log import logger
+from src.backend.kr8.utils.log import logger
 from PIL import Image
 from dotenv import load_dotenv
 from transformers import GPT2Tokenizer
@@ -14,6 +18,7 @@ from src.backend.core.client_config import get_client_name
 
 # Load environment variables
 load_dotenv()
+BACKEND_URL=os.getenv("BACKEND_URL")
 
 client_name = get_client_name()    
 
@@ -44,7 +49,7 @@ def truncate_conversation(messages, max_tokens):
     return truncated_messages
 
 def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
-    
+    llm_os = None    
     logger.info("Rendering chat interface...")
 
     st.markdown("""
@@ -84,33 +89,65 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         st.session_state.llm_id = "gpt-4o"
 
     llm_id = st.session_state.llm_id
-    llm_os = initialize_assistant(llm_id, user_id)
+    
+    # Fetch the assistant from the backend
+    if "assistant_id" not in st.session_state:
+        response = requests.get(
+            f"{BACKEND_URL}/api/v1/assistant/get-assistant",
+            params={
+                "user_id": st.session_state.get("user_id"),
+                "org_id": st.session_state.get("org_id"),
+                "user_role": st.session_state.get("role"),
+                "user_nickname": st.session_state.get("nickname", "friend")
+            },
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if response.status_code == 200:
+            st.session_state["assistant_id"] = response.json()["assistant_id"]
+        else:
+            st.error("Failed to initialize assistant")
+            return
 
-    if llm_os is None:
-        logger.error("Failed to initialize LLM OS")
-        st.warning("The assistant is currently unavailable. Please try again later.")
-        return
-        
-    try:
-        st.session_state["llm_os_run_id"] = llm_os.create_run()
-    except Exception as e:
-        logger.error(f"Could not create LLM OS run: {str(e)}")
-        st.warning("Could not create LLM OS run, is the database running?")
-        return
-        
-    try:
-        st.session_state["llm_os_run_id"] = llm_os.create_run()
-    except Exception:
-        st.warning("Could not create LLM OS run, is the database running?")
-        return
-
-    assistant_chat_history = llm_os.memory.get_chat_history()
-    if len(assistant_chat_history) > 0:
-        logger.debug("Loading chat history")
-        st.session_state["messages"] = assistant_chat_history
+    # Fetch assistant info
+    assistant_info_response = requests.get(
+        f"{BACKEND_URL}/api/v1/assistant/assistant-info/{st.session_state['assistant_id']}",
+        headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+    )
+    if assistant_info_response.status_code == 200:
+        assistant_info = assistant_info_response.json()
+        has_knowledge_base = assistant_info.get("has_knowledge_base", False)
     else:
-        logger.debug("No chat history found")
-        st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
+        st.error("Failed to fetch assistant info")
+        return    
+
+    # Fetch chat history
+    if "messages" not in st.session_state:
+        chat_history_response = requests.get(
+            f"{BACKEND_URL}/api/v1/chat/chat_history",
+            params={"assistant_id": st.session_state["assistant_id"]},
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if chat_history_response.status_code == 200:
+            st.session_state["messages"] = chat_history_response.json()["history"]
+        else:
+            st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
+        
+    # Create LLM OS run
+    if "llm_os_run_id" not in st.session_state:
+        try:
+            response = requests.post(
+                f"{BACKEND_URL}/api/v1/assistant/create-run",
+                params={"assistant_id": st.session_state["assistant_id"]},
+                headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+            )
+            if response.status_code == 200:
+                st.session_state["llm_os_run_id"] = response.json()["run_id"]
+            else:
+                raise Exception(response.text)
+        except Exception as e:
+            logger.error(f"Could not create LLM OS run: {str(e)}")
+            st.warning("Could not create LLM OS run, is the database running?")
+            return
 
     chat_container = st.container()
 
@@ -170,19 +207,71 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     else:
                         current_messages = st.session_state["messages"]
                     
-                    full_response = ""
-                    for chunk in llm_os.run(context_prompt, messages=current_messages, stream=True):
-                        if isinstance(chunk, tuple):
-                            chunk = chunk[0] if chunk else ""
-                        elif not isinstance(chunk, str):
-                            chunk = str(chunk)
-                        full_response += chunk
-                        with response_area:
-                            pulsating_dot.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
-                            response_placeholder.markdown(sanitize_content(full_response) + "▌")
-                        time.sleep(0.01)
+                    # Make API call to get assistant response
+                    response = requests.post(
+                        f"{BACKEND_URL}/api/v1/chat/",
+                        params={
+                            "message": context_prompt,
+                            "assistant_id": st.session_state["assistant_id"]
+                        },
+                        headers={"Authorization": f"Bearer {st.session_state.get('token')}"},
+                        stream=True
+                    )
 
-                    sanitized_response = sanitize_content(full_response)
+                    full_response = ""
+                    buffer = b""
+                    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+
+                    for chunk in response.iter_content(chunk_size=1):
+                        if chunk:
+                            buffer += chunk
+                            try:
+                                decoded_data = decoder.decode(buffer)
+                                if '\n' in decoded_data:
+                                    lines = decoded_data.split('\n')
+                                    for line in lines[:-1]:
+                                        try:
+                                            json_object = json.loads(line)
+                                            new_content = json_object.get('response', '')
+                                            if new_content:
+                                                full_response += new_content
+                                                with response_area:
+                                                    pulsating_dot.empty()
+                                                    formatted_response = html.escape(full_response).replace('\n', '<br>').replace('**', '<strong>').replace('__', '<em>')
+                                                    response_placeholder.markdown(f'<div style="white-space: pre-wrap;">{formatted_response}</div>', unsafe_allow_html=True)
+                                        except json.JSONDecodeError:
+                                            # If it's not a valid JSON, just append it to the response
+                                            full_response += line
+                                            with response_area:
+                                                pulsating_dot.empty()
+                                                formatted_response = html.escape(full_response).replace('\n', '<br>').replace('**', '<strong>').replace('__', '<em>')
+                                                response_placeholder.markdown(f'<div style="white-space: pre-wrap;">{formatted_response}</div>', unsafe_allow_html=True)
+                                    buffer = lines[-1].encode('utf-8')
+                                else:
+                                    buffer = decoded_data.encode('utf-8')
+                            except UnicodeDecodeError:
+                                # If we can't decode, just continue to the next chunk
+                                continue
+
+                    # Final update to ensure we display any remaining content
+                    if buffer:
+                        try:
+                            decoded_data = decoder.decode(buffer, final=True)
+                            json_object = json.loads(decoded_data)
+                            new_content = json_object.get('response', '')
+                            if new_content:
+                                full_response += new_content
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            # If we can't decode or parse JSON, just append the raw decoded data
+                            full_response += decoded_data
+
+                    with response_area:
+                        pulsating_dot.empty()
+                        formatted_response = html.escape(full_response).replace('\n', '<br>').replace('**', '<strong>').replace('__', '<em>')
+                        response_placeholder.markdown(f'<div style="white-space: pre-wrap;">{formatted_response}</div>', unsafe_allow_html=True)
+
+                    sanitized_response = full_response  
+                    st.session_state["messages"].append({"role": "assistant", "content": sanitized_response})
                     
                     with st.expander("Please Provide feedback to improve future answers", expanded=False):
                         if is_feedback_sentiment_analysis_enabled():
@@ -210,6 +299,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
 
         response_time = time.time() - start_time
         
-    if llm_os.knowledge_base:
+    if has_knowledge_base:
         from src.ui.components.knowledge_base_manager import manage_knowledge_base
-        manage_knowledge_base(llm_os)
+        manage_knowledge_base(st.session_state["assistant_id"])

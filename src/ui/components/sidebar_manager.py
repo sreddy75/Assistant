@@ -2,11 +2,10 @@
 
 import json
 import streamlit as st
-from kr8.tools.pandas import PandasTools
-from kr8.tools.code_tools import CodeTools
+from src.backend.kr8.tools.pandas import PandasTools
+from src.backend.kr8.tools.code_tools import CodeTools
 from ui.utils.helper import restart_assistant
 from ui.components.knowledge_base_manager import manage_knowledge_base
-from utils.npm_utils import run_npm_command
 from backend.core.client_config import ENABLED_ASSISTANTS
 import matplotlib.pyplot as plt
 from backend.db.session import get_db

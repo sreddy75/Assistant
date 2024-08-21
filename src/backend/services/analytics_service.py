@@ -19,7 +19,7 @@ from collections import Counter
 import random
 
 from config.client_config import is_feedback_sentiment_analysis_enabled
-from kr8.vectordb.pgvector.pgvector2 import PgVector2
+from src.backend.kr8.vectordb.pgvector.pgvector2 import PgVector2
 from backend.models.models import Vote
 
 # Download necessary NLTK data

@@ -5,12 +5,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import traceback
 import requests
-
-# Assume the FastAPI server is running on localhost:8000
-API_BASE_URL = "http://localhost:8000"
+from ui.components.utils import BACKEND_URL, is_authenticated
 
 def fetch_data(endpoint):
-    response = requests.get(f"{API_BASE_URL}{endpoint}")
+    response = requests.get(f"{BACKEND_URL}{endpoint}")
     if response.status_code == 200:
         return response.json()
     else:

@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from src.backend.models.models import User
+from src.backend.models.models import User, TokenData
 from src.backend.core.config import settings
 from src.backend.db.session import get_db
 

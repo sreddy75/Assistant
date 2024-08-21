@@ -1,5 +1,5 @@
 import streamlit as st
-from kr8.utils.log import logger
+from src.backend.kr8.utils.log import logger
 
 def restart_assistant():
     logger.debug("---*--- Restarting Assistant ---*---")

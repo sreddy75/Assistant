@@ -24,6 +24,8 @@ class OrganizationConfig(Base):
     
     organization = relationship("Organization", back_populates="config")
 
+class TokenData(BaseModel):
+    email: str | None = None
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)

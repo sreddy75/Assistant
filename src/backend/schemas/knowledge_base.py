@@ -11,10 +11,15 @@ class DocumentCreate(DocumentBase):
     pass
 
 class DocumentResponse(DocumentBase):
-    id: int
+    id: str
+    name: str
+    content: str
+    meta_data: Dict[str, Any]
     user_id: int
-    created_at: datetime
-    updated_at: datetime
+    org_id: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    chunks: int = 1
 
     class Config:
         orm_mode = True

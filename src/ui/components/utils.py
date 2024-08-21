@@ -1,8 +1,9 @@
+import os
 import re
 import json
 import streamlit as st
 from collections import defaultdict
-from kr8.utils.log import logger
+from src.backend.kr8.utils.log import logger
 import pandas as pd
 import io
 import base64
@@ -10,10 +11,11 @@ from PIL import Image
 from io import BytesIO
 import plotly.graph_objects as go
 import requests
+from dotenv import load_dotenv
+from src.backend.kr8.vectordb.pgvector.pgvector2 import PgVector2
 
-from src.kr8.vectordb.pgvector.pgvector2 import PgVector2
-
-BACKEND_URL = "http://localhost:8000"  # Update with your backend URL
+load_dotenv()
+BACKEND_URL=os.getenv("BACKEND_URL")
 
 def logout():
     if 'token' in st.session_state:
@@ -102,38 +104,6 @@ def render_markdown(content):
             language, code = part.split('$', 1)
             st.code(code, language=language if language else None)
     st.markdown('</div>', unsafe_allow_html=True)
-
-def get_user_documents(user_id, org_id=None):
-    try:
-        llm_os = st.session_state.get("llm_os")
-        if not llm_os or not hasattr(llm_os, 'knowledge_base') or not llm_os.knowledge_base:
-            logger.warning("LLM OS or knowledge base not properly initialized")
-            return []
-        
-        # Initialize PgVector2 with the correct parameters
-        vector_db = PgVector2(
-            collection="documents",
-            schema="ai",
-            db_url=llm_os.knowledge_base.vector_db.db_url,
-            user_id=user_id,
-            org_id=org_id
-        )
-        
-        document_names = vector_db.list_document_names()
-        
-        # Group document chunks
-        grouped_documents = defaultdict(int)
-        for name in document_names:
-            base_name = name.split('_chunk_')[0] if '_chunk_' in name else name
-            grouped_documents[base_name] += 1
-        
-        # Create a list of unique document names with chunk counts
-        unique_documents = [f"{name} ({count} chunks)" if count > 1 else name for name, count in grouped_documents.items()]
-        
-        return unique_documents
-    except Exception as e:
-        logger.error(f"Error retrieving user documents: {str(e)}", exc_info=True)
-        return []
     
 def determine_analyst(file, file_content):
     # Read a sample of the file to determine its content

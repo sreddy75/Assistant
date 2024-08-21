@@ -1,18 +1,10 @@
 import streamlit as st
-from kr8.document.reader.website import WebsiteReader
-from kr8.utils.log import logger
-import plotly.express as px
-import plotly.graph_objects as go
-from ui.components.file_processor import process_pdf, process_docx, process_txt, process_file_for_analyst
-from ui.components.utils import get_user_documents, determine_analyst
+import requests
 import base64
+from src.backend.kr8.utils.log import logger
+from ui.components.utils import BACKEND_URL, determine_analyst
 
-def manage_knowledge_base(llm_os):
-    
-    # Ensure the table exists
-    if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
-        llm_os.knowledge_base.vector_db.create()
-        
+def manage_knowledge_base(assistant_id):
     if "loaded_dataframes" not in st.session_state:
         st.session_state["loaded_dataframes"] = {}
         
@@ -21,68 +13,73 @@ def manage_knowledge_base(llm_os):
 
     if "url_scrape_key" not in st.session_state:
         st.session_state["url_scrape_key"] = 0
+    
+    # Fetch documents from the knowledge base
+    documents_response = requests.get(
+        f"{BACKEND_URL}/api/v1/knowledge-base/documents",
+        headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+    )
+    if documents_response.status_code == 200:
+        documents = documents_response.json()
+    
 
     input_url = st.sidebar.text_input("Add URL to Knowledge Base", type="default", key=st.session_state["url_scrape_key"])
     add_url_button = st.sidebar.button("Add URL")
     if add_url_button:
-        if input_url is not None:
-            with st.spinner("Processing URLs..."):
-                if f"{input_url}_scraped" not in st.session_state:
-                    scraper = WebsiteReader(max_links=2, max_depth=1)
-                    web_documents = scraper.read(input_url)
-                    if web_documents:
-                        llm_os.knowledge_base.load_documents(web_documents)
-                        st.session_state[f"{input_url}_scraped"] = True
-                        st.session_state["processed_files"].append(input_url)
-                        st.session_state["user_documents"] = get_user_documents(llm_os.user_id)                        
-                        logger.info(f"Successfully processed and added URL: {input_url}")
-                    else:
-                        st.sidebar.error("Could not read website")
-                        logger.error(f"Could not read website: {input_url}")
+        if input_url:
+            with st.spinner("Processing URL..."):
+                response = requests.post(
+                    f"{BACKEND_URL}/api/v1/knowledge-base/add-url",
+                    json={"url": input_url, "assistant_id": assistant_id},
+                    headers={"Authorization": f"Bearer {st.session_state.token}"}
+                )
+                if response.status_code == 200:
+                    st.success(f"Successfully processed and added URL: {input_url}")
+                    st.session_state["processed_files"].append(input_url)
+                    st.session_state["user_documents"] = documents
+                else:
+                    st.error(f"Failed to process URL: {response.text}")
 
     if "file_uploader_key" not in st.session_state:
         st.session_state["file_uploader_key"] = 100
         
     uploaded_files = st.sidebar.file_uploader(
-        "Upload Documents", type=["pdf", "json", "csv", "xlsx", "xls", "zip"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
+        "Upload Documents", type=["pdf", "docx", "txt", "csv", "xlsx", "xls"], key=st.session_state["file_uploader_key"], accept_multiple_files=True
     )
 
     if uploaded_files:
-        financial_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Financial Analyst"), None)
-        data_analyst = next((assistant for assistant in llm_os.team if assistant.name == "Enhanced Data Analyst"), None)
-        
         for file in uploaded_files:
             with st.spinner(f"Processing {file.name}..."):
-                try:                    
+                try:
+                    files = {"file": (file.name, file.getvalue(), file.type)}
+                    data = {"assistant_id": assistant_id}
                     if file.name.endswith('.pdf'):
-                        success, message = process_pdf(file, llm_os)
-                        if success:
-                            st.success(message)
-                            st.session_state["processed_files"].append(file.name)
-                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
-                        else:
-                            st.error(message)
+                        response = requests.post(f"{BACKEND_URL}/api/v1/knowledge-base/upload-pdf", files=files, data=data, headers={"Authorization": f"Bearer {st.session_state.token}"})
+                    elif file.name.endswith('.docx') or file.name.endswith('.txt'):
+                        response = requests.post(f"{BACKEND_URL}/api/v1/knowledge-base/upload-file", files=files, data=data, headers={"Authorization": f"Bearer {st.session_state.token}"})
                     elif file.name.endswith(('.csv', '.xlsx', '.xls')):
-                        file_content = base64.b64encode(file.read()).decode('utf-8')
+                        file_content = file.read()
                         analyst_type = determine_analyst(file, file_content)
-                        
-                        if analyst_type == 'financial' and financial_analyst:
-                            result = process_file_for_analyst(llm_os, file, file_content, financial_analyst)                            
-                        elif data_analyst:
-                            result = process_file_for_analyst(llm_os, file, file_content, data_analyst)
+                        data["analyst_type"] = analyst_type
+                        if file.name.endswith('.csv'):
+                            response = requests.post(f"{BACKEND_URL}/api/v1/knowledge-base/upload-csv", files=files, data=data, headers={"Authorization": f"Bearer {st.session_state.token}"})
                         else:
-                            result = "Error: No data analyst available to process this file"
+                            response = requests.post(f"{BACKEND_URL}/api/v1/knowledge-base/upload-excel", files=files, data=data, headers={"Authorization": f"Bearer {st.session_state.token}"})
+                    else:
+                        st.error(f"Unsupported file type: {file.name}")
+                        continue
 
-                        if result.startswith("Error:"):
-                            st.error(result)
-                        else:
-                            st.success(f"Loaded {file.name}: {result}")
-                            st.session_state["loaded_dataframes"][result] = {
+                    if response.status_code == 200:
+                        st.success(f"Successfully processed {file.name}")
+                        st.session_state["processed_files"].append(file.name)
+                        if file.name.endswith(('.csv', '.xlsx', '.xls')):
+                            st.session_state["loaded_dataframes"][response.json()] = {
                                 "file_name": file.name,
                                 "analyst_type": analyst_type
                             }
-                            st.session_state["processed_files"].append(file.name)
-                            st.session_state["user_documents"] = get_user_documents(llm_os.user_id)
+                        st.session_state["user_documents"] = get_user_documents(st.session_state.token)
+                    else:
+                        st.error(f"Error processing {file.name}: {response.text}")
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
                     logger.error(f"Error processing {file.name}: {str(e)}")
@@ -95,15 +92,63 @@ def manage_knowledge_base(llm_os):
         for file in st.session_state["processed_files"]:
             st.sidebar.write(file)
 
-    if llm_os.knowledge_base and llm_os.knowledge_base.vector_db:
-        if st.sidebar.button("Clear Knowledge Base"):
-            llm_os.knowledge_base.vector_db.clear()
+    if st.sidebar.button("Clear Knowledge Base"):
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/knowledge-base/clear-knowledge-base",
+            json={"assistant_id": assistant_id},
+            headers={"Authorization": f"Bearer {st.session_state.token}"}
+        )
+        if response.status_code == 200:
             st.session_state["processed_files"] = []
             st.sidebar.success("Knowledge base cleared")
             logger.info("Knowledge base cleared")
+        else:
+            st.sidebar.error(f"Failed to clear knowledge base: {response.text}")
+
+    # # Fetch documents from the knowledge base
+    # documents_response = requests.get(
+    #     f"{BACKEND_URL}/api/v1/knowledge-base/documents",
+    #     headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+    # )
     
-    if llm_os.team and len(llm_os.team) > 0:
-        for team_member in llm_os.team:
-            if len(team_member.memory.chat_history) > 0:
-                with st.expander(f"{team_member.name} Memory", expanded=False):
-                    st.container().json(team_member.memory.get_llm_messages())    
+    # documents = None
+    # if documents_response.status_code == 200:
+    #     documents = documents_response.json()
+
+
+    # if documents is not None:
+    #     st.subheader("Your Documents")
+    #     for doc in documents:
+    #         with st.expander(doc['name']):
+    #             st.write(f"Type: {doc['meta_data'].get('type', 'Unknown')}")
+    #             st.write(f"Created: {doc['created_at']}")
+    #             st.write(f"Updated: {doc['updated_at']}")
+    #             if st.button(f"Delete {doc['name']}", key=f"delete_{doc['name']}"):
+    #                 response = requests.delete(
+    #                     f"{BACKEND_URL}/api/v1/knowledge-base/documents/{doc['name']}",
+    #                     json={"assistant_id": assistant_id},
+    #                     headers={"Authorization": f"Bearer {st.session_state.token}"}
+    #                 )
+    #                 if response.status_code == 200:
+    #                     st.success(f"Deleted {doc['name']}")
+    #                     st.experimental_rerun()
+    #                 else:
+    #                     st.error(f"Failed to delete {doc['name']}: {response.text}")
+
+    # # Search functionality
+    # st.subheader("Search Documents")
+    # search_query = st.text_input("Enter search query")
+    # if search_query:
+    #     search_results = requests.post(
+    #         f"{BACKEND_URL}/api/v1/knowledge-base/search",
+    #         json={"query": search_query, "assistant_id": assistant_id},
+    #         headers={"Authorization": f"Bearer {st.session_state.token}"}
+    #     )
+    #     if search_results.status_code == 200:
+    #         results = search_results.json()
+    #         for result in results:
+    #             st.write(f"Document: {result['name']}")
+    #             st.write(f"Content: {result['content'][:200]}...")  # Show first 200 characters
+    #             st.write("---")
+    #     else:
+    #         st.error(f"Failed to search documents: {search_results.text}")

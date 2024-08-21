@@ -1,6 +1,17 @@
-from src.kr8.vectordb.pgvector import PgVector2
-from src.kr8.embedder.sentence_transformer import SentenceTransformerEmbedder
-from src.kr8.document import Document as Kr8Document
+import base64
+from collections import defaultdict
+from datetime import datetime
+import io
+import logging
+import uuid
+from src.backend.kr8.vectordb.pgvector import PgVector2
+from src.backend.kr8.embedder.sentence_transformer import SentenceTransformerEmbedder
+from src.backend.kr8.document.reader.pdf import PDFReader
+from docx import Document as DocxDocument
+import pandas as pd
+from src.backend.utils.analyst_selector import determine_analyst
+from src.backend.kr8.document import Document as Kr8Document
+from src.backend.kr8.document.reader.website import WebsiteReader
 from src.backend.models.models import User
 from src.backend.schemas.knowledge_base import DocumentCreate, DocumentResponse, DocumentUpdate, DocumentSearch
 from sqlalchemy.orm import Session
@@ -15,12 +26,166 @@ class KnowledgeBaseService:
             collection="documents",
             db_url=os.getenv("DB_URL"),
             embedder=SentenceTransformerEmbedder(),
-            user_id=user.id
+            user_id=user.id,
+            org_id=user.organization_id
         )
+        
+        self.ensure_table_exists()
+
+    def ensure_table_exists(self):
+        if not self.vector_db.table_exists():
+            self.vector_db.create()
+
+    
+    async def add_url(self, url: str) -> bool:
+        scraper = WebsiteReader(max_links=2, max_depth=1)
+        web_documents = scraper.read(url)
+        if web_documents:
+            self.vector_db.upsert(web_documents)
+            return True
+        return False
+
+    def clear_knowledge_base(self) -> bool:
+        return self.vector_db.clear()
+
+    async def process_file_for_analyst(self, filename: str, file_content: bytes, analyst_type: str) -> str:
+        if filename.endswith('.csv'):
+            return await self.process_csv(filename, file_content)
+        elif filename.endswith(('.xlsx', '.xls')):
+            content_b64 = base64.b64encode(file_content).decode('utf-8')
+            return await self.process_excel(filename, content_b64)
+        else:
+            raise ValueError(f"Unsupported file type for analyst: {filename}")
+        
+    async def process_file(self, filename: str, file_content: io.BytesIO) -> DocumentResponse:
+        if filename.endswith('.pdf'):
+            return await self.process_pdf(filename, file_content)
+        elif filename.endswith('.docx'):
+            return await self.process_docx(filename, file_content)
+        elif filename.endswith('.txt'):
+            return await self.process_txt(filename, file_content)
+        else:
+            raise ValueError(f"Unsupported file type: {filename}")
+
+    async def process_pdf(self, filename: str, file_content: io.BytesIO) -> DocumentResponse:
+        reader = PDFReader()
+        auto_rag_documents = reader.read(file_content)
+        if not auto_rag_documents:
+            raise ValueError(f"Could not read PDF: {filename}")
+        
+        self.vector_db.upsert(auto_rag_documents)
+        
+        # Return the first document as a sample
+        doc = auto_rag_documents[0]
+        return DocumentResponse(
+            id=doc.id,
+            name=doc.name,
+            content=doc.content[:1000],  # Limit content for response
+            meta_data=doc.meta_data,
+            user_id=self.user.id,
+            created_at=doc.usage.get('created_at'),
+            updated_at=doc.usage.get('updated_at')
+        )
+
+    async def process_docx(self, filename: str, file_content: io.BytesIO) -> DocumentResponse:
+        doc = DocxDocument(file_content)
+        full_text = []
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+        content = ' '.join(full_text)
+        
+        kr8_doc = Kr8Document(
+            content=content,
+            name=filename,
+            meta_data={
+                "type": "docx",
+                "size": len(content),
+                "uploaded_at": datetime.now().isoformat()
+            },
+            usage={
+                "access_count": 0,
+                "last_accessed": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "relevance_scores": [],
+                "token_count": None
+            }
+        )
+        self.vector_db.upsert([kr8_doc])
+        
+        return DocumentResponse(
+            id=kr8_doc.id,
+            name=kr8_doc.name,
+            content=kr8_doc.content[:1000],  # Limit content for response
+            meta_data=kr8_doc.meta_data,
+            user_id=self.user.id,
+            created_at=kr8_doc.usage.get('created_at'),
+            updated_at=kr8_doc.usage.get('updated_at')
+        )
+
+    async def process_txt(self, filename: str, file_content: io.BytesIO) -> DocumentResponse:
+        content = file_content.getvalue().decode("utf-8")
+        
+        kr8_doc = Kr8Document(
+            content=content,
+            name=filename,
+            meta_data={
+                "type": "txt",
+                "size": len(content),
+                "uploaded_at": datetime.now().isoformat()
+            },
+            usage={
+                "access_count": 0,
+                "last_accessed": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "relevance_scores": [],
+                "token_count": None
+            }
+        )
+        self.vector_db.upsert([kr8_doc])
+        
+        return DocumentResponse(
+            id=kr8_doc.id,
+            name=kr8_doc.name,
+            content=kr8_doc.content[:1000],  # Limit content for response
+            meta_data=kr8_doc.meta_data,
+            user_id=self.user.id,
+            created_at=kr8_doc.usage.get('created_at'),
+            updated_at=kr8_doc.usage.get('updated_at')
+        )
+
+    async def process_csv(self, filename: str, file_content: bytes) -> str:
+        df = pd.read_csv(io.BytesIO(file_content))
+        analyst_type = determine_analyst(filename, df)
+        
+        doc = Kr8Document(
+            name=filename,
+            content=df.to_csv(index=False),
+            meta_data={"type": "csv", "shape": df.shape, "analyst_type": analyst_type}
+        )
+        self.vector_db.upsert([doc])
+        
+        return f"{filename} processed as {analyst_type} data"
+
+    async def process_excel(self, filename: str, file_content_b64: str) -> str:
+        file_content = base64.b64decode(file_content_b64)
+        df = pd.read_excel(io.BytesIO(file_content))
+        analyst_type = determine_analyst(filename, df)
+        
+        doc = Kr8Document(
+            name=filename,
+            content=df.to_csv(index=False),
+            meta_data={"type": "excel", "shape": df.shape, "analyst_type": analyst_type}
+        )
+        self.vector_db.upsert([doc])
+        
+        return f"{filename} processed as {analyst_type} data"    
 
     def add_document(self, document: DocumentCreate) -> DocumentResponse:
         # Create a Kr8Document
         kr8_doc = Kr8Document(
+            id=str(uuid.uuid4()),
             name=document.name,
             content=document.content,
             meta_data={**document.meta_data, "user_id": self.user.id} if document.meta_data else {"user_id": self.user.id}
@@ -36,24 +201,39 @@ class KnowledgeBaseService:
             content=kr8_doc.content,
             meta_data=kr8_doc.meta_data,
             user_id=self.user.id,
+            org_id=self.user.organization_id, 
             created_at=kr8_doc.usage.get('created_at'),
             updated_at=kr8_doc.usage.get('updated_at')
         )
 
     def get_documents(self) -> List[DocumentResponse]:
-        # This method needs to be implemented in PgVector2
-        documents = self.vector_db.get_all_documents()
-        return [
-            DocumentResponse(
-                id=doc.id,
-                name=doc.name,
-                content=doc.content,
-                meta_data=doc.meta_data,
-                user_id=self.user.id,
-                created_at=doc.usage.get('created_at'),
-                updated_at=doc.usage.get('updated_at')
-            ) for doc in documents if doc.meta_data.get('user_id') == self.user.id
-        ]
+        self.ensure_table_exists()
+        document_info = self.vector_db.list_document_names()
+        
+        documents = []
+        for doc_info in document_info:
+            base_name = doc_info['name']
+            main_doc = self.vector_db.get_document_by_name(base_name)
+            if main_doc:
+                documents.append(
+                    DocumentResponse(
+                        id=main_doc.id,
+                        name=base_name,
+                        content=main_doc.content[:1000],  # Limit content for response
+                        meta_data=main_doc.meta_data,
+                        user_id=self.user.id,
+                        org_id=self.user.organization_id,
+                        created_at=main_doc.usage.get('created_at'),
+                        updated_at=main_doc.usage.get('updated_at'),
+                        chunks=doc_info['chunks']
+                    )
+                )
+            else:
+                logging.warning(f"Could not retrieve document for name: {base_name}")
+        
+        logging.debug(f"Returning {len(documents)} documents")
+        return documents
+    
 
     def search_documents(self, search: DocumentSearch) -> List[DocumentResponse]:
         results = self.vector_db.search(search.query, limit=5)
@@ -64,6 +244,7 @@ class KnowledgeBaseService:
                 content=doc.content,
                 meta_data=doc.meta_data,
                 user_id=self.user.id,
+                org_id=self.user.organization_id, 
                 created_at=doc.usage.get('created_at'),
                 updated_at=doc.usage.get('updated_at')
             ) for doc in results if doc.meta_data.get('user_id') == self.user.id
@@ -71,10 +252,12 @@ class KnowledgeBaseService:
 
     def delete_document(self, document_name: str) -> DocumentResponse:
         document = self.vector_db.get_document_by_name(document_name)
-        if not document or document.meta_data.get('user_id') != self.user.id:
+        if not document:
             raise ValueError("Document not found")
         
-        self.vector_db.delete_document_by_name(document_name)
+        deleted = self.vector_db.delete_document_by_name(document_name)
+        if not deleted:
+            raise ValueError("Failed to delete document")
         
         return DocumentResponse(
             id=document.id,

@@ -20,7 +20,7 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from config.client_config import is_feedback_sentiment_analysis_enabled
-from kr8.vectordb.pgvector.pgvector2 import PgVector2
+from src.backend.kr8.vectordb.pgvector.pgvector2 import PgVector2
 from sqlalchemy import func
 from typing import Dict
 import pandas as pd

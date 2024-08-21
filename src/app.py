@@ -342,7 +342,7 @@ def main_app():
     
     st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
-    tabs = ["Chat", "My Documents"]
+    tabs = ["Chat", "Knowledge Base"]
     if st.session_state.get('is_admin', False):
         tabs.extend(["Analytics"])
     if st.session_state.get('is_super_admin', False):
@@ -353,7 +353,7 @@ def main_app():
     with selected_tab[0]:  # Chat tab
         render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
 
-    with selected_tab[1]:  # My Documents tab
+    with selected_tab[1]:  # knowledge base  tab
         render_document_manager()
 
     if st.session_state.get('is_admin', False):
@@ -430,7 +430,6 @@ def main():
     apply_custom_theme()
     
     if not is_authenticated():
-        st.warning("Please log in to access the application.")
         login_form()
     else:
         if not st.session_state.get("initialization_complete", False):

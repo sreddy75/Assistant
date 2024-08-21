@@ -2,11 +2,11 @@ import base64
 import io
 
 import sqlalchemy
-from kr8.document.reader.pdf import PDFReader
-from kr8.document import Document
+from src.backend.kr8.document.reader.pdf import PDFReader
+from src.backend.kr8.document import Document
 from docx import Document as DocxDocument
 from datetime import datetime
-from kr8.utils.log import logger
+from src.backend.kr8.utils.log import logger
 import pandas as pd
 from sqlite3 import IntegrityError
 

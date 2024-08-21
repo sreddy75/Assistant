@@ -14,7 +14,7 @@ logger.debug("init_db() completed")
 
 # Now import the rest of your modules
 from src.backend.core.config import settings
-from src.backend.api.v1 import auth, users, organizations, feedback, knowledge_base
+from src.backend.api.v1 import auth, users, organizations, feedback, knowledge_base, assistant, chat
 
 logger.debug(f"DATABASE_URL: {settings.DB_URL}")
 
@@ -25,7 +25,9 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["authentication"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(organizations.router, prefix="/api/v1/organizations", tags=["organizations"])
 app.include_router(feedback.router, prefix="/api/v1/feedback", tags=["feedback"])
-app.include_router(knowledge_base.router, prefix="/api/knowledge_base", tags=["knowledge_base"]) 
+app.include_router(knowledge_base.router, prefix="/api/v1/knowledge-base", tags=["knowledge-base"]) 
+app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"]) 
+app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"]) 
 
 
 @app.get("/health")
