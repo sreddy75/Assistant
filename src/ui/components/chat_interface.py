@@ -298,7 +298,3 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     response_placeholder.markdown(full_response)
 
         response_time = time.time() - start_time
-        
-    if has_knowledge_base:
-        from src.ui.components.knowledge_base_manager import manage_knowledge_base
-        manage_knowledge_base(st.session_state["assistant_id"])

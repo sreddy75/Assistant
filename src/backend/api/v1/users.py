@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.get("/users/me", response_model=UserInDB)
+@router.get("/me", response_model=UserInDB)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/", response_model=List[UserResponse])
 async def get_all_users(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
@@ -37,7 +37,7 @@ async def get_all_users(
     users = db.query(User).all()
     return users
 
-@router.get("/users/{email}/is-admin")
+@router.get("/{email}/is-admin")
 async def check_user_is_admin(email: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user.is_admin:
         raise HTTPException(

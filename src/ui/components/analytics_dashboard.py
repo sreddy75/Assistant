@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import traceback
 import requests
-from ui.components.utils import BACKEND_URL, is_authenticated
+from ui.components.utils import BACKEND_URL
 
 def fetch_data(endpoint):
     response = requests.get(f"{BACKEND_URL}{endpoint}")
@@ -18,8 +18,8 @@ def fetch_data(endpoint):
 def render_analytics_dashboard():
     st.header("Analytics Dashboard")
 
-    sentiment_analysis = fetch_data("/sentiment-analysis")
-    feedback_analysis = fetch_data("/feedback-analysis")
+    sentiment_analysis = fetch_data("/ap1/v1//sentiment-analysis")
+    feedback_analysis = fetch_data("/api/v1/feedback-analysis")
     
     if sentiment_analysis is None or feedback_analysis is None:
         st.warning("Failed to fetch data from the API. Please check the server connection.")

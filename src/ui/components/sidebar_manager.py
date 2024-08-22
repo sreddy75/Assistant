@@ -5,7 +5,6 @@ import streamlit as st
 from src.backend.kr8.tools.pandas import PandasTools
 from src.backend.kr8.tools.code_tools import CodeTools
 from ui.utils.helper import restart_assistant
-from ui.components.knowledge_base_manager import manage_knowledge_base
 from backend.core.client_config import ENABLED_ASSISTANTS
 import matplotlib.pyplot as plt
 from backend.db.session import get_db
@@ -268,15 +267,15 @@ def show_java_project_analysis(project_name):
         st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
 
 def render_model_selection():
-    with st.sidebar.expander("Select model:", expanded=False):
-        model_type = st.sidebar.radio("Select Model Type", ["Closed", "Open Source"])
+    with st.expander("Select model:", expanded=False):
+        model_type = st.radio("Select Model Type", ["Closed", "Open Source"])
 
         if model_type == "Closed":
             llm_options = ["gpt-4o", "claude-3.5"]
-            llm_id = st.sidebar.selectbox("Select Closed Source Model", options=llm_options)
+            llm_id = st.selectbox("Select Closed Source Model", options=llm_options)
         else: 
             llm_options = ["llama3", "tinyllama"]
-            llm_id = st.sidebar.selectbox("Select Open Source Model", options=llm_options)
+            llm_id = st.selectbox("Select Open Source Model", options=llm_options)
         
         if "llm_id" not in st.session_state:
             st.session_state["llm_id"] = llm_id

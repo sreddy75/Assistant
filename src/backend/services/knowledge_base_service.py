@@ -36,7 +36,6 @@ class KnowledgeBaseService:
         if not self.vector_db.table_exists():
             self.vector_db.create()
 
-    
     async def add_url(self, url: str) -> bool:
         scraper = WebsiteReader(max_links=2, max_depth=1)
         web_documents = scraper.read(url)
@@ -48,15 +47,6 @@ class KnowledgeBaseService:
     def clear_knowledge_base(self) -> bool:
         return self.vector_db.clear()
 
-    async def process_file_for_analyst(self, filename: str, file_content: bytes, analyst_type: str) -> str:
-        if filename.endswith('.csv'):
-            return await self.process_csv(filename, file_content)
-        elif filename.endswith(('.xlsx', '.xls')):
-            content_b64 = base64.b64encode(file_content).decode('utf-8')
-            return await self.process_excel(filename, content_b64)
-        else:
-            raise ValueError(f"Unsupported file type for analyst: {filename}")
-        
     async def process_file(self, filename: str, file_content: io.BytesIO) -> DocumentResponse:
         if filename.endswith('.pdf'):
             return await self.process_pdf(filename, file_content)
@@ -64,6 +54,11 @@ class KnowledgeBaseService:
             return await self.process_docx(filename, file_content)
         elif filename.endswith('.txt'):
             return await self.process_txt(filename, file_content)
+        elif filename.endswith('.csv'):
+            return await self.process_csv(filename, file_content.getvalue())
+        elif filename.endswith(('.xlsx', '.xls')):
+            content_b64 = base64.b64encode(file_content.getvalue()).decode('utf-8')
+            return await self.process_excel(filename, content_b64)
         else:
             raise ValueError(f"Unsupported file type: {filename}")
 
@@ -233,7 +228,6 @@ class KnowledgeBaseService:
         
         logging.debug(f"Returning {len(documents)} documents")
         return documents
-    
 
     def search_documents(self, search: DocumentSearch) -> List[DocumentResponse]:
         results = self.vector_db.search(search.query, limit=5)

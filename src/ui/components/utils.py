@@ -151,7 +151,7 @@ def render_chart(chart_data):
 
 def is_authenticated():
     if 'token' in st.session_state:
-        response = requests.get(f"{BACKEND_URL}/api/is_authenticated", headers={"Authorization": f"Bearer {st.session_state['token']}"})
+        response = requests.get(f"{BACKEND_URL}/api/v1/auth/is_authenticated", headers={"Authorization": f"Bearer {st.session_state['token']}"})
         return response.status_code == 200 and response.json().get('authenticated', False)
     return False
 

@@ -7,12 +7,12 @@ import logging
 from datetime import datetime
 import time
 from queue import Queue
+from ui.components.settings_manager import render_settings_tab
 from ui.components.layout import set_page_layout
-from ui.components.sidebar_manager import render_sidebar
 from backend.core.client_config import load_theme, ENABLED_ASSISTANTS, get_client_name
 from src.ui.components.chat_interface import render_chat
 from src.ui.components.analytics_dashboard import render_analytics_dashboard
-from src.ui.components.document_manager import render_document_manager
+from src.frontend.pages.knowledge_base import knowledge_base_page
 
 import toml
 
@@ -82,7 +82,10 @@ def login_form():
                         st.session_state.token = data.get('access_token')
                         st.session_state.user_id = data.get('user_id')
                         st.session_state.role = data.get('role')
+                        st.session_state.nickname = data.get('nickname')
                         st.session_state.org_id = data.get('org_id')
+                        st.session_state.is_admin = data.get('is_admin')
+                        st.session_state.is_super_admin = data.get('is_super_admin')
                         st.session_state.authenticated = True
 
                         # Log the session state for debugging
@@ -220,127 +223,16 @@ def logout():
         requests.post(f"{BACKEND_URL}/api/logout", headers={"Authorization": f"Bearer {st.session_state['token']}"})
     st.session_state.clear()
 
-def render_org_management():
-    st.header("Organization Management")
-    
-    response = requests.get(f"{BACKEND_URL}/api/organizations", headers={"Authorization": f"Bearer {st.session_state['token']}"})
-    if response.status_code == 200:
-        organizations = response.json()
-        selected_org = st.selectbox("Select Organization", options=[org["name"] for org in organizations], format_func=lambda x: x)
-        selected_org_id = next(org["id"] for org in organizations if org["name"] == selected_org)
-        
-        if st.button("View Organization Details"):
-            org_response = requests.get(f"{BACKEND_URL}/api/organizations/{selected_org_id}", headers={"Authorization": f"Bearer {st.session_state['token']}"})
-            if org_response.status_code == 200:
-                org_details = org_response.json()
-                st.json(org_details)
-            else:
-                st.error("Failed to fetch organization details")
-        
-        st.subheader("Update Organization")
-        roles = st.text_input("Roles (comma-separated)")
-        assistants = st.text_area("Assistants (JSON)")
-        feature_flags = st.text_area("Feature Flags (JSON)")
-        
-        if st.button("Update Organization"):
-            update_data = {}
-            if roles:
-                update_data["roles"] = [role.strip() for role in roles.split(",")]
-            if assistants:
-                update_data["assistants"] = json.loads(assistants)
-            if feature_flags:
-                update_data["feature_flags"] = json.loads(feature_flags)
-            
-            update_response = requests.put(
-                f"{BACKEND_URL}/api/organizations/{selected_org_id}",
-                json=update_data,
-                headers={"Authorization": f"Bearer {st.session_state['token']}"}
-            )
-            if update_response.status_code == 200:
-                st.success("Organization updated successfully")
-            else:
-                st.error("Failed to update organization")
-    
-    st.subheader("Create New Organization")
-    new_org_name = st.text_input("Organization Name")
-    new_org_roles = st.text_input("Roles (comma-separated)")
-    new_org_assistants = st.text_area("Assistants (JSON)")
-    new_org_feature_flags = st.text_area("Feature Flags (JSON)")
-    
-    if st.button("Create Organization"):
-        create_data = {
-            "name": new_org_name,
-            "roles": [role.strip() for role in new_org_roles.split(",")],
-            "assistants": json.loads(new_org_assistants),
-            "feature_flags": json.loads(new_org_feature_flags)
-        }
-        create_response = requests.post(
-            f"{BACKEND_URL}/api/organizations",
-            json=create_data,
-            headers={"Authorization": f"Bearer {st.session_state['token']}"}
-        )
-        if create_response.status_code == 200:
-            st.success("Organization created successfully")
-        else:
-            st.error("Failed to create organization")
-
-def render_settings_tab():
-    st.header("User Management")
-    
-    if st.session_state.get('is_super_admin', False):
-        render_org_management()
-    else:
-        st.warning("You do not have permission to access these settings.")
-    
-    response = requests.get(f"{BACKEND_URL}/api/users", headers={"Authorization": f"Bearer {st.session_state['token']}"})
-    if response.status_code == 200:
-        users = response.json()
-        if users:
-            df = pd.DataFrame(users)
-            df['trial_end'] = pd.to_datetime(df['trial_end'])
-            df['Extend Trial'] = False
-            
-            edited_df = st.data_editor(
-                df,
-                column_config={
-                    "id": st.column_config.NumberColumn("ID"),
-                    "email": st.column_config.TextColumn("Email"),
-                    "role": st.column_config.TextColumn("Role"),
-                    "trial_end": st.column_config.DatetimeColumn("Trial End Date"),
-                    "is_active": st.column_config.CheckboxColumn("Is Active"),
-                    "Extend Trial": st.column_config.CheckboxColumn("Extend Trial")
-                },
-                disabled=["id", "email", "role", "trial_end", "is_active"],
-                hide_index=True,
-            )
-            
-            for index, row in edited_df.iterrows():
-                if row['Extend Trial']:
-                    response = requests.post(f"{BACKEND_URL}/api/extend-trial/{row['id']}", headers={"Authorization": f"Bearer {st.session_state['token']}"})
-                    if response.status_code == 200:
-                        st.success(f"Trial extended for {row['email']} by 7 days")
-                    else:
-                        st.error(f"Failed to extend trial for {row['email']}")
-        else:
-            st.warning("No users found in the database.")
-    else:
-        st.error("Failed to fetch users")
-
 def main_app():
     col1, col2 = st.sidebar.columns([2, 1])
     with col1:
-        if 'email' in st.session_state:            
-            st.sidebar.title(f"Welcome, {st.session_state.get('nickname')}")
-            st.sidebar.text(f"Organization: {st.session_state.get('organization')}")
-        else:   
-            st.write("Welcome!")
-
+        if st.session_state.get('nickname'):            
+            st.text(f"Welcome, {st.session_state.get('nickname')}")                    
+            
     with col2:
         if st.button("Logout"):
             logout()
             st.rerun()
-    
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
     tabs = ["Chat", "Knowledge Base"]
     if st.session_state.get('is_admin', False):
@@ -353,8 +245,8 @@ def main_app():
     with selected_tab[0]:  # Chat tab
         render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
 
-    with selected_tab[1]:  # knowledge base  tab
-        render_document_manager()
+    with selected_tab[1]:  # knowledge base tab
+        knowledge_base_page() 
 
     if st.session_state.get('is_admin', False):
         with selected_tab[2]:  # Analytics tab
@@ -363,8 +255,6 @@ def main_app():
     if st.session_state.get('is_super_admin', False) and "Settings" in tabs:
         with selected_tab[tabs.index("Settings")]:
             render_settings_tab()
-
-    # render_sidebar()
 
 def apply_custom_theme():
     theme_path = load_theme()
