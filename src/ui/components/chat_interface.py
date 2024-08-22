@@ -33,6 +33,29 @@ meerkat_icon = Image.open(f"src/backend/config/themes/{client_name}/chat_system_
 user_icon = Image.open(f"src/backend/config/themes/{client_name}/chat_user_icon.png")
 llm_os = None
 
+# New function to send events to the backend
+def send_event(event_type, event_data, duration=None):
+    try:
+        user_id = st.session_state.get("user_id")        
+        
+        payload = {
+            "user_id": user_id,            
+            "event_type": event_type,
+            "event_data": event_data,
+            "duration": duration
+        }
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/analytics/user-events",
+            json=payload,
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if response.status_code != 200:
+            logger.error(f"Failed to send event: {response.text}")
+        else:
+            logger.info(f"Event sent successfully: {event_type} for user {user_id or user_email}")
+    except Exception as e:
+        logger.error(f"Error sending event: {str(e)}")
+
 
 def count_tokens(text):
     return len(tokenizer.encode(text))
@@ -83,7 +106,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         </style>
         """, unsafe_allow_html=True)
 
-    
     if "llm_id" not in st.session_state:
         logger.warning("llm_id not found in session state, using default value")
         st.session_state.llm_id = "gpt-4o"
@@ -166,14 +188,20 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                             feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{i}")
                             if st.button("Submit Feedback", key=f"feedback_button_{i}"):
                                 submit_feedback(user_id, query, sanitized_content, usefulness > 3, usefulness, feedback)
+                                # Send event for feedback submission
+                                send_event("feedback_submission", {"usefulness": usefulness, "feedback_length": len(feedback) if feedback else 0})
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.button("👍", key=f"upvote_{i}"):
                                     submit_simple_vote(user_id, query, sanitized_content, True)
+                                    # Send event for upvote
+                                    send_event("vote_submission", {"is_upvote": True})
                             with col2:
                                 if st.button("👎", key=f"downvote_{i}"):
                                     submit_simple_vote(user_id, query, sanitized_content, False)
+                                    # Send event for downvote
+                                    send_event("vote_submission", {"is_upvote": False})
                                 
             elif message["role"] == "user":
                 with st.chat_message(message["role"], avatar=user_icon):
@@ -185,6 +213,9 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         
         start_time = time.time()
         
+        # Send event for user message
+        send_event("user_message", {"content_length": len(prompt)})
+
         with chat_container:
             with st.chat_message("user", avatar=user_icon):
                 st.markdown(prompt)
@@ -273,20 +304,33 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     sanitized_response = full_response  
                     st.session_state["messages"].append({"role": "assistant", "content": sanitized_response})
                     
+                    # Send event for assistant response
+                    response_time = time.time() - start_time
+                    send_event("assistant_response", {"content_length": len(sanitized_response), "response_time": response_time}, duration=response_time)
+
                     with st.expander("Please Provide feedback to improve future answers", expanded=False):
                         if is_feedback_sentiment_analysis_enabled():
                             usefulness = st.slider("How useful was this response?", 1, 5, 3, key=f"usefulness_{len(st.session_state['messages'])-1}")
                             feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{len(st.session_state['messages'])-1}")
                             if st.button("Submit Feedback", key=f"feedback_button_{len(st.session_state['messages'])-1}"):
                                 submit_feedback(user_id, prompt, sanitized_response, usefulness > 3, usefulness, feedback)
+                                # Send event for feedback submission
+                                send_event("feedback_submission", {"usefulness": usefulness, "feedback_length": len(feedback) if feedback else 0})
+                                st.success("Thank you for your feedback!")
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.button("👍", key=f"upvote_{len(st.session_state['messages'])-1}"):
                                     submit_simple_vote(user_id, prompt, sanitized_response, True)
+                                    # Send event for upvote
+                                    send_event("vote_submission", {"is_upvote": True})
+                                    st.success("Thank you for your positive feedback!")
                             with col2:
                                 if st.button("👎", key=f"downvote_{len(st.session_state['messages'])-1}"):
                                     submit_simple_vote(user_id, prompt, sanitized_response, False)
+                                    # Send event for downvote
+                                    send_event("vote_submission", {"is_upvote": False})
+                                    st.success("Thank you for your feedback. We'll work on improving!")
 
                 except Exception as e:
                     with response_area:
@@ -296,5 +340,16 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     logger.error(f"Traceback: {traceback.format_exc()}")
                     full_response = "I apologize, but I encountered an error while processing your request. Please try again."
                     response_placeholder.markdown(full_response)
+                    # Send event for error
+                    send_event("error", {"error_message": str(e)})
 
         response_time = time.time() - start_time
+        logger.info(f"Response generated in {response_time:.2f} seconds")
+
+    # Add a button to clear the conversation
+    if st.button("Clear Conversation"):
+        st.session_state["messages"] = []
+        st.experimental_rerun()
+
+if __name__ == "__main__":
+    render_chat()

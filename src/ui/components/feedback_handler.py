@@ -15,7 +15,7 @@ def submit_feedback(user_id: int, query: str, response: str, is_upvote: bool, us
     headers = {"Authorization": f"Bearer {token}"}
     
     response = requests.post(
-        f"{BACKEND_URL}/submit-feedback",
+        f"{BACKEND_URL}/api/v1/feedback/submit-feedback",
         json={
             "user_id": user_id,
             "query": query,
@@ -37,7 +37,7 @@ def submit_feedback(user_id: int, query: str, response: str, is_upvote: bool, us
 
 def submit_simple_vote(user_id: int, query: str, response: str, is_upvote: bool):
     response = requests.post(
-        f"{BACKEND_URL}/submit-vote",
+        f"{BACKEND_URL}/api/v1/feedback/submit-vote",
         json={
             "user_id": user_id,
             "query": query,

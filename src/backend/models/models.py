@@ -1,6 +1,7 @@
 import datetime
+from typing import Optional
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import Column, Float, Integer, String, Boolean, DateTime, ForeignKey, Text, func
+from sqlalchemy import JSON, Column, Float, Integer, String, Boolean, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -26,8 +27,22 @@ class OrganizationConfig(Base):
 
 class TokenData(BaseModel):
     email: str | None = None
+    
+class UserAnalytics(Base):
+    __tablename__ = "user_analytics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    event_type = Column(String(50))
+    event_data = Column(JSON)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    duration = Column(Float)
+
+    user = relationship("User", back_populates="analytics")
+        
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "users"    
+
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
@@ -35,15 +50,24 @@ class User(Base):
     last_name = Column(String)
     nickname = Column(String)
     role = Column(String)
-    is_active = Column(Boolean, default=True)
-    is_admin = Column(Boolean, default=False)
-    is_super_admin = Column(Boolean, default=False)
-    trial_end = Column(DateTime)
-    email_verified = Column(Boolean, default=False)
+    is_active = Column(Boolean)
+    is_admin = Column(Boolean)
+    is_super_admin = Column(Boolean)
+    trial_end = Column(DateTime(timezone=True))
+    email_verified = Column(Boolean)
     organization_id = Column(Integer, ForeignKey("organizations.id"))
-    
+
     organization = relationship("Organization", back_populates="users")
-    
+    votes = relationship("Vote", back_populates="user")
+    analytics = relationship("UserAnalytics", back_populates="user")
+
+class UserEvent(BaseModel):
+    user_id: int
+    user_email: str
+    event_type: str
+    event_data: dict
+    duration: Optional[float] = None
+            
 class Vote(Base):
     __tablename__ = "votes"
     id = Column(Integer, primary_key=True, index=True)
