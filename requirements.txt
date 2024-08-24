@@ -111,6 +111,7 @@ urllib3==2.2.1
 uvicorn==0.30.1
 watchdog==4.0.1
 webencodings==0.5.1
+wordcloud==1.9.3
 xmltodict==0.13.0
 yagmail==0.15.293
 yfinance==0.2.38

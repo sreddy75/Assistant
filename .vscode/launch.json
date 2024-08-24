@@ -35,10 +35,10 @@
             "name": "Streamlit",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/.venv/bin/streamlit", // Adjust this path if necessary
+            "program": "${workspaceFolder}/.venv/bin/streamlit", 
             "args": [
                 "run",
-                "${workspaceFolder}/src/app.py" // Replace with the path to your Streamlit app
+                "${workspaceFolder}/src/frontend/app.py" 
             ],
             "console": "integratedTerminal",
             "justMyCode": true,

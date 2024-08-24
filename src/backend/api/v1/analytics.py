@@ -89,3 +89,55 @@ async def get_event_summary(db: Session = Depends(get_db)):
     except Exception as e:
         logger.exception("Error in get_event_summary endpoint")
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/user-engagement")
+async def get_user_engagement_metrics(db: Session = Depends(get_db)):
+    try:
+        logger.debug("Entering get_user_engagement_metrics endpoint")
+        result = analytics_service.get_user_engagement_metrics(db)
+        logger.debug(f"Raw result from get_user_engagement_metrics: {result}")
+        cleaned_result = replace_nan_with_none(result)
+        logger.debug(f"Cleaned result from get_user_engagement_metrics: {cleaned_result}")
+        return cleaned_result
+    except Exception as e:
+        logger.exception("Error in get_user_engagement_metrics endpoint")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/interaction-metrics")
+async def get_interaction_metrics(db: Session = Depends(get_db)):
+    try:
+        logger.debug("Entering get_interaction_metrics endpoint")
+        result = analytics_service.get_interaction_metrics(db)
+        logger.debug(f"Raw result from get_interaction_metrics: {result}")
+        cleaned_result = replace_nan_with_none(result)
+        logger.debug(f"Cleaned result from get_interaction_metrics: {cleaned_result}")
+        return cleaned_result
+    except Exception as e:
+        logger.exception("Error in get_interaction_metrics endpoint")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/quality-metrics")
+async def get_quality_metrics(db: Session = Depends(get_db)):
+    try:
+        logger.debug("Entering get_quality_metrics endpoint")
+        result = analytics_service.get_quality_metrics(db)
+        logger.debug(f"Raw result from get_quality_metrics: {result}")
+        cleaned_result = replace_nan_with_none(result)
+        logger.debug(f"Cleaned result from get_quality_metrics: {cleaned_result}")
+        return cleaned_result
+    except Exception as e:
+        logger.exception("Error in get_quality_metrics endpoint")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/usage-patterns")
+async def get_usage_patterns(db: Session = Depends(get_db)):
+    try:
+        logger.debug("Entering get_usage_patterns endpoint")
+        result = analytics_service.get_usage_patterns(db)
+        logger.debug(f"Raw result from get_usage_patterns: {result}")
+        cleaned_result = replace_nan_with_none(result)
+        logger.debug(f"Cleaned result from get_usage_patterns: {cleaned_result}")
+        return cleaned_result
+    except Exception as e:
+        logger.exception("Error in get_usage_patterns endpoint")
+        raise HTTPException(status_code=500, detail=str(e))    

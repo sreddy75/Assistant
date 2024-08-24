@@ -1,8 +1,8 @@
 import logging
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, extract
 from datetime import datetime, timedelta
-from src.backend.models.models import Vote, UserAnalytics 
+from src.backend.models.models import Vote, UserAnalytics, User
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
@@ -20,6 +20,154 @@ nltk.download('vader_lexicon')
 logger = logging.getLogger(__name__)
 
 class AnalyticsService:
+
+    def get_user_engagement_metrics(self, db: Session):
+        logger.debug("Entering get_user_engagement_metrics method")
+        try:
+            # Calculate daily, weekly, and monthly active users
+            now = datetime.utcnow()
+            daily_active = db.query(func.count(func.distinct(UserAnalytics.user_id))).filter(
+                UserAnalytics.timestamp > now - timedelta(days=1)
+            ).scalar()
+            weekly_active = db.query(func.count(func.distinct(UserAnalytics.user_id))).filter(
+                UserAnalytics.timestamp > now - timedelta(weeks=1)
+            ).scalar()
+            monthly_active = db.query(func.count(func.distinct(UserAnalytics.user_id))).filter(
+                UserAnalytics.timestamp > now - timedelta(days=30)
+            ).scalar()
+
+            # Calculate user growth
+            user_growth = db.query(
+                func.date_trunc('day', User.created_at).label('date'),
+                func.count(User.id).label('new_users')
+            ).group_by('date').order_by('date').all()
+
+            # Calculate user retention (simplified version)
+            retention_data = []
+            for i in range(4):  # Calculate retention for the last 4 weeks
+                start_date = now - timedelta(weeks=i+1)
+                end_date = now - timedelta(weeks=i)
+                new_users = db.query(User).filter(
+                    User.created_at.between(start_date, end_date)
+                ).count()
+                retained_users = db.query(UserAnalytics).filter(
+                    UserAnalytics.timestamp > end_date,
+                    UserAnalytics.user_id.in_(
+                        db.query(User.id).filter(User.created_at.between(start_date, end_date))
+                    )
+                ).distinct(UserAnalytics.user_id).count()
+                retention_rate = retained_users / new_users if new_users > 0 else 0
+                retention_data.append({
+                    'cohort': start_date.strftime('%Y-%m-%d'),
+                    'retention_rate': retention_rate
+                })
+
+            return {
+                'active_users': {
+                    'daily': daily_active,
+                    'weekly': weekly_active,
+                    'monthly': monthly_active
+                },
+                'user_growth': [{'date': str(ug.date), 'new_users': ug.new_users} for ug in user_growth],
+                'user_retention': retention_data
+            }
+        except Exception as e:
+            logger.exception("Error in get_user_engagement_metrics method")
+            return {'error': str(e)}
+
+    def get_interaction_metrics(self, db: Session):
+        logger.debug("Entering get_interaction_metrics method")
+        try:
+            # Calculate query volume
+            total_queries = db.query(func.count(Vote.id)).scalar()
+            recent_queries = db.query(
+                func.date_trunc('day', Vote.created_at).label('date'),
+                func.count(Vote.id).label('query_count')
+            ).group_by('date').order_by('date').limit(30).all()
+
+            # Calculate average response time (assuming you store this information)
+            avg_response_time = db.query(func.avg(UserAnalytics.duration)).filter(
+                UserAnalytics.event_type == 'query_response'
+            ).scalar()
+
+            # Calculate average session duration
+            session_durations = db.query(
+                UserAnalytics.user_id,
+                func.sum(UserAnalytics.duration).label('total_duration')
+            ).group_by(UserAnalytics.user_id).all()
+            avg_session_duration = sum(sd.total_duration for sd in session_durations) / len(session_durations) if session_durations else 0
+
+            return {
+                'query_volume': {
+                    'total': total_queries,
+                    'recent_trend': [{'date': str(q.date), 'count': q.query_count} for q in recent_queries]
+                },
+                'avg_response_time': avg_response_time,
+                'avg_session_duration': avg_session_duration,
+                'session_duration_distribution': [{'duration': sd.total_duration} for sd in session_durations]
+            }
+        except Exception as e:
+            logger.exception("Error in get_interaction_metrics method")
+            return {'error': str(e)}
+
+    def get_quality_metrics(self, db: Session):
+        logger.debug("Entering get_quality_metrics method")
+        try:
+            # Calculate satisfaction score
+            votes = db.query(Vote).all()
+            upvotes = sum(1 for vote in votes if vote.is_upvote)
+            total_votes = len(votes)
+            satisfaction_score = (upvotes / total_votes) * 100 if total_votes > 0 else 0
+
+            # Generate word cloud data
+            positive_feedback = db.query(Vote.feedback_text).filter(Vote.sentiment_score > 0).all()
+            word_freq = Counter(' '.join([fb.feedback_text for fb in positive_feedback]).split()).most_common(50)
+
+            # Calculate sentiment trend
+            sentiment_trend = db.query(
+                func.date_trunc('day', Vote.created_at).label('date'),
+                func.avg(Vote.sentiment_score).label('avg_sentiment')
+            ).group_by('date').order_by('date').all()
+
+            return {
+                'satisfaction_score': satisfaction_score,
+                'word_cloud_data': dict(word_freq),
+                'sentiment_trend': [{'date': str(st.date), 'sentiment': st.avg_sentiment} for st in sentiment_trend]
+            }
+        except Exception as e:
+            logger.exception("Error in get_quality_metrics method")
+            return {'error': str(e)}
+
+    def get_usage_patterns(self, db: Session):
+        logger.debug("Entering get_usage_patterns method")
+        try:
+            # Get popular topics (assuming you have a way to categorize queries)
+            popular_topics = db.query(
+                Vote.query.label('topic'),
+                func.count(Vote.id).label('count')
+            ).group_by(Vote.query).order_by(func.count(Vote.id).desc()).limit(10).all()
+
+            # Get peak usage times
+            peak_usage = db.query(
+                extract('hour', UserAnalytics.timestamp).label('hour'),
+                func.count(UserAnalytics.id).label('count')
+            ).group_by('hour').order_by('hour').all()
+
+            # Get feature adoption (assuming you track feature usage in event_type)
+            feature_adoption = db.query(
+                UserAnalytics.event_type,
+                func.count(UserAnalytics.id).label('count')
+            ).group_by(UserAnalytics.event_type).all()
+
+            return {
+                'popular_topics': [{'topic': pt.topic, 'count': pt.count} for pt in popular_topics],
+                'peak_usage': [{'hour': pu.hour, 'count': pu.count} for pu in peak_usage],
+                'feature_adoption': [{'feature': fa.event_type, 'count': fa.count} for fa in feature_adoption]
+            }
+        except Exception as e:
+            logger.exception("Error in get_usage_patterns method")
+            return {'error': str(e)}
+        
     def get_sentiment_analysis(self, db: Session):
         logger.debug("Entering get_sentiment_analysis method")
         try:

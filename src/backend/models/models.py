@@ -12,6 +12,8 @@ class Organization(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     config_id = Column(Integer, ForeignKey("organization_configs.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     users = relationship("User", back_populates="organization")
     config = relationship("OrganizationConfig", back_populates="organization")
@@ -22,6 +24,8 @@ class OrganizationConfig(Base):
     roles = Column(String)  # JSON string of roles
     assistants = Column(String)  # JSON string of assistant mappings
     feature_flags = Column(String)  # JSON string of feature flags
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     organization = relationship("Organization", back_populates="config")
 
@@ -37,6 +41,8 @@ class UserAnalytics(Base):
     event_data = Column(JSON)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     duration = Column(Float)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="analytics")
         
@@ -56,6 +62,8 @@ class User(Base):
     trial_end = Column(DateTime(timezone=True))
     email_verified = Column(Boolean)
     organization_id = Column(Integer, ForeignKey("organizations.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     organization = relationship("Organization", back_populates="users")
     votes = relationship("Vote", back_populates="user")
@@ -78,8 +86,8 @@ class Vote(Base):
     usefulness_rating = Column(Integer)
     feedback_text = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", back_populates="votes")
 
 User.votes = relationship("Vote", back_populates="user")
-    
