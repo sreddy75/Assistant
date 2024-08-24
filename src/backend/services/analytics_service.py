@@ -77,12 +77,11 @@ class AnalyticsService:
             logger.exception("Error in get_sentiment_analysis method")
             return {"error": str(e)}
 
-    def save_user_event(self, db: Session, user_id: int, user_email: str, event_type: str, event_data: dict, duration: float = None):
-        logger.debug(f"Saving user event: user_id={user_id}, user_email={user_email}, event_type={event_type}, event_data={event_data}, duration={duration}")
+    def save_user_event(self, db: Session, user_id: int, event_type: str, event_data: dict, duration: float = None):
+        logger.debug(f"Saving user event: user_id={user_id}, event_type={event_type}, event_data={event_data}, duration={duration}")
         try:
             new_event = UserAnalytics(
-                user_id=user_id,
-                user_email=user_email,
+                user_id=user_id,                
                 event_type=event_type,
                 event_data=event_data,
                 duration=duration,
@@ -168,14 +167,12 @@ class AnalyticsService:
             logger.exception("Error in analyze_feedback_text method")
             return {'error': str(e)}
 
-    def get_user_events(self, db: Session, user_id: int = None, user_email: str = None):
-        logger.debug(f"Entering get_user_events method with user_id: {user_id}, user_email: {user_email}")
+    def get_user_events(self, db: Session, user_id: int = None):
+        logger.debug(f"Entering get_user_events method with user_id: {user_id}")
         try:
             query = db.query(UserAnalytics)
             if user_id:
-                query = query.filter_by(user_id=user_id)
-            elif user_email:
-                query = query.filter_by(user_email=user_email)
+                query = query.filter_by(user_id=user_id)            
             events = query.order_by(UserAnalytics.timestamp.desc()).all()
             
             result = [

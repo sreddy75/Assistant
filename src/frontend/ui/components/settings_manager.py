@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import streamlit as st
 import requests
 from src.backend.core.config import settings
-from src.ui.utils.helper import restart_assistant
+from ui.components.utils import restart_assistant
 
 BACKEND_URL = settings.BACKEND_URL
 

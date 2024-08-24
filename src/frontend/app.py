@@ -9,10 +9,11 @@ import time
 from queue import Queue
 from ui.components.settings_manager import render_settings_tab
 from ui.components.layout import set_page_layout
-from backend.core.client_config import load_theme, ENABLED_ASSISTANTS, get_client_name
-from src.ui.components.chat_interface import render_chat
-from src.ui.components.analytics_dashboard import render_analytics_dashboard
-from src.frontend.pages.knowledge_base import knowledge_base_page
+from src.backend.core.client_config import load_theme, ENABLED_ASSISTANTS, get_client_name
+from ui.components.chat_interface import render_chat
+from ui.components.analytics_dashboard import render_analytics_dashboard
+from ui.components.dashboard_page import render_dashboard_analytics
+from ui.components.knowledge_base import knowledge_base_page
 
 import toml
 
@@ -234,7 +235,7 @@ def main_app():
             logout()
             st.rerun()
 
-    tabs = ["Chat", "Knowledge Base"]
+    tabs = ["Home", "Chat", "Knowledge Base"]
     if st.session_state.get('is_admin', False):
         tabs.extend(["Analytics"])
     if st.session_state.get('is_super_admin', False):
@@ -242,14 +243,17 @@ def main_app():
     
     selected_tab = st.tabs(tabs)
 
-    with selected_tab[0]:  # Chat tab
+    with selected_tab[tabs.index("Home")]:
+        render_dashboard_analytics()
+    
+    with selected_tab[tabs.index("Chat")]:
         render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
 
-    with selected_tab[1]:  # knowledge base tab
+    with selected_tab[tabs.index("Knowledge Base")]:  
         knowledge_base_page() 
 
     if st.session_state.get('is_admin', False):
-        with selected_tab[2]:  # Analytics tab
+        with selected_tab[tabs.index("Analytics")]:  
             render_analytics_dashboard()
         
     if st.session_state.get('is_super_admin', False) and "Settings" in tabs:

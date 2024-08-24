@@ -62,8 +62,7 @@ class User(Base):
     analytics = relationship("UserAnalytics", back_populates="user")
 
 class UserEvent(BaseModel):
-    user_id: int
-    user_email: str
+    user_id: int    
     event_type: str
     event_data: dict
     duration: Optional[float] = None

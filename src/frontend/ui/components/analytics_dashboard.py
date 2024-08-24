@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from wordcloud import WordCloud
+import io
+import base64
 import requests
 from ui.components.utils import BACKEND_URL
 
@@ -73,13 +76,11 @@ def display_sentiment_analysis(data):
 def display_feedback_analysis(data):
     col1, col2 = st.columns(2)
     with col1:
-        st.write("Top Keywords")
-        if 'top_keywords' in data and data['top_keywords']:
-            df_keywords = pd.DataFrame.from_dict(data['top_keywords'], orient='index', columns=['score'])
-            df_keywords = df_keywords.sort_values('score', ascending=False).head(10)
-            st.bar_chart(df_keywords)
+        st.write("Word Clouds")
+        if 'word_frequency' in data:        
+            plot_wordcloud(data['word_frequency'])    
         else:
-            st.info("No top keywords data available")
+            st.warning("No feedback analysis data available.")
     
     with col2:
         st.write("Sentiment Distribution")
@@ -135,10 +136,11 @@ def plot_sentiment_analysis(analysis):
                         "Upvote vs Downvote Percentage", "Distribution of Sentiment Scores")
     )
 
-    if 'daily_data' in analysis and 'sentiment_score' in analysis['daily_data']:
-        daily_sentiment = pd.DataFrame.from_dict(analysis['daily_data']['sentiment_score'], orient='index', columns=['sentiment_score'])
+    if 'daily_data' in analysis:
+        daily_sentiment = pd.DataFrame.from_dict(analysis['daily_data'], orient='index')
         daily_sentiment.index = pd.to_datetime(daily_sentiment.index)
-        fig.add_trace(go.Scatter(x=daily_sentiment.index, y=daily_sentiment['sentiment_score'], mode='lines'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=daily_sentiment.index, y=daily_sentiment['sentiment_score'], mode='lines', name='Sentiment Score'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=daily_sentiment.index, y=daily_sentiment['usefulness_rating'], mode='lines', name='Usefulness Rating'), row=1, col=1)
 
     if 'usefulness_rating_distribution' in analysis:
         usefulness = pd.DataFrame.from_dict(analysis['usefulness_rating_distribution'], orient='index', columns=['count'])
@@ -153,6 +155,28 @@ def plot_sentiment_analysis(analysis):
 
     fig.update_layout(height=800, width=800, title_text="Sentiment Analysis Overview")
     st.plotly_chart(fig)
+
+def generate_wordcloud(word_freq):
+    wc = WordCloud(width=350, height=450, background_color='white')
+    wc.generate_from_frequencies(word_freq)
+    img = wc.to_image()
+    
+    # Convert PIL image to base64 string
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    
+    return img_str
+def plot_wordcloud(word_freq):
+    img_str = generate_wordcloud(word_freq)
+    
+    fig = go.Figure(go.Image(source=f'data:image/png;base64,{img_str}'))
+    fig.update_layout(title_text="Word Cloud of Feedback", width=350, height=450)
+    fig.update_xaxes(showticklabels=False)
+    fig.update_yaxes(showticklabels=False)
+    
+    st.plotly_chart(fig)
+    
 
 if __name__ == "__main__":
     render_analytics_dashboard()

@@ -155,3 +155,12 @@ def is_authenticated():
         return response.status_code == 200 and response.json().get('authenticated', False)
     return False
 
+def restart_assistant():
+    logger.debug("---*--- Restarting Assistant ---*---")
+    st.session_state["llm_os"] = None
+    st.session_state["llm_os_run_id"] = None
+    if "url_scrape_key" in st.session_state:
+        st.session_state["url_scrape_key"] += 1
+    if "file_uploader_key" in st.session_state:
+        st.session_state["file_uploader_key"] += 1
+    st.rerun()
