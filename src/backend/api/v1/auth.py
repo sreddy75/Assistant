@@ -1,16 +1,20 @@
 from datetime import UTC, datetime, timedelta
+import json
 import logging
 import os
+from src.backend.core.celery_app import celery_app
+import logging
 from email_validator import EmailNotValidError
 from fastapi import APIRouter, Body, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import JWTError
 import jwt
 from pydantic import EmailStr
+from pydantic_core import ValidationError
 from sqlalchemy.orm import Session
 from src.backend.utils.org_utils import load_org_config
 from src.backend.db.session import get_db
-from src.backend.models.models import Organization, User
+from src.backend.models.models import Organization, OrganizationConfig, User
 from src.backend.schemas.user import Token, UserCreate, EmailSchema
 from src.backend.helpers.auth import authenticate_user, create_access_token, get_password_hash, get_user
 from src.backend.helpers.email import send_verification_email, send_password_reset_email
@@ -65,8 +69,16 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         "organization": user.organization.name
     }
 
+@celery_app.task(bind=True, max_retries=3)
+def send_verification_email_task(self, email: str, token: str):
+    try:
+        send_verification_email(email, token)
+    except Exception as exc:
+        logger.error(f"Failed to send verification email to {email}: {exc}")
+        raise self.retry(exc=exc, countdown=60)  # Retry after 1 minute
+
 @router.post("/register")
-async def register(user: UserCreate, org_name: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def register(user: UserCreate, org_name: str, db: Session = Depends(get_db)):
     db_user = get_user(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -75,36 +87,42 @@ async def register(user: UserCreate, org_name: str, background_tasks: Background
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
     
-    org_config = load_org_config(organization.id)
-    available_roles = org_config.get("roles", [])
+    # Fetch the organization config from the database
+    org_config = db.query(OrganizationConfig).filter(OrganizationConfig.id == organization.config_id).first()
+    if not org_config:
+        raise HTTPException(status_code=404, detail="Organization configuration not found")
+    
+    # Parse the roles from the JSON string stored in the database
+    available_roles = json.loads(org_config.roles)
     
     if user.role not in available_roles:
         raise HTTPException(status_code=400, detail="Invalid role for this organization")
     
-    try:
-        valid = EmailStr.validate(user.email)
-        email = valid
-    except EmailNotValidError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    
     hashed_password = get_password_hash(user.password)
     new_user = User(
-        email=email, 
+        email=user.email, 
         hashed_password=hashed_password,
         first_name=user.first_name,
         last_name=user.last_name,
         nickname=user.nickname,
         role=user.role,
         organization_id=organization.id,
-        trial_end=datetime.now(UTC) + timedelta(days=7)
+        trial_end=datetime.now(UTC) + timedelta(days=7),
+        is_active=False,
+        is_admin=False,
+        is_super_admin=False,
+        email_verified=False
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     
     verification_token = create_access_token(data={"sub": new_user.email})
-    background_tasks.add_task(send_verification_email, new_user.email, verification_token)
     
+    # Use Celery to send the verification email asynchronously with retries
+    send_verification_email_task.delay(new_user.email, verification_token)
+    
+    logger.info(f"User registered successfully: {new_user.email}")
     return {"message": "User created successfully. Please check your email for verification."}
 
 @router.get("/verify-email/{token}")

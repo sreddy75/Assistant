@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     BACKEND_URL: Optional[str] = None
     FRONTEND_URL: Optional[str] = None
     TOKENIZERS_PARALLELISM: Optional[bool] = None
+    REDIS_URL: str = 'redis://localhost:6379/0'
 
     class Config:
         env_file = ".env"

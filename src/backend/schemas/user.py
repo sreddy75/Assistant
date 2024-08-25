@@ -31,6 +31,10 @@ class UserCreate(BaseModel):
     last_name: str
     nickname: str
     role: str
+    is_active: bool = False
+    is_admin: bool = False
+    is_super_admin: bool = False
+    email_verified: bool = False
 
 class UserInDB(BaseModel):
     email: str

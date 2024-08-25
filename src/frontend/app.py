@@ -141,7 +141,7 @@ def login_form():
             
             if st.button("Register"):
                 response = requests.post(
-                    f"{BACKEND_URL}/api/register",
+                    f"{BACKEND_URL}/api/v1/auth/register",
                     json={
                         "email": new_email,
                         "password": new_password,
@@ -248,6 +248,7 @@ def logout():
 
 def main_app():
     
+    st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">', unsafe_allow_html=True)    
     apply_expander_style()
 
     col1, col2 = st.sidebar.columns([2, 1])

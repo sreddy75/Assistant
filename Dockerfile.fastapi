@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y curl
 COPY requirements_fastapi.txt .
 
 RUN pip install --no-cache-dir -r requirements_fastapi.txt
+RUN pip install celery redis
 
-COPY backend.py .
-COPY .env .
+COPY . .
 
 CMD ["python", "backend.py"]

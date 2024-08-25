@@ -11,6 +11,7 @@ blinker==1.8.2
 bs4==0.0.2
 cachetools==5.3.3
 certifi==2024.2.2
+celery==5.4.0
 cffi==1.16.0
 charset-normalizer==3.3.2
 click==8.1.7
@@ -82,6 +83,7 @@ python-jose==3.3.0
 python-multipart==0.0.9
 pytz==2024.1
 PyYAML==6.0.1
+redis==5.0.8
 referencing==0.35.1
 requests==2.31.0
 rich==13.7.1
