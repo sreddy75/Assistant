@@ -1,3 +1,4 @@
+from io import BytesIO
 import json
 import pandas as pd
 import streamlit as st
@@ -8,12 +9,12 @@ from datetime import datetime
 import time
 from queue import Queue
 from ui.components.settings_manager import render_settings_tab
-from ui.components.layout import set_page_layout
 from src.backend.core.client_config import load_theme, ENABLED_ASSISTANTS, get_client_name
 from ui.components.chat_interface import render_chat
 from ui.components.analytics_dashboard import render_analytics_dashboard
 from ui.components.dashboard_page import render_dashboard_analytics
 from ui.components.knowledge_base import knowledge_base_page
+from src.backend.core.config import settings
 
 import toml
 
@@ -51,21 +52,26 @@ def login_form():
     client_name = get_client_name()
     col1, col2, col3 = st.columns([1,8,1])
     with col2:
-        # st.markdown(f"<h1 style='color: white; text-align: center;'>{client_name.upper()}'s Assistant</h1>", unsafe_allow_html=True)
-        file_ = open(f"src/backend/config/themes/{get_client_name()}/main_image.png", "rb")
-        contents = file_.read()
-        data_url = base64.b64encode(contents).decode("utf-8")
-        file_.close()
+        # Fetch the main image from the organization's assets
+        try:
+            response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{client_name}/login-form/main_image")
+            if response.status_code == 200:
+                image_data = BytesIO(response.content)
+                contents = image_data.getvalue()
+                data_url = base64.b64encode(contents).decode("utf-8")
+                
+                st.markdown(
+                    f'<div style="display: flex; justify-content: center; margin-bottom: 20px;">'
+                    f'<img src="data:image/png;base64,{data_url}" alt="organization logo" width="200">'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.error(f"Failed to load organization image. Status code: {response.status_code}")
+        except requests.RequestException as e:
+            st.error(f"Failed to fetch organization image: {str(e)}")
 
-        st.markdown(
-            f'<div style="display: flex; justify-content: center; margin-bottom: 20px;">'
-            f'<img src="data:image/png;base64,{data_url}" alt="meerkat logo" width="200">'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
-        
+        tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])        
         with tab1:
             email = st.text_input("Email", key="login_email", value="suren@kr8it.com")
             password = st.text_input("Password", type="password", key="login_password", value="Sur3n#12")
@@ -171,7 +177,6 @@ def initialize_app():
 @st.cache_resource
 def perform_heavy_initialization():
     log_init_event("Setting up page layout...")
-    set_page_layout()
     log_init_event("Initializing knowledge base...")
     # Add any other heavy initialization steps here
     log_init_event("Initialization complete!")
@@ -235,10 +240,12 @@ def main_app():
             logout()
             st.rerun()
 
-    tabs = ["Home", "Chat", "Knowledge Base"]
+    tabs = ["Chat", "Knowledge Base"]
     if st.session_state.get('is_admin', False):
-        tabs.extend(["Analytics"])
+        pass
     if st.session_state.get('is_super_admin', False):
+        tabs.append("Home")    
+        tabs.append("Analytics")    
         tabs.append("Settings")    
     
     selected_tab = st.tabs(tabs)
@@ -261,66 +268,151 @@ def main_app():
             render_settings_tab()
 
 def apply_custom_theme():
-    theme_path = load_theme()
-    with open(theme_path, 'r') as f:
-        theme_config = toml.load(f)
-    
-    theme_css = f"""
-    <style>
-        .stApp {{
-            background-color: {theme_config['theme']['backgroundColor']};
-        }}
-        .stTextInput > div > div > input {{
-            color: white !important;
-            background-color: black !important;
-        }}
-        .stButton > button {{
-            color:  white !important;
-            background-color: {theme_config['theme']['primaryColor']};
-        }}
-        .stTextArea > div > div > textarea {{
-            color: {theme_config['theme']['textColor']};
-        }}
-        .stSelectbox > div > div > div {{
-            color: white !important;
-            background-color: black !important;
-        }}
-        .stHeader {{
-            color: {theme_config['theme']['primaryColor']};
-        }}
-        * {{
-            font-family: {theme_config['theme']['font']};
-        }}
-        input[type="password"] {{
-            color: white !important;
-            background-color: black !important;
-        }}        
-        .stTabs [data-baseweb="tab-list"] {{
-            gap: 20px;
-            background-color: {theme_config['theme']['backgroundColor']};
-        }}
-        .stTabs [data-baseweb="tab"] {{
-            height: 50px;
-            background-color: {theme_config['theme']['backgroundColor']};
-            border-radius: 4px 4px 0 0;
-            gap: 5px;
-            padding-top: 10px;
-            padding-bottom: 10px;
-            font-size: 16px;
-            font-weight: 500;
-            color: white !important;
-        }}
-        .stTabs [aria-selected="true"] {{
-            background-color: ;
-            color: white;
-        }}
-    </style>
-    """
-    st.markdown(theme_css, unsafe_allow_html=True)
+    try:
+        # Fetch the config.toml file content
+        response = requests.get(f"{BACKEND_URL}/api/v1/organizations/public-config/{settings.CLIENT_NAME}")
+        response.raise_for_status()
 
+        # Parse the TOML content
+        config_content = response.text
+        theme_config = toml.loads(config_content)
+
+        # Apply the theme
+        theme_css = f"""
+        <style>
+            .stApp {{
+                background-color: {theme_config['theme']['backgroundColor']};
+            }}
+            .stTextInput > div > div > input,
+            .stTextArea > div > div > textarea,
+            .stSelectbox > div > div > div {{
+                color: {theme_config['theme']['textColor']};                
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+                border: 1px solid {theme_config['theme']['primaryColor']};
+                border-radius: 4px;
+            }}
+            /* Select box specific styling */
+            .stSelectbox > div > div > div {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+            }}
+            .stSelectbox > div > div::before {{
+                background-color: {theme_config['theme']['primaryColor']};
+            }}
+            .stSelectbox > div > div > div:hover {{
+                border-color: {theme_config['theme']['primaryColor']};
+            }}
+            .stSelectbox > div > div > div[aria-selected="true"] {{
+                background-color: {theme_config['theme']['primaryColor']};
+                color: {theme_config['theme']['backgroundColor']};
+            }}
+            /* Dropdown menu styling */
+            .stSelectbox [data-baseweb="select"] {{
+                z-index: 999;
+            }}
+            .stSelectbox [data-baseweb="menu"] {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+            }}
+            .stSelectbox [data-baseweb="option"] {{
+                color: {theme_config['theme']['textColor']};
+            }}
+            .stSelectbox [data-baseweb="option"]:hover {{
+                background-color: {theme_config['theme']['primaryColor']};
+                color: {theme_config['theme']['backgroundColor']};
+            }}
+            .stButton > button {{
+                color: {theme_config['theme']['backgroundColor']};
+                background-color: {theme_config['theme']['primaryColor']};
+                border: none;
+                border-radius: 4px;
+                padding: 0.5rem 1rem;
+                font-weight: bold;
+            }}
+            .stButton > button:hover {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+                color: {theme_config['theme']['primaryColor']};
+            }}
+            * {{
+                font-family: {theme_config['theme']['font']};
+            }}
+            /* Tab styling */
+            .stTabs {{
+                background-color: {theme_config['theme']['backgroundColor']};
+            }}
+            .stTabs [data-baseweb="tab-list"] {{
+                gap: 25px;
+                background-color: {theme_config['theme']['backgroundColor']};
+                border-radius: 4px;
+                padding: 0.5rem;
+            }}
+            .stTabs [data-baseweb="tab"] {{
+                height: 50px;
+                background-color: {theme_config['theme']['backgroundColor']};
+                border-radius: 4px;
+                color: {theme_config['theme']['textColor']};
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }}
+            .stTabs [aria-selected="true"] {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+                color: {theme_config['theme']['backgroundColor']};
+            }}
+            .stTabs [data-baseweb="tab"]:hover {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+                color: {theme_config['theme']['backgroundColor']};
+                font-weight: 800;
+                opacity: 0.8;
+            }}
+            /* Expander styling */
+            .streamlit-expanderHeader {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+                color: {theme_config['theme']['textColor']};
+                border-radius: 4px;
+                border: 1px solid {theme_config['theme']['primaryColor']};
+                padding: 0.5rem;
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }}
+            .streamlit-expanderHeader:hover {{
+                background-color: {theme_config['theme']['primaryColor']};
+                color: {theme_config['theme']['backgroundColor']};
+            }}
+            .streamlit-expanderContent {{
+                background-color: {theme_config['theme']['backgroundColor']};
+                color: {theme_config['theme']['textColor']};
+                border: 1px solid {theme_config['theme']['primaryColor']};
+                border-top: none;
+                border-radius: 0 0 4px 4px;
+                padding: 0.5rem;
+            }}
+            /* Checkbox styling */
+            .stCheckbox > label > span {{
+                color: {theme_config['theme']['textColor']};
+            }}
+            .stCheckbox > label > div[data-baseweb="checkbox"] {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+            }}
+            .stCheckbox > label > div[data-baseweb="checkbox"] > div {{
+                background-color: {theme_config['theme']['primaryColor']};
+            }}
+            /* Slider styling */
+            .stSlider > div > div > div > div {{
+                background-color: {theme_config['theme']['primaryColor']};
+            }}
+            .stSlider > div > div > div > div > div {{
+                color: {theme_config['theme']['backgroundColor']};
+            }}
+        </style>
+        """
+        st.markdown(theme_css, unsafe_allow_html=True)
+
+    except requests.HTTPError as e:
+        logger.error(f"HTTP error occurred while fetching config: {e}")
+        st.error("An error occurred while applying the theme. Using default theme.")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while applying theme: {e}")
+        st.error("An error occurred while applying the theme. Using default theme.")
+                
 def main():
-    # st.set_page_config(page_title="AI Assistant", page_icon="🤖")
-    set_page_layout()
     apply_custom_theme()
     
     if not is_authenticated():

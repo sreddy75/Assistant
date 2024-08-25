@@ -41,3 +41,13 @@ async def create_run(
             raise HTTPException(status_code=500, detail=f"Could not create LLM OS run: {str(e)}")
     else:
         raise HTTPException(status_code=404, detail="Assistant not found")
+    
+@router.get("/get-introduction/{assistant_id}")
+async def get_introduction(
+    assistant_id: int,
+    assistant_manager: AssistantManager = Depends(get_assistant_manager)
+):
+    assistant = assistant_manager.get_assistant_by_id(assistant_id)
+    if assistant:
+        return {"introduction": assistant.introduction}
+    raise HTTPException(status_code=404, detail="Assistant not found")    

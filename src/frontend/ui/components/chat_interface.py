@@ -1,5 +1,6 @@
 import codecs
 import html
+from io import BytesIO
 import json
 import os
 import traceback
@@ -27,11 +28,46 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
 MAX_TOKENS = 4096  # Adjust based on the model 
 BUFFER_TOKENS = 1000  # some room for the response
+llm_os = None
+def load_org_icons():
+    client_name = get_client_name()
+    org_id = st.session_state.get('org_id')
+    
+    if not org_id:
+        logger.warning("Organization ID not found in session state")
+        return None, None
+
+    system_chat_icon = None
+    user_chat_icon = None
+
+    try:
+        # Fetch chat system icon
+        system_icon_response = requests.get(
+            f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/chat_system_icon",
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if system_icon_response.status_code == 200:
+            system_chat_icon = Image.open(BytesIO(system_icon_response.content))
+        else:
+            logger.error(f"Failed to load chat system icon. Status code: {system_icon_response.status_code}")
+
+        # Fetch user icon
+        user_icon_response = requests.get(
+            f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/chat_user_icon",
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if user_icon_response.status_code == 200:
+            user_chat_icon = Image.open(BytesIO(user_icon_response.content))
+        else:
+            logger.error(f"Failed to load user icon. Status code: {user_icon_response.status_code}")
+
+    except Exception as e:
+        logger.error(f"Error loading organization icons: {str(e)}")
+
+    return system_chat_icon, user_chat_icon
 
 # Load the custom icons
-meerkat_icon = Image.open(f"src/backend/config/themes/{client_name}/chat_system_icon.png")
-user_icon = Image.open(f"src/backend/config/themes/{client_name}/chat_user_icon.png")
-llm_os = None
+system_chat_icon, user_chat_icon = load_org_icons()
 
 # New function to send events to the backend
 def send_event(event_type, event_data, duration=None):
@@ -52,7 +88,7 @@ def send_event(event_type, event_data, duration=None):
         if response.status_code != 200:
             logger.error(f"Failed to send event: {response.text}")
         else:
-            logger.info(f"Event sent successfully: {event_type} for user {user_id or user_email}")
+            logger.info(f"Event sent successfully: {event_type} for user {user_id}")
     except Exception as e:
         logger.error(f"Error sending event: {str(e)}")
 
@@ -129,7 +165,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         else:
             st.error("Failed to initialize assistant")
             return
-
+                
     # Fetch assistant info
     assistant_info_response = requests.get(
         f"{BACKEND_URL}/api/v1/assistant/assistant-info/{st.session_state['assistant_id']}",
@@ -141,7 +177,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     else:
         st.error("Failed to fetch assistant info")
         return    
-
+    
     # Fetch chat history
     if "messages" not in st.session_state:
         chat_history_response = requests.get(
@@ -152,7 +188,18 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         if chat_history_response.status_code == 200:
             st.session_state["messages"] = chat_history_response.json()["history"]
         else:
-            st.session_state["messages"] = [{"role": "assistant", "content": "Ask me questions..."}]
+            st.session_state["messages"] = []
+
+    # Fetch the introduction message only if the chat history is empty
+    if not st.session_state["messages"]:
+        intro_response = requests.get(
+            f"{BACKEND_URL}/api/v1/assistant/get-introduction/{st.session_state['assistant_id']}",
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if intro_response.status_code == 200:
+            introduction = intro_response.json()["introduction"]
+            if introduction:
+                st.session_state["messages"].insert(0, {"role": "assistant", "content": introduction})
         
     # Create LLM OS run
     if "llm_os_run_id" not in st.session_state:
@@ -172,11 +219,11 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
             return
 
     chat_container = st.container()
-
+                
     with chat_container:
         for i, message in enumerate(st.session_state["messages"]):
             if message["role"] == "assistant":
-                with st.chat_message(message["role"], avatar=meerkat_icon):
+                with st.chat_message(message["role"], avatar=system_chat_icon):
                     sanitized_content = sanitize_content(message["content"])
                     render_markdown(sanitized_content)
                     
@@ -204,7 +251,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                     send_event("vote_submission", {"is_upvote": False})
                                 
             elif message["role"] == "user":
-                with st.chat_message(message["role"], avatar=user_icon):
+                with st.chat_message(message["role"], avatar=user_chat_icon):
                     sanitized_content = sanitize_content(message["content"])
                     render_markdown(sanitized_content)
 
@@ -217,10 +264,10 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         send_event("user_message", {"content_length": len(prompt)})
 
         with chat_container:
-            with st.chat_message("user", avatar=user_icon):
+            with st.chat_message("user", avatar=user_chat_icon):
                 st.markdown(prompt)
 
-            with st.chat_message("assistant", avatar=meerkat_icon):
+            with st.chat_message("assistant", avatar=system_chat_icon):
                 response_area = st.container()
                 
                 with response_area:

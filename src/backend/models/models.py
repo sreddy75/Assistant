@@ -1,7 +1,7 @@
 import datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import JSON, Column, Float, Integer, String, Boolean, DateTime, ForeignKey, Text, func
+from sqlalchemy import JSON, Column, Float, Integer, LargeBinary, String, Boolean, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -24,6 +24,11 @@ class OrganizationConfig(Base):
     roles = Column(String)  # JSON string of roles
     assistants = Column(String)  # JSON string of assistant mappings
     feature_flags = Column(String)  # JSON string of feature flags
+    instructions = Column(String)  # File path to instructions.json
+    chat_system_icon = Column(String)  # File path to chat_system_icon.png
+    chat_user_icon = Column(String)  # File path to chat_user_icon.png
+    config_toml = Column(String)  # File path to config.toml
+    main_image = Column(String)  # File path to main_image.png
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

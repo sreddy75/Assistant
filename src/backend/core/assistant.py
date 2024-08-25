@@ -38,6 +38,9 @@ from src.backend.kr8.assistant.team.company_analyst import EnhancedCompanyAnalys
 from src.backend.kr8.assistant.team.code_assistant import CodeAssistant
 from src.backend.kr8.assistant.team.product_owner import EnhancedProductOwner
 from src.backend.kr8.assistant.team.business_analyst import EnhancedBusinessAnalyst
+from src.backend.models.models import Organization
+
+
 from src.backend.core.client_config import get_client_name
 
 load_dotenv()
@@ -135,14 +138,23 @@ def get_llm_os(
     user_nickname: Optional[str] = "friend",
     run_id: Optional[str] = None,
     debug_mode: bool = True,
-    web_search: bool = True,
-    db: Session = Depends(get_db),
+    web_search: bool = True,    
     org_config: Optional[dict] = None
-
-
 ) -> Union[Assistant, 'ContextAwareAssistant']: # type: ignore
     
     logger.info(f"-*- Creating {llm_id} LLM OS -*-")    
+    
+    # Fetch the organization name from the database
+    if org_id is not None:
+        db = next(get_db())
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if org is None:
+            raise ValueError(f"Organization with id {org_id} not found")
+        client_name = org.name
+    else:
+        raise ValueError("org_id must be provided")
+
+    
     # Use org_config to determine available assistants and feature flags
     available_assistants = org_config['assistants'].get(user_role, [])
     feature_flags = org_config['feature_flags']
@@ -199,8 +211,7 @@ def get_llm_os(
                 else:
                     assistant_kwargs["knowledge_base"] = knowledge_base
                 team.append(assistant_mapping[assistant](**assistant_kwargs))    
-
-    client_name = get_client_name()
+    
     assistant_instructions = load_assistant_instructions(client_name, user_nickname)    
     
     if 'introduction' in assistant_instructions:

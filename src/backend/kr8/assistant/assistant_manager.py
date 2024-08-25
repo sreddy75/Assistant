@@ -19,8 +19,7 @@ class AssistantManager:
                 user_role=user_role,
                 user_nickname=user_nickname,
                 debug_mode=True,
-                web_search=True,
-                db=self.db,
+                web_search=True,                
                 org_config=org_config
             )
             self.assistants[user_id] = llm_os

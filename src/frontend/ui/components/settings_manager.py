@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
+import pandas as pd
 import streamlit as st
+import io
+from PIL import Image
 import requests
 from src.backend.core.config import settings
 from ui.components.utils import restart_assistant
@@ -21,7 +24,6 @@ def render_settings_tab():
         render_model_selection()
 
 def render_org_management():
-    st.subheader("Organization Management")
 
     # Fetch organizations
     response = requests.get(f"{BACKEND_URL}/api/v1/organizations", 
@@ -29,65 +31,207 @@ def render_org_management():
     if response.status_code == 200:
         organizations = response.json()
         
-        # Display existing organizations
-        for org in organizations:
-            st.write(f"Organization: {org.get('name', 'N/A')}")
-            roles = org.get('roles', [])
-            st.write(f"Roles: {', '.join(roles) if roles else 'No roles defined'}")
+        if organizations:
+            # Create DataFrame for organization table
+            df = pd.DataFrame(organizations)
+            df['Select'] = False
             
-            # Edit organization
-            new_org_name = st.text_input("New Name", key=f"edit_name_{org.get('id', 'unknown')}")
-            new_org_roles = st.text_input("New Roles (comma-separated)", key=f"edit_roles_{org.get('id', 'unknown')}")
+            # Display the table with checkboxes
+            edited_df = st.data_editor(
+                df[["id", "name", "roles", "Select"]],
+                hide_index=True,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select to edit or delete"
+                    )
+                },
+                disabled=["id", "name", "roles"]
+            )
             
-            if st.button("Update", key=f"update_{org.get('id', 'unknown')}"):
-                update_data = {}
-                if new_org_name:
-                    update_data["name"] = new_org_name
-                if new_org_roles:
-                    update_data["roles"] = [role.strip() for role in new_org_roles.split(',')]
+            # Get the selected organization
+            selected_orgs = edited_df[edited_df['Select']].to_dict('records')
+            
+            if len(selected_orgs) == 1:
+                selected_org = selected_orgs[0]
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Edit Selected"):
+                        st.session_state.editing_org_id = selected_org['id']
+                        st.rerun()
+                with col2:
+                    if st.button("Delete Selected"):
+                        delete_organization(selected_org['id'])
+                        st.rerun()                                
                 
-                if update_data:
-                    update_response = requests.put(f"{BACKEND_URL}/api/v1/organizations/{org.get('id', 'unknown')}", 
-                                                   json=update_data,
-                                                   headers={"Authorization": f"Bearer {st.session_state.token}"})
-                    if update_response.status_code == 200:
-                        st.success("Organization updated successfully")
-                    else:
-                        st.error("Failed to update organization")
-            
-            # Delete organization
-            if st.button("Delete", key=f"delete_{org.get('id', 'unknown')}"):
-                delete_response = requests.delete(f"{BACKEND_URL}/api/v1/organizations/{org.get('id', 'unknown')}",
-                                                  headers={"Authorization": f"Bearer {st.session_state.token}"})
-                if delete_response.status_code == 200:
-                    st.success("Organization deleted successfully")
-                else:
-                    st.error("Failed to delete organization")
-            
-            st.markdown("---")
+            elif len(selected_orgs) > 1:
+                st.warning("Please select only one organization to edit or delete.")
+        else:
+            st.info("No organizations found.")
         
-        # Create new organization
-        st.subheader("Create New Organization")
-        new_org_name = st.text_input("Name", key="new_org_name")
-        new_org_roles = st.text_input("Roles (comma-separated)", key="new_org_roles")
+        st.divider()
         
-        if st.button("Create", key="create_org"):
-            if new_org_name and new_org_roles:
-                create_data = {
-                    "name": new_org_name,
-                    "roles": [role.strip() for role in new_org_roles.split(',')]
-                }
-                create_response = requests.post(f"{BACKEND_URL}/api/v1/organizations", 
-                                                json=create_data,
-                                                headers={"Authorization": f"Bearer {st.session_state.token}"})
-                if create_response.status_code == 200:
-                    st.success("New organization created successfully")
-                else:
-                    st.error("Failed to create new organization")
+        # Create or Edit Organization
+        if "editing_org_id" in st.session_state:
+            st.subheader(f"Edit Organization (ID: {st.session_state.editing_org_id})")
+            org_to_edit = next((org for org in organizations if org["id"] == st.session_state.editing_org_id), None)
+            if org_to_edit:
+                create_or_edit_organization(org_to_edit)
             else:
-                st.warning("Please provide both name and roles for the new organization")
+                st.error("Selected organization not found.")
+        else:
+            st.subheader("Create New Organization")
+            create_or_edit_organization(None)
+
     else:
-        st.error("Failed to fetch organizations")
+        st.error(f"Failed to fetch organizations. Status code: {response.status_code}")
+
+def display_org_assets(org_id):
+    asset_types = ["chat_system_icon", "chat_user_icon", "main_image"]
+    for asset_type in asset_types:
+        response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/{asset_type}", 
+                                headers={"Authorization": f"Bearer {st.session_state.token}"})
+        if response.status_code == 200:
+            image = Image.open(io.BytesIO(response.content))
+            st.image(image, caption=f"{asset_type.replace('_', ' ').title()}")
+        else:
+            st.warning(f"Failed to load {asset_type}")
+    
+    for file_type in ["instructions", "config_toml"]:
+        response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/{file_type}",
+                                headers={"Authorization": f"Bearer {st.session_state.token}"})
+        if response.status_code == 200:
+            st.download_button(
+                label=f"Download {file_type.replace('_', ' ').title()}",
+                data=response.content,
+                file_name=f"{file_type}.{'json' if file_type == 'instructions' else 'toml'}",
+                mime=f"application/{'json' if file_type == 'instructions' else 'toml'}"
+            )
+        else:
+            st.warning(f"Failed to load {file_type}")
+
+def create_or_edit_organization(org=None):
+    is_editing = org is not None
+    
+    name = st.text_input("Name", value=org.get("name", "") if is_editing else "")
+    roles = st.text_input("Roles (comma-separated)", value=", ".join(org.get("roles", [])) if is_editing else "")
+    
+    # Define asset types and their display names
+    asset_types = [
+        ("instructions", "Instructions (JSON)"),
+        ("config_toml", "Config (TOML)"),
+        ("chat_system_icon", "Chat System Icon"),
+        ("chat_user_icon", "Chat User Icon"),
+        ("main_image", "Main Image")
+    ]
+    
+    # Create a dictionary to store uploaded files
+    new_files = {}
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:                    
+        st.subheader("current Assets")
+    with col2: 
+        st.subheader("Add New Assets")
+    
+    st.divider()                                    
+    
+    for asset_type, display_name in asset_types:
+        col1, col2 = st.columns([1, 2])        
+        with col1:                    
+            if is_editing:
+                response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{org['id']}/{asset_type}", 
+                                        headers={"Authorization": f"Bearer {st.session_state.token}"})
+                if response.status_code == 200:
+                    if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+                        image = Image.open(io.BytesIO(response.content))
+                        st.image(image, caption=display_name, width=100)  # Adjust width as needed
+                    else:
+                        st.download_button(
+                            label=f"Download {display_name}",
+                            data=response.content,
+                            file_name=f"{asset_type}.{'json' if asset_type == 'instructions' else 'toml'}",
+                            mime=f"application/{'json' if asset_type == 'instructions' else 'toml'}"
+                        )
+                else:
+                    st.warning(f"No current {display_name}")
+            else:
+                st.info(f"No current {display_name}")
+        
+        with col2:                        
+            file_type = "json" if asset_type == "instructions" else "toml" if asset_type == "config_toml" else "png"
+            uploaded_file = st.file_uploader(f"Upload {display_name}", type=file_type, key=f"upload_{asset_type}")
+            if uploaded_file:
+                new_files[asset_type] = uploaded_file
+                if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+                    st.image(uploaded_file, caption=f"New {display_name}", width=100)  # Adjust width as needed
+                else:
+                    st.success(f"New {display_name} ready to upload")
+    
+    if st.button("Update" if is_editing else "Create"):
+        data = {
+            "name": name,
+            "roles": [role.strip() for role in roles.split(',') if role.strip()]
+        }
+        
+        if is_editing:
+            response = requests.put(
+                f"{BACKEND_URL}/api/v1/organizations/{org['id']}",
+                data=data,
+                files=new_files,
+                headers={"Authorization": f"Bearer {st.session_state.token}"}
+            )
+            success_message = "Organization updated successfully"
+            error_message = "Failed to update organization"
+        else:
+            response = requests.post(
+                f"{BACKEND_URL}/api/v1/organizations",
+                data=data,
+                files=new_files,
+                headers={"Authorization": f"Bearer {st.session_state.token}"}
+            )
+            success_message = "New organization created successfully"
+            error_message = "Failed to create new organization"
+        
+        if response.status_code == 200:
+            st.success(success_message)
+            if is_editing:
+                del st.session_state.editing_org_id
+            st.rerun()
+        else:
+            st.error(f"{error_message}: {response.text}")
+    
+    if is_editing:
+        if st.button("Cancel Editing"):
+            del st.session_state.editing_org_id
+            st.rerun()
+def delete_organization(org_id):
+    if st.button(f"Confirm deletion of Organization (ID: {org_id})"):
+        delete_response = requests.delete(
+            f"{BACKEND_URL}/api/v1/organizations/{org_id}",
+            headers={"Authorization": f"Bearer {st.session_state.token}"}
+        )
+        if delete_response.status_code == 200:
+            st.success(f"Organization (ID: {org_id}) deleted successfully")
+        else:
+            st.error(f"Failed to delete organization (ID: {org_id}): {delete_response.text}")
+        
+def render_user_management():
+    st.subheader("User Management")
+
+    # Fetch users
+    response = requests.get(f"{BACKEND_URL}/api/v1/users", 
+                            headers={"Authorization": f"Bearer {st.session_state.token}"})
+    if response.status_code == 200:
+        users = response.json()
+        
+        import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import requests
+from src.backend.core.config import settings
+
+BACKEND_URL = settings.BACKEND_URL
 
 def render_user_management():
     st.subheader("User Management")
@@ -98,58 +242,73 @@ def render_user_management():
     if response.status_code == 200:
         users = response.json()
         
-        # Display existing users
-        for index, user in enumerate(users):
-            st.write(f"User: {user.get('first_name', '')} {user.get('last_name', '')} ({user.get('nickname', 'N/A')})")
-            st.write(f"Email: {user.get('email', 'N/A')}")
-            st.write(f"Role: {user.get('role', 'N/A')}")
-            st.write(f"Organization: {user.get('organization', 'N/A')}")
-            st.write(f"Trial End Date: {user.get('trial_end', 'N/A')}")
+        # Create a DataFrame for the user table
+        user_data = []
+        for user in users:
+            user_data.append({
+                "ID": user.get('id'),
+                "Name": f"{user.get('first_name', '')} {user.get('last_name', '')}",
+                "Nickname": user.get('nickname', 'N/A'),
+                "Email": user.get('email', 'N/A'),
+                "Role": user.get('role', 'N/A'),
+                "Organization": user.get('organization', 'N/A'),
+                "Trial End": user.get('trial_end', 'N/A')
+            })
+        
+        df = pd.DataFrame(user_data)
+        
+        # Display the user table
+        st.dataframe(df)
+
+        # User actions
+        st.subheader("User Actions")
+        selected_user = st.selectbox("Select a user", df['Nickname'])
+        user = next((u for u in users if u['nickname'] == selected_user), None)
+
+        if user:
+            col1, col2, col3 = st.columns(3)
             
-            # Trial extension
-            if user.get('role') == 'trial':
-                days_to_extend = st.number_input(f"Extend trial for {user['nickname']} (days)", 
-                                                 min_value=1, max_value=30, value=7, 
-                                                 key=f"extend_trial_{user['id']}_{index}")
-                if st.button(f"Extend Trial for {user['nickname']}", key=f"extend_button_{user['id']}_{index}"):
-                    extend_response = requests.post(
-                        f"{BACKEND_URL}/api/v1/users/{user['id']}/extend-trial",
-                        json={"days": days_to_extend},
+            with col1:
+                new_role = st.selectbox(f"Change role for {user['nickname']}", ['trial', 'user', 'admin'])
+                if st.button(f"Update Role"):
+                    update_response = requests.put(
+                        f"{BACKEND_URL}/api/v1/users/{user['id']}/role",
+                        json={"role": new_role},
                         headers={"Authorization": f"Bearer {st.session_state.token}"}
                     )
-                    if extend_response.status_code == 200:
-                        st.success(f"Trial extended for {user['nickname']} by {days_to_extend} days")
+                    if update_response.status_code == 200:
+                        st.success(f"Role updated for {user['nickname']} to {new_role}")
                     else:
-                        st.error(f"Failed to extend trial for {user['nickname']}")
-            
-            # Change user role
-            new_role = st.selectbox(f"Change role for {user['nickname']}", 
-                                    ['trial', 'user', 'admin'], 
-                                    key=f"change_role_{user['id']}_{index}")
-            if st.button(f"Update Role for {user['nickname']}", key=f"update_role_{user['id']}_{index}"):
-                update_response = requests.put(
-                    f"{BACKEND_URL}/api/v1/users/{user['id']}/role",
-                    json={"role": new_role},
-                    headers={"Authorization": f"Bearer {st.session_state.token}"}
-                )
-                if update_response.status_code == 200:
-                    st.success(f"Role updated for {user['nickname']} to {new_role}")
+                        st.error(f"Failed to update role for {user['nickname']}")
+
+            with col2:
+                if user.get('role') == 'trial':
+                    days_to_extend = st.number_input(f"Extend trial for {user['nickname']} (days)", 
+                                                     min_value=1, max_value=30, value=7)
+                    if st.button(f"Extend Trial"):
+                        extend_response = requests.post(
+                            f"{BACKEND_URL}/api/v1/users/{user['id']}/extend-trial",
+                            json={"days": days_to_extend},
+                            headers={"Authorization": f"Bearer {st.session_state.token}"}
+                        )
+                        if extend_response.status_code == 200:
+                            st.success(f"Trial extended for {user['nickname']} by {days_to_extend} days")
+                        else:
+                            st.error(f"Failed to extend trial for {user['nickname']}")
                 else:
-                    st.error(f"Failed to update role for {user['nickname']}")
-            
-            # Delete user
-            if st.button(f"Delete {user['nickname']}", key=f"delete_{user['id']}_{index}"):
-                delete_response = requests.delete(
-                    f"{BACKEND_URL}/api/v1/users/{user['id']}",
-                    headers={"Authorization": f"Bearer {st.session_state.token}"}
-                )
-                if delete_response.status_code == 200:
-                    st.success(f"User {user['nickname']} deleted successfully")
-                else:
-                    st.error(f"Failed to delete user {user['nickname']}")
-            
-            st.markdown("---")
-        
+                    st.write("User is not on trial")
+
+            with col3:
+                if st.button(f"Delete User"):
+                    delete_response = requests.delete(
+                        f"{BACKEND_URL}/api/v1/users/{user['id']}",
+                        headers={"Authorization": f"Bearer {st.session_state.token}"}
+                    )
+                    if delete_response.status_code == 200:
+                        st.success(f"User {user['nickname']} deleted successfully")
+                    else:
+                        st.error(f"Failed to delete user {user['nickname']}")
+
         # Create new user
         st.subheader("Create New User")
         new_email = st.text_input("Email", key="new_email")
@@ -157,7 +316,7 @@ def render_user_management():
         new_first_name = st.text_input("First Name", key="new_first_name")
         new_last_name = st.text_input("Last Name", key="new_last_name")
         new_nickname = st.text_input("Nickname", key="new_nickname")
-        new_role = st.selectbox("Role", ['trial', 'user', 'admin'], key="new_role")
+        new_role = st.selectbox("Role", ['user', 'admin'], key="new_role")
         new_org = st.text_input("Organization", key="new_org")
         
         if st.button("Create User", key="create_user"):

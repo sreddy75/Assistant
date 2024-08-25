@@ -1,5 +1,16 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+import os
+from pathlib import Path
+
+# Get the base directory of your project
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Define the upload directory
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+
+# Ensure the upload directory exists
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "LLM Assistant API"
@@ -39,4 +50,5 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 settings = Settings()
+
 
