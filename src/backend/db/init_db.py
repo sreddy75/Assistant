@@ -23,7 +23,15 @@ def init_db():
             print("Creating default organization and super admin user...")
             # Create default organization config
             default_org_config = OrganizationConfig(
-                roles=json.dumps(["Super Admin", "Admin", "User"]),
+                roles=json.dumps({
+                        "Dev": ["Web Search", "Code Assistant"],
+                        "QA": ["Web Search", "Enhanced Quality Analyst", "Business Analyst"],
+                        "Product": ["Web Search", "Product Owner", "Business Analyst", "Enhanced Data Analyst"],
+                        "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
+                        "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"],
+                        "Admin": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"],
+                        "Super Admin": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
+                    }),
                 assistants=json.dumps({"default_assistant": True}),
                 feature_flags=json.dumps({"enable_feedback_sentiment_analysis": True})
             )

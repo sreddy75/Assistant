@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 import time
 from queue import Queue
+from ui.components.sidebar_manager import render_sidebar
 from ui.components.settings_manager import render_settings_tab
 from src.backend.core.client_config import load_theme, ENABLED_ASSISTANTS, get_client_name
 from ui.components.chat_interface import render_chat
@@ -71,8 +72,22 @@ def login_form():
         except requests.RequestException as e:
             st.error(f"Failed to fetch organization image: {str(e)}")
 
-        tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])        
+        # Custom CSS for the separator
+        st.markdown("""
+        <style>
+        .separator {
+            width: 100%;
+            height: 2px;
+            background-color: red;
+            margin: 1rem 0;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
+        
         with tab1:
+            st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
             email = st.text_input("Email", key="login_email", value="suren@kr8it.com")
             password = st.text_input("Password", type="password", key="login_password", value="Sur3n#12")
             if st.button("Log In"):
@@ -109,6 +124,7 @@ def login_form():
                     st.error(f"An error occurred during login: {str(e)}")
 
         with tab2:
+            st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
             new_email = st.text_input("Email", key="register_email")
             new_password = st.text_input("Password", type="password", key="register_password")
             first_name = st.text_input("First Name", key="register_first_name")
@@ -142,6 +158,7 @@ def login_form():
                     st.error(response.json().get("detail", "Registration failed"))
 
         with tab3:
+            st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
             reset_email = st.text_input("Email", key="reset_email")
             if st.button("Reset Password"):
                 response = requests.post(f"{BACKEND_URL}/api/request-password-reset", json={"email": reset_email})
@@ -230,6 +247,9 @@ def logout():
     st.session_state.clear()
 
 def main_app():
+    
+    apply_expander_style()
+
     col1, col2 = st.sidebar.columns([2, 1])
     with col1:
         if st.session_state.get('nickname'):            
@@ -242,30 +262,28 @@ def main_app():
 
     tabs = ["Chat", "Knowledge Base"]
     if st.session_state.get('is_admin', False):
-        pass
+        tabs.append("Analytics")
     if st.session_state.get('is_super_admin', False):
-        tabs.append("Home")    
-        tabs.append("Analytics")    
-        tabs.append("Settings")    
+        tabs.extend(["Home", "Settings"])
     
     selected_tab = st.tabs(tabs)
 
-    with selected_tab[tabs.index("Home")]:
-        render_dashboard_analytics()
+    for i, tab in enumerate(tabs):
+        with selected_tab[i]:
+            st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
+            
+            if tab == "Home":
+                render_dashboard_analytics()
+            elif tab == "Chat":
+                render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
+            elif tab == "Knowledge Base":
+                knowledge_base_page()
+            elif tab == "Analytics":
+                render_analytics_dashboard()
+            elif tab == "Settings":
+                render_settings_tab()
     
-    with selected_tab[tabs.index("Chat")]:
-        render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
-
-    with selected_tab[tabs.index("Knowledge Base")]:  
-        knowledge_base_page() 
-
-    if st.session_state.get('is_admin', False):
-        with selected_tab[tabs.index("Analytics")]:  
-            render_analytics_dashboard()
-        
-    if st.session_state.get('is_super_admin', False) and "Settings" in tabs:
-        with selected_tab[tabs.index("Settings")]:
-            render_settings_tab()
+    render_sidebar()
 
 def apply_custom_theme():
     try:
@@ -280,21 +298,29 @@ def apply_custom_theme():
         # Apply the theme
         theme_css = f"""
         <style>
+            /* Global styles */
+            .stApp, .stApp p, .stApp label, .stApp .stMarkdown, .stApp .stText {{
+                color: {theme_config['theme']['textColor']};
+            }}
             .stApp {{
                 background-color: {theme_config['theme']['backgroundColor']};
             }}
+            * {{
+                font-family: {theme_config['theme']['font']};
+            }}
+
+            /* Input fields */
             .stTextInput > div > div > input,
             .stTextArea > div > div > textarea,
-            .stSelectbox > div > div > div {{
+            .stSelectbox > div > div > div,
+            .stMultiSelect > div > div > div {{
                 color: {theme_config['theme']['textColor']};                
                 background-color: {theme_config['theme']['secondaryBackgroundColor']};
                 border: 1px solid {theme_config['theme']['primaryColor']};
                 border-radius: 4px;
             }}
-            /* Select box specific styling */
-            .stSelectbox > div > div > div {{
-                background-color: {theme_config['theme']['secondaryBackgroundColor']};
-            }}
+
+            /* Select box */
             .stSelectbox > div > div::before {{
                 background-color: {theme_config['theme']['primaryColor']};
             }}
@@ -305,7 +331,8 @@ def apply_custom_theme():
                 background-color: {theme_config['theme']['primaryColor']};
                 color: {theme_config['theme']['backgroundColor']};
             }}
-            /* Dropdown menu styling */
+
+            /* Dropdown menu */
             .stSelectbox [data-baseweb="select"] {{
                 z-index: 999;
             }}
@@ -319,9 +346,11 @@ def apply_custom_theme():
                 background-color: {theme_config['theme']['primaryColor']};
                 color: {theme_config['theme']['backgroundColor']};
             }}
+
+            /* Buttons */
             .stButton > button {{
-                color: {theme_config['theme']['backgroundColor']};
-                background-color: {theme_config['theme']['primaryColor']};
+                color: {theme_config['theme']['backgroundColor']};                
+                background-color: #25cf47;
                 border: none;
                 border-radius: 4px;
                 padding: 0.5rem 1rem;
@@ -331,10 +360,8 @@ def apply_custom_theme():
                 background-color: {theme_config['theme']['secondaryBackgroundColor']};
                 color: {theme_config['theme']['primaryColor']};
             }}
-            * {{
-                font-family: {theme_config['theme']['font']};
-            }}
-            /* Tab styling */
+
+            /* Tabs */
             .stTabs {{
                 background-color: {theme_config['theme']['backgroundColor']};
             }}
@@ -352,9 +379,8 @@ def apply_custom_theme():
                 font-weight: 600;
                 transition: all 0.3s ease;
             }}
-            .stTabs [aria-selected="true"] {{
-                background-color: {theme_config['theme']['secondaryBackgroundColor']};
-                color: {theme_config['theme']['backgroundColor']};
+            .stTabs [aria-selected="true"] {{                
+                color: {theme_config['theme']['secondaryBackgroundColor']};
             }}
             .stTabs [data-baseweb="tab"]:hover {{
                 background-color: {theme_config['theme']['secondaryBackgroundColor']};
@@ -362,7 +388,8 @@ def apply_custom_theme():
                 font-weight: 800;
                 opacity: 0.8;
             }}
-            /* Expander styling */
+
+            /* Expander */
             .streamlit-expanderHeader {{
                 background-color: {theme_config['theme']['secondaryBackgroundColor']};
                 color: {theme_config['theme']['textColor']};
@@ -384,7 +411,8 @@ def apply_custom_theme():
                 border-radius: 0 0 4px 4px;
                 padding: 0.5rem;
             }}
-            /* Checkbox styling */
+
+            /* Checkbox */
             .stCheckbox > label > span {{
                 color: {theme_config['theme']['textColor']};
             }}
@@ -394,13 +422,169 @@ def apply_custom_theme():
             .stCheckbox > label > div[data-baseweb="checkbox"] > div {{
                 background-color: {theme_config['theme']['primaryColor']};
             }}
-            /* Slider styling */
+
+            /* Slider */
             .stSlider > div > div > div > div {{
                 background-color: {theme_config['theme']['primaryColor']};
             }}
             .stSlider > div > div > div > div > div {{
                 color: {theme_config['theme']['backgroundColor']};
             }}
+
+            /* Table */
+            .dataframe {{
+                color: {theme_config['theme']['textColor']} !important;
+            }}
+            .dataframe th {{
+                color: {theme_config['theme']['textColor']} !important;
+            }}
+            .dataframe td {{
+                color: {theme_config['theme']['textColor']} !important;
+            }}
+
+            /* File uploader */
+            .stFileUploader > div > div {{
+                color: {theme_config['theme']['textColor']} !important;
+            }}
+
+            /* Info, warning, and error messages */
+            .stAlert > div {{
+                color: {theme_config['theme']['textColor']} !important;
+            }}
+
+            /* Sidebar styling */
+            [data-testid="stSidebar"] {{
+                background-color: #292727;
+            }}
+            [data-testid="stSidebar"] .stButton > button {{
+                background-color: #25cf47;
+                color: white;
+            }}
+            [data-testid="stSidebar"] .stTextInput > div > div > input {{
+                background-color: #3E3E3E;
+                color: white;
+            }}
+            [data-testid="stSidebar"] .stSelectbox > div > div > div {{
+                background-color: #3E3E3E;
+                color: white;
+            }}
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
+                color: white;
+            }}
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {{
+                color: white;
+            }}
+            [data-testid="stSidebar"] .stCheckbox > label > span {{
+                color: white;
+            }}
+
+            /* Hide Streamlit Hamburger Menu and "Deploy" Button */
+            .stApp > header {{
+                display: none !important;
+            }}
+
+            /* Adjust the main content area to take up the space of the removed header */
+            .stApp > .main {{
+                margin-top: -4rem;
+            }}
+
+            /* Chat message styling */
+            .chat-message, .chat-message p, .chat-message li, .chat-message h1, .chat-message h2, .chat-message h3, .chat-message h4, .chat-message h5, .chat-message h6 {{
+                color: white !important;
+            }}
+            .assistant-response, .assistant-response p, .assistant-response li, .assistant-response h1, .assistant-response h2, .assistant-response h3, .assistant-response h4, .assistant-response h5, .assistant-response h6 {{
+                color: white !important;
+            }}
+            .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {{
+                color: white !important;
+            }}
+
+            /* Pulsating dot animation */
+            @keyframes pulse {{
+                0% {{ transform: scale(0.8); opacity: 0.7; }}
+                50% {{ transform: scale(1); opacity: 1; }}
+                100% {{ transform: scale(0.8); opacity: 0.7; }}
+            }}
+            .pulsating-dot {{
+                width: 20px; height: 20px;
+                background-color: #ff0000;
+                border-radius: 50%;
+                display: inline-block;
+                animation: pulse 1.5s ease-in-out infinite;
+            }}
+
+            /* Separator for tabs */
+            .separator {{
+                width: 100%;
+                height: 2px;
+                background-color: red;
+                margin: 1rem 0;
+            }}
+            
+              /* Comprehensive Slider Styling */
+            .stSlider label,
+            .stSlider text,
+            .stSlider .st-bb,
+            .stSlider .st-bv,
+            .stSlider .st-cj,
+            .stSlider .st-cl,
+            .stSlider [data-baseweb="slider"] {{
+                color: white !important;
+            }}
+            
+            /* Ensure all text within the slider container is white */
+            [data-testid="stSlider"] {{
+                color: white !important;
+            }}
+            
+            /* Target specific parts of the slider */
+            [data-testid="stSlider"] > div > div > div {{
+                color: white !important;
+            }}
+            
+            /* Slider thumb label */
+            [data-testid="stSlider"] [data-testid="stThumbValue"] {{
+                color: white !important;
+            }}
+            
+             /* Enhanced Expander Styling */
+            .streamlit-expanderHeader {{
+                background-color: {theme_config['theme']['primaryColor']};
+                color: {theme_config['theme']['backgroundColor']};
+                border-radius: 8px 8px 0 0;
+                border: 2px solid {theme_config['theme']['primaryColor']};
+                padding: 0.75rem 1rem;
+                font-weight: 600;
+                font-size: 1.1em;
+                transition: all 0.3s ease;
+                margin-top: 1rem;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }}
+            .streamlit-expanderHeader:hover {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+                color: {theme_config['theme']['primaryColor']};
+            }}
+            .streamlit-expanderContent {{
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
+                color: {theme_config['theme']['textColor']};
+                border: 2px solid {theme_config['theme']['primaryColor']};
+                border-top: none;
+                border-radius: 0 0 8px 8px;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }}
+            
+            /* Expander icon styling */
+            .streamlit-expanderHeader svg {{
+                transform: scale(1.5);
+                fill: {theme_config['theme']['backgroundColor']};
+                transition: all 0.3s ease;
+            }}
+            .streamlit-expanderHeader:hover svg {{
+                fill: {theme_config['theme']['primaryColor']};
+            }}
+            
         </style>
         """
         st.markdown(theme_css, unsafe_allow_html=True)
@@ -411,7 +595,48 @@ def apply_custom_theme():
     except Exception as e:
         logger.error(f"An unexpected error occurred while applying theme: {e}")
         st.error("An error occurred while applying the theme. Using default theme.")
-                
+
+def apply_expander_style():
+    expander_style = """
+    <style>
+        /* Enhanced Expander Styling */
+        [data-testid="stExpander"] {
+            border: 2px solid #4CAF50;
+            border-radius: 8px;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+        }
+        [data-testid="stExpander"] > div:first-child {
+            background-color: #4CAF50;
+            color: white;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            font-size: 1.1em;
+            transition: all 0.3s ease;
+            border-radius: 6px 6px 0 0;
+        }
+        [data-testid="stExpander"] > div:first-child:hover {
+            background-color: #45a049;
+        }
+        [data-testid="stExpander"] > div:nth-child(2) {
+            background-color: #1E1E1E;
+            color: white;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            padding: 1rem;
+        }
+        [data-testid="stExpander"] svg {
+            transform: scale(1.5);
+            fill: white;
+            transition: all 0.3s ease;
+        }
+        [data-testid="stExpander"]:hover svg {
+            fill: #E0E0E0;
+        }
+    </style>
+    """
+    st.markdown(expander_style, unsafe_allow_html=True)
+                    
 def main():
     apply_custom_theme()
     

@@ -29,6 +29,12 @@ class OrganizationWithFiles(OrganizationBase):
     main_image: Optional[UploadFile] = File(None)
 
 class OrganizationResponse(OrganizationInDB):
+    id: int
+    name: str
+    roles: Dict[str, List[str]]
+    assistants: Dict[str, bool]
+    feature_flags: Dict[str, bool]
+    config_id: int
     instructions_path: Optional[str] = None
     chat_system_icon_path: Optional[str] = None
     chat_user_icon_path: Optional[str] = None

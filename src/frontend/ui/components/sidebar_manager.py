@@ -5,10 +5,10 @@ import streamlit as st
 from src.backend.kr8.tools.pandas import PandasTools
 from src.backend.kr8.tools.code_tools import CodeTools
 from ui.components.utils import restart_assistant
-from backend.core.client_config import ENABLED_ASSISTANTS
+from src.backend.core.client_config import ENABLED_ASSISTANTS
 import matplotlib.pyplot as plt
-from backend.db.session import get_db
-from backend.utils.org_utils import load_org_config
+from src.backend.db.session import get_db
+from src.backend.utils.org_utils import load_org_config
 
 def initialize_session_state(user_role):
     # Fetch the organization ID from the session state
@@ -129,8 +129,6 @@ def render_sidebar():
                     show_java_project_analysis(project_name)
         
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
-    
-    render_model_selection()
 
 def process_project(project_type, project_name, project_files):
     progress_bar = st.empty()
@@ -265,20 +263,3 @@ def show_java_project_analysis(project_name):
             st.warning(f"No project analysis found for Java project '{project_name}'")
     else:
         st.sidebar.error("LLM OS not initialized. Please try restarting the application.")
-
-def render_model_selection():
-    with st.expander("Select model:", expanded=False):
-        model_type = st.radio("Select Model Type", ["Closed", "Open Source"])
-
-        if model_type == "Closed":
-            llm_options = ["gpt-4o", "claude-3.5"]
-            llm_id = st.selectbox("Select Closed Source Model", options=llm_options)
-        else: 
-            llm_options = ["llama3", "tinyllama"]
-            llm_id = st.selectbox("Select Open Source Model", options=llm_options)
-        
-        if "llm_id" not in st.session_state:
-            st.session_state["llm_id"] = llm_id
-        elif st.session_state["llm_id"] != llm_id:
-            st.session_state["llm_id"] = llm_id
-            restart_assistant()

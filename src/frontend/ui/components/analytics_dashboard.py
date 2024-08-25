@@ -18,9 +18,7 @@ def fetch_data(endpoint):
         st.error(f"Failed to fetch data from {endpoint}: {str(e)}")
         return None
 
-def render_analytics_dashboard():
-    st.header("Analytics Dashboard")
-
+def render_analytics_dashboard():    
     # Fetch data from all relevant endpoints
     sentiment_analysis = fetch_data("/api/v1/analytics/sentiment-analysis")
     feedback_analysis = fetch_data("/api/v1/analytics/feedback-analysis")

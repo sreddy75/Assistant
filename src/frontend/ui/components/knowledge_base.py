@@ -7,7 +7,6 @@ from src.backend.core.config import settings
 BACKEND_URL = settings.BACKEND_URL
 
 def knowledge_base_page():        
-    st.subheader("Content")    
     # Create tabs for different sections
     tab1, tab2, tab3 = st.tabs(["Add Content", "Search Documents", "Manage Documents"])
 

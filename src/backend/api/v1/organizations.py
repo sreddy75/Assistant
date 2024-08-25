@@ -3,7 +3,7 @@ import json
 import os
 from typing import Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from src.backend.utils.org_utils import load_org_config
 from src.backend.schemas.organization import OrganizationCreate, OrganizationUpdate, OrganizationWithFiles, OrganizationResponse
@@ -46,6 +46,17 @@ async def get_public_organization_config(org_name: str, db: Session = Depends(ge
     
     return FileResponse(config.config_toml)
 
+async def save_file(file: UploadFile, filename: str) -> str:
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    try:
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        return file_path
+    except Exception as e:
+        logger.error(f"Error saving file {filename}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+
 @router.post("/", response_model=OrganizationResponse)
 async def create_organization(
     org_data: OrganizationWithFiles = Depends(),
@@ -55,10 +66,18 @@ async def create_organization(
     if not current_user.is_super_admin:
         raise HTTPException(status_code=403, detail="Only super admins can create organizations")
     
+    feature_flags_content = {}
+    if org_data.feature_flags:
+        feature_flags_content = json.loads(await org_data.feature_flags.read())
+
+    roles_content = {}
+    if org_data.roles:
+        roles_content = json.loads(await org_data.roles.read())
+
     org_config = OrganizationConfig(
-        roles=json.dumps(org_data.roles),
+        roles=json.dumps(roles_content),
         assistants=json.dumps(org_data.assistants),
-        feature_flags=json.dumps(org_data.feature_flags),
+        feature_flags=json.dumps(feature_flags_content),
         instructions=await save_file(org_data.instructions, f"instructions_{org_data.name}.json") if org_data.instructions else None,
         chat_system_icon=await save_file(org_data.chat_system_icon, f"chat_system_icon_{org_data.name}.png") if org_data.chat_system_icon else None,
         chat_user_icon=await save_file(org_data.chat_user_icon, f"chat_user_icon_{org_data.name}.png") if org_data.chat_user_icon else None,
@@ -77,9 +96,9 @@ async def create_organization(
     return OrganizationResponse(
         id=new_org.id,
         name=new_org.name,
-        roles=json.loads(org_config.roles),
+        roles=roles_content,
         assistants=json.loads(org_config.assistants),
-        feature_flags=json.loads(org_config.feature_flags),
+        feature_flags=feature_flags_content,
         config_id=org_config.id,
         instructions_path=org_config.instructions,
         chat_system_icon_path=org_config.chat_system_icon,
@@ -92,12 +111,13 @@ async def create_organization(
 async def update_organization(
     org_id: int,
     name: Optional[str] = Form(None),
-    roles: Optional[str] = Form(None),
     instructions: Optional[UploadFile] = File(None),
     chat_system_icon: Optional[UploadFile] = File(None),
     chat_user_icon: Optional[UploadFile] = File(None),
     config_toml: Optional[UploadFile] = File(None),
     main_image: Optional[UploadFile] = File(None),
+    feature_flags: Optional[UploadFile] = File(None),
+    roles: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -112,21 +132,57 @@ async def update_organization(
     
     if name:
         org.name = name
-    if roles:
-        config.roles = json.dumps([role.strip() for role in roles.split(',') if role.strip()])
     
-    if instructions:
-        config.instructions = await save_file(instructions, f"instructions_{org_id}.json")
-    if chat_system_icon:
-        config.chat_system_icon = await save_file(chat_system_icon, f"chat_system_icon_{org_id}.png")
-    if chat_user_icon:
-        config.chat_user_icon = await save_file(chat_user_icon, f"chat_user_icon_{org_id}.png")
-    if config_toml:
-        config.config_toml = await save_file(config_toml, f"config_{org_id}.toml")
-    if main_image:
-        config.main_image = await save_file(main_image, f"main_image_{org_id}.png")
+    # Handle file uploads (instructions, icons, config_toml, main_image)
+    for file_field in [instructions, chat_system_icon, chat_user_icon, config_toml, main_image]:
+        if file_field:
+            file_content = await file_field.read()
+            setattr(config, file_field.filename, file_content)
+    
+    # Handle JSON files (feature_flags, roles)
+    if feature_flags:
+        try:
+            content = await feature_flags.read()
+            logger.info(f"Feature flags content: {content}")
+            
+            if not content:
+                logger.warning("Feature flags file is empty")
+                raise HTTPException(status_code=400, detail="Feature flags file is empty")
+            
+            json_content = json.loads(content)
+            config.feature_flags = json.dumps(json_content)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in feature flags: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in feature flags file: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error processing feature flags: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing feature flags: {str(e)}")
 
-    db.commit()
+    if roles:
+        try:
+            content = await roles.read()
+            logger.info(f"Roles content: {content}")
+            
+            if not content:
+                logger.warning("Roles file is empty")
+                raise HTTPException(status_code=400, detail="Roles file is empty")
+            
+            json_content = json.loads(content)
+            config.roles = json.dumps(json_content)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in roles: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in roles file: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error processing roles: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing roles: {str(e)}")
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error updating organization in database")
+
     db.refresh(org)
     db.refresh(config)
 
@@ -144,16 +200,27 @@ async def update_organization(
         main_image_path=config.main_image
     )
 
-async def save_file(file: UploadFile, filename: str) -> str:
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    try:
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-        return file_path
-    except Exception as e:
-        logger.error(f"Error saving file {filename}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+@router.get("/asset/{org_id}/{asset_type}")
+async def get_organization_asset(org_id: int, asset_type: str, db: Session = Depends(get_db)):
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        logger.error(f"Organization not found: {org_id}")
+        raise HTTPException(status_code=404, detail="Organization not found")
+    
+    config = db.query(OrganizationConfig).filter(OrganizationConfig.id == org.config_id).first()
+    
+    if asset_type in ["feature_flags", "roles"]:
+        logger.info(f"Retrieving {asset_type} for org: {org_id}")
+        data = json.loads(getattr(config, asset_type))
+        return JSONResponse(content=data)
+    
+    asset_path = getattr(config, asset_type, None)
+    logger.info(f"Attempting to retrieve asset: {asset_type}, path: {asset_path}")
+    if not asset_path:
+        logger.error(f"Asset not found: {asset_type}")
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    return FileResponse(asset_path)
 
 @router.get("/asset/{org_name}/login-form/main_image")
 async def get_organization_main_image(org_name: str, db: Session = Depends(get_db)):
@@ -172,30 +239,6 @@ async def get_organization_main_image(org_name: str, db: Session = Depends(get_d
     
     return FileResponse(main_image_path)
         
-@router.get("/asset/{org_id}/{asset_type}")
-async def get_organization_asset(org_id: int, asset_type: str, db: Session = Depends(get_db)):
-    org = db.query(Organization).filter(Organization.id == org_id).first()
-    if not org:
-        logger.error(f"Organization not found: {org_id}")
-        raise HTTPException(status_code=404, detail="Organization not found")
-    
-    config = db.query(OrganizationConfig).filter(OrganizationConfig.id == org.config_id).first()
-    
-    asset_path = getattr(config, asset_type, None)
-    logger.info(f"Attempting to retrieve asset: {asset_type}, path: {asset_path}")
-    if not asset_path or not os.path.exists(asset_path):
-        logger.error(f"Asset not found: {asset_type}, path: {asset_path}")
-        raise HTTPException(status_code=404, detail="Asset not found")
-    
-    return FileResponse(asset_path)
-
-async def save_file(file: UploadFile, filename: str) -> str:
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    with open(file_path, "wb") as buffer:
-        content = await file.read()
-        buffer.write(content)
-    return file_path
-
 @router.get("/")
 async def list_organizations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user.is_super_admin:

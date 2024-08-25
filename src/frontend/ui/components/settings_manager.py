@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 import pandas as pd
 import streamlit as st
 import io
@@ -8,9 +9,18 @@ from src.backend.core.config import settings
 from ui.components.utils import restart_assistant
 
 BACKEND_URL = settings.BACKEND_URL
+import json
+import pandas as pd
+import streamlit as st
+import io
+from PIL import Image
+import requests
+from src.backend.core.config import settings
+from ui.components.utils import restart_assistant
 
+BACKEND_URL = settings.BACKEND_URL
+    
 def render_settings_tab():
-    st.header("Settings")
     
     tab1, tab2, tab3 = st.tabs(["Organization Management", "User Management", "Model Selection"])
     
@@ -69,7 +79,6 @@ def render_org_management():
         else:
             st.info("No organizations found.")
         
-        st.divider()
         
         # Create or Edit Organization
         if "editing_org_id" in st.session_state:
@@ -114,64 +123,95 @@ def create_or_edit_organization(org=None):
     is_editing = org is not None
     
     name = st.text_input("Name", value=org.get("name", "") if is_editing else "")
-    roles = st.text_input("Roles (comma-separated)", value=", ".join(org.get("roles", [])) if is_editing else "")
     
     # Define asset types and their display names
     asset_types = [
+        ("roles", "Roles"),
         ("instructions", "Instructions (JSON)"),
         ("config_toml", "Config (TOML)"),
         ("chat_system_icon", "Chat System Icon"),
         ("chat_user_icon", "Chat User Icon"),
-        ("main_image", "Main Image")
+        ("main_image", "Main Image"),
+        ("feature_flags", "Feature Flags")
     ]
     
     # Create a dictionary to store uploaded files
     new_files = {}
     
-    col1, col2 = st.columns([1, 2])
-    with col1:                    
-        st.subheader("current Assets")
-    with col2: 
-        st.subheader("Add New Assets")
-    
-    st.divider()                                    
-    
     for asset_type, display_name in asset_types:
-        col1, col2 = st.columns([1, 2])        
-        with col1:                    
-            if is_editing:
-                response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{org['id']}/{asset_type}", 
-                                        headers={"Authorization": f"Bearer {st.session_state.token}"})
-                if response.status_code == 200:
-                    if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
-                        image = Image.open(io.BytesIO(response.content))
-                        st.image(image, caption=display_name, width=100)  # Adjust width as needed
+        with st.expander(f"{display_name}", expanded=False):
+            col1, col2 = st.columns([0.7, 0.3])
+            
+            with col1:                
+                if is_editing:
+                    response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{org['id']}/{asset_type}", 
+                                            headers={"Authorization": f"Bearer {st.session_state.token}"})
+                    if response.status_code == 200:
+                        if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+                            image = Image.open(io.BytesIO(response.content))
+                            st.image(image, caption=display_name, width=200)
+                        elif asset_type == "roles":
+                            roles_data = response.json()
+                            if roles_data:
+                                df = pd.DataFrame([(role, ", ".join(assistants)) for role, assistants in roles_data.items()],
+                                                  columns=["Role", "Assistants"])
+                                st.table(df.style.set_properties(**{'color': 'white', 'background-color': 'rgba(38, 39, 48, 0.8)'}))
+                            else:
+                                st.info("No roles set")
+                        elif asset_type == "feature_flags":
+                            feature_flags = response.json()
+                            if feature_flags:
+                                df = pd.DataFrame([(k, str(v)) for k, v in feature_flags.items()], 
+                                                  columns=['Feature Flag', 'State'])
+                                st.table(df.style.set_properties(**{'color': 'white', 'background-color': 'rgba(38, 39, 48, 0.8)'}))
+                            else:
+                                st.info("No feature flags set")
+                        else:
+                            st.download_button(
+                                label=f"Download {display_name}",
+                                data=response.content,
+                                file_name=f"{asset_type}.{'json' if asset_type in ['instructions', 'roles'] else 'toml'}",
+                                mime=f"application/{'json' if asset_type in ['instructions', 'roles'] else 'toml'}"
+                            )
                     else:
-                        st.download_button(
-                            label=f"Download {display_name}",
-                            data=response.content,
-                            file_name=f"{asset_type}.{'json' if asset_type == 'instructions' else 'toml'}",
-                            mime=f"application/{'json' if asset_type == 'instructions' else 'toml'}"
-                        )
+                        st.warning(f"No current {display_name}")                
                 else:
-                    st.warning(f"No current {display_name}")
-            else:
-                st.info(f"No current {display_name}")
+                    st.info(f"No current {display_name}")
+            
+            with col2:                
+                file_type = "json" if asset_type in ["instructions", "feature_flags", "roles"] else "toml" if asset_type == "config_toml" else "png"
+                uploaded_file = st.file_uploader(f"Upload {display_name}", type=file_type, key=f"upload_{asset_type}")
+                if uploaded_file:
+                    new_files[asset_type] = uploaded_file
+                    if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+                        st.image(uploaded_file, caption=f"New {display_name}", width=100)
+                    elif asset_type in ["feature_flags", "roles"]:
+                        try:
+                            content = uploaded_file.read()
+                            if not content:
+                                st.error(f"{display_name} file is empty")
+                            else:
+                                json_content = json.loads(content)
+                                if asset_type == "roles":
+                                    df = pd.DataFrame([(role, ", ".join(assistants)) for role, assistants in json_content.items()],
+                                                      columns=["Role", "Assistants"])
+                                    st.table(df)
+                                else:
+                                    df = pd.DataFrame([(k, str(v)) for k, v in json_content.items()], 
+                                                      columns=['Feature Flag', 'State'])
+                                    st.table(df)
+                        except json.JSONDecodeError:
+                            st.error(f"Invalid JSON in {display_name} file")
+                        finally:
+                            uploaded_file.seek(0)  # Reset file pointer
+                    else:
+                        st.success(f"New {display_name} ready to upload")
+
+        st.divider()
         
-        with col2:                        
-            file_type = "json" if asset_type == "instructions" else "toml" if asset_type == "config_toml" else "png"
-            uploaded_file = st.file_uploader(f"Upload {display_name}", type=file_type, key=f"upload_{asset_type}")
-            if uploaded_file:
-                new_files[asset_type] = uploaded_file
-                if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
-                    st.image(uploaded_file, caption=f"New {display_name}", width=100)  # Adjust width as needed
-                else:
-                    st.success(f"New {display_name} ready to upload")
-    
     if st.button("Update" if is_editing else "Create"):
         data = {
             "name": name,
-            "roles": [role.strip() for role in roles.split(',') if role.strip()]
         }
         
         if is_editing:
@@ -205,6 +245,7 @@ def create_or_edit_organization(org=None):
         if st.button("Cancel Editing"):
             del st.session_state.editing_org_id
             st.rerun()
+
 def delete_organization(org_id):
     if st.button(f"Confirm deletion of Organization (ID: {org_id})"):
         delete_response = requests.delete(
@@ -225,14 +266,6 @@ def render_user_management():
     if response.status_code == 200:
         users = response.json()
         
-        import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
-import requests
-from src.backend.core.config import settings
-
-BACKEND_URL = settings.BACKEND_URL
-
 def render_user_management():
     st.subheader("User Management")
 
@@ -343,25 +376,23 @@ def render_user_management():
     else:
         st.error("Failed to fetch users")
 
+
 def render_model_selection():
-    st.subheader("Model Selection")
+    with st.expander("Select model:", expanded=True):
+        model_type = st.radio("Select Model Type", ["Closed", "Open Source"])
 
-    def render_model_selection():
-        with st.expander("Select model:", expanded=True):
-            model_type = st.radio("Select Model Type", ["Closed", "Open Source"])
-
-            if model_type == "Closed":
-                llm_options = ["gpt-4o", "claude-3.5"]
-                llm_id = st.selectbox("Select Closed Source Model", options=llm_options)
-            else: 
-                llm_options = ["llama3", "tinyllama"]
-                llm_id = st.selectbox("Select Open Source Model", options=llm_options)
-            
-            if "llm_id" not in st.session_state:
-                st.session_state["llm_id"] = llm_id
-            elif st.session_state["llm_id"] != llm_id:
-                st.session_state["llm_id"] = llm_id
-                restart_assistant()
+        if model_type == "Closed":
+            llm_options = ["gpt-4o", "claude-3.5"]
+            llm_id = st.selectbox("Select Closed Source Model", options=llm_options)
+        else: 
+            llm_options = ["llama3", "tinyllama"]
+            llm_id = st.selectbox("Select Open Source Model", options=llm_options)
+        
+        if "llm_id" not in st.session_state:
+            st.session_state["llm_id"] = llm_id
+        elif st.session_state["llm_id"] != llm_id:
+            st.session_state["llm_id"] = llm_id
+            restart_assistant()
 
 if __name__ == "__main__":
     render_settings_tab()
