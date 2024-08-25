@@ -127,6 +127,7 @@ def create_or_edit_organization(org=None):
     # Define asset types and their display names
     asset_types = [
         ("roles", "Roles"),
+        ("assistants", "Assistants"),
         ("instructions", "Instructions (JSON)"),
         ("config_toml", "Config (TOML)"),
         ("chat_system_icon", "Chat System Icon"),
@@ -135,8 +136,9 @@ def create_or_edit_organization(org=None):
         ("feature_flags", "Feature Flags")
     ]
     
-    # Create a dictionary to store uploaded files
+    # Create a dictionary to store uploaded files and JSON data
     new_files = {}
+    json_data = {}
     
     for asset_type, display_name in asset_types:
         with st.expander(f"{display_name}", expanded=False):
@@ -153,58 +155,63 @@ def create_or_edit_organization(org=None):
                         elif asset_type == "roles":
                             roles_data = response.json()
                             if roles_data:
-                                df = pd.DataFrame([(role, ", ".join(assistants)) for role, assistants in roles_data.items()],
-                                                  columns=["Role", "Assistants"])
-                                st.table(df.style.set_properties(**{'color': 'white', 'background-color': 'rgba(38, 39, 48, 0.8)'}))
+                                st.write("Current Roles:")
+                                st.write(", ".join(roles_data))
                             else:
                                 st.info("No roles set")
-                        elif asset_type == "feature_flags":
-                            feature_flags = response.json()
-                            if feature_flags:
-                                df = pd.DataFrame([(k, str(v)) for k, v in feature_flags.items()], 
-                                                  columns=['Feature Flag', 'State'])
-                                st.table(df.style.set_properties(**{'color': 'white', 'background-color': 'rgba(38, 39, 48, 0.8)'}))
+                        elif asset_type in ["assistants", "feature_flags"]:
+                            data = response.json()
+                            if data:
+                                st.json(data)
                             else:
-                                st.info("No feature flags set")
+                                st.info(f"No {display_name.lower()} set")
                         else:
                             st.download_button(
                                 label=f"Download {display_name}",
                                 data=response.content,
-                                file_name=f"{asset_type}.{'json' if asset_type in ['instructions', 'roles'] else 'toml'}",
-                                mime=f"application/{'json' if asset_type in ['instructions', 'roles'] else 'toml'}"
+                                file_name=f"{asset_type}.{'json' if asset_type in ['instructions', 'assistants'] else 'toml'}",
+                                mime=f"application/{'json' if asset_type in ['instructions', 'assistants'] else 'toml'}"
                             )
                     else:
                         st.warning(f"No current {display_name}")                
                 else:
                     st.info(f"No current {display_name}")
             
-            with col2:                
-                file_type = "json" if asset_type in ["instructions", "feature_flags", "roles"] else "toml" if asset_type == "config_toml" else "png"
-                uploaded_file = st.file_uploader(f"Upload {display_name}", type=file_type, key=f"upload_{asset_type}")
-                if uploaded_file:
-                    new_files[asset_type] = uploaded_file
-                    if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+            with col2:
+                if asset_type == "roles":
+                    roles_input = st.text_area(f"Enter {display_name} (comma-separated)", 
+                                               key=f"input_{asset_type}",
+                                               help="Enter roles as a comma-separated list, e.g., 'Dev, QA, Manager, Admin, Super Admin'")
+                    if roles_input:
+                        roles_list = [role.strip() for role in roles_input.split(',') if role.strip()]
+                        json_data[asset_type] = roles_list
+                        st.success(f"Roles ready to update: {', '.join(roles_list)}")
+                elif asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+                    uploaded_file = st.file_uploader(f"Upload {display_name}", type="png", key=f"upload_{asset_type}")
+                    if uploaded_file:
+                        new_files[asset_type] = uploaded_file
                         st.image(uploaded_file, caption=f"New {display_name}", width=100)
-                    elif asset_type in ["feature_flags", "roles"]:
+                elif asset_type in ["feature_flags", "assistants"]:
+                    uploaded_file = st.file_uploader(f"Upload {display_name}", type="json", key=f"upload_{asset_type}")
+                    if uploaded_file:
                         try:
                             content = uploaded_file.read()
                             if not content:
                                 st.error(f"{display_name} file is empty")
                             else:
                                 json_content = json.loads(content)
-                                if asset_type == "roles":
-                                    df = pd.DataFrame([(role, ", ".join(assistants)) for role, assistants in json_content.items()],
-                                                      columns=["Role", "Assistants"])
-                                    st.table(df)
-                                else:
-                                    df = pd.DataFrame([(k, str(v)) for k, v in json_content.items()], 
-                                                      columns=['Feature Flag', 'State'])
-                                    st.table(df)
+                                json_data[asset_type] = json_content
+                                st.json(json_content)
                         except json.JSONDecodeError:
                             st.error(f"Invalid JSON in {display_name} file")
                         finally:
                             uploaded_file.seek(0)  # Reset file pointer
-                    else:
+                else:
+                    uploaded_file = st.file_uploader(f"Upload {display_name}", 
+                                                     type="json" if asset_type == "instructions" else "toml", 
+                                                     key=f"upload_{asset_type}")
+                    if uploaded_file:
+                        new_files[asset_type] = uploaded_file
                         st.success(f"New {display_name} ready to upload")
 
         st.divider()
@@ -214,24 +221,29 @@ def create_or_edit_organization(org=None):
             "name": name,
         }
         
-        if is_editing:
-            response = requests.put(
-                f"{BACKEND_URL}/api/v1/organizations/{org['id']}",
-                data=data,
-                files=new_files,
-                headers={"Authorization": f"Bearer {st.session_state.token}"}
-            )
-            success_message = "Organization updated successfully"
-            error_message = "Failed to update organization"
-        else:
-            response = requests.post(
-                f"{BACKEND_URL}/api/v1/organizations",
-                data=data,
-                files=new_files,
-                headers={"Authorization": f"Bearer {st.session_state.token}"}
-            )
-            success_message = "New organization created successfully"
-            error_message = "Failed to create new organization"
+        # Add JSON data to the request
+        for key, value in json_data.items():
+            data[key] = json.dumps(value)
+        
+        with st.spinner("Processing..."):
+            if is_editing:
+                response = requests.put(
+                    f"{BACKEND_URL}/api/v1/organizations/{org['id']}",
+                    data=data,
+                    files=new_files,
+                    headers={"Authorization": f"Bearer {st.session_state.token}"}
+                )
+                success_message = "Organization updated successfully"
+                error_message = "Failed to update organization"
+            else:
+                response = requests.post(
+                    f"{BACKEND_URL}/api/v1/organizations",
+                    data=data,
+                    files=new_files,
+                    headers={"Authorization": f"Bearer {st.session_state.token}"}
+                )
+                success_message = "New organization created successfully"
+                error_message = "Failed to create new organization"
         
         if response.status_code == 200:
             st.success(success_message)
@@ -240,6 +252,7 @@ def create_or_edit_organization(org=None):
             st.rerun()
         else:
             st.error(f"{error_message}: {response.text}")
+            st.error("Please check the entered data and try again.")
     
     if is_editing:
         if st.button("Cancel Editing"):

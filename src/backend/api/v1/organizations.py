@@ -116,8 +116,9 @@ async def update_organization(
     chat_user_icon: Optional[UploadFile] = File(None),
     config_toml: Optional[UploadFile] = File(None),
     main_image: Optional[UploadFile] = File(None),
-    feature_flags: Optional[UploadFile] = File(None),
-    roles: Optional[UploadFile] = File(None),
+    feature_flags: Optional[str] = Form(None),
+    roles: Optional[str] = Form(None),
+    assistants: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -137,44 +138,49 @@ async def update_organization(
     for file_field in [instructions, chat_system_icon, chat_user_icon, config_toml, main_image]:
         if file_field:
             file_content = await file_field.read()
-            setattr(config, file_field.filename, file_content)
+            file_path = os.path.join(UPLOAD_DIR, f"{org.name}_{file_field.filename}")
+            with open(file_path, "wb") as buffer:
+                buffer.write(file_content)
+            setattr(config, file_field.filename.split('.')[0], file_path)
     
-    # Handle JSON files (feature_flags, roles)
+    # Handle JSON data (feature_flags, roles, assistants)
     if feature_flags:
         try:
-            content = await feature_flags.read()
-            logger.info(f"Feature flags content: {content}")
-            
-            if not content:
-                logger.warning("Feature flags file is empty")
-                raise HTTPException(status_code=400, detail="Feature flags file is empty")
-            
-            json_content = json.loads(content)
+            json_content = json.loads(feature_flags)
             config.feature_flags = json.dumps(json_content)
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in feature flags: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Invalid JSON in feature flags file: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error processing feature flags: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error processing feature flags: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in feature flags: {str(e)}")
 
     if roles:
         try:
-            content = await roles.read()
-            logger.info(f"Roles content: {content}")
-            
-            if not content:
-                logger.warning("Roles file is empty")
-                raise HTTPException(status_code=400, detail="Roles file is empty")
-            
-            json_content = json.loads(content)
-            config.roles = json.dumps(json_content)
+            roles_list = json.loads(roles)
+            if not isinstance(roles_list, list) or not all(isinstance(role, str) for role in roles_list):
+                raise ValueError("Roles must be a list of strings")
+            config.roles = json.dumps(roles_list)
+            logger.info(f"Updated roles: {roles_list}")
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in roles: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Invalid JSON in roles file: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error processing roles: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error processing roles: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in roles: {str(e)}")
+        except ValueError as e:
+            logger.error(f"Invalid roles structure: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid roles structure: {str(e)}")
+
+    if assistants:
+        try:
+            json_content = json.loads(assistants)
+            if not isinstance(json_content, dict):
+                raise ValueError("Assistants must be a dictionary")
+            for role, assistant_list in json_content.items():
+                if not isinstance(assistant_list, list):
+                    raise ValueError(f"Assistants for role '{role}' must be a list")
+            config.assistants = json.dumps(json_content)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in assistants: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in assistants: {str(e)}")
+        except ValueError as e:
+            logger.error(f"Invalid assistants structure: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid assistants structure: {str(e)}")
 
     try:
         db.commit()
@@ -189,9 +195,9 @@ async def update_organization(
     return OrganizationResponse(
         id=org.id,
         name=org.name,
-        roles=json.loads(config.roles),
-        assistants=json.loads(config.assistants),
-        feature_flags=json.loads(config.feature_flags),
+        roles=json.loads(config.roles) if config.roles else [],
+        assistants=json.loads(config.assistants) if config.assistants else {},
+        feature_flags=json.loads(config.feature_flags) if config.feature_flags else {},
         config_id=config.id,
         instructions_path=config.instructions,
         chat_system_icon_path=config.chat_system_icon,

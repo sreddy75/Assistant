@@ -111,37 +111,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     llm_os = None    
     logger.info("Rendering chat interface...")
 
-    st.markdown("""
-        <style>
-        .chat-message, .chat-message p, .chat-message li, .chat-message h1, .chat-message h2, .chat-message h3, .chat-message h4, .chat-message h5, .chat-message h6 {
-            color: white !important;
-        }
-        .assistant-response, .assistant-response p, .assistant-response li, .assistant-response h1, .assistant-response h2, .assistant-response h3, .assistant-response h4, .assistant-response h5, .assistant-response h6 {
-            color: white !important;
-        }
-        .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {
-            color: white !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-    st.markdown("""
-        <style>
-        @keyframes pulse {
-            0% { transform: scale(0.8); opacity: 0.7; }
-            50% { transform: scale(1); opacity: 1; }
-            100% { transform: scale(0.8); opacity: 0.7; }
-        }
-        .pulsating-dot {
-            width: 20px; height: 20px;
-            background-color: #ff0000;
-            border-radius: 50%;
-            display: inline-block;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
     if "llm_id" not in st.session_state:
         logger.warning("llm_id not found in session state, using default value")
         st.session_state.llm_id = "gpt-4o"
@@ -218,6 +187,10 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
             st.warning("Could not create LLM OS run, is the database running?")
             return
 
+    # Initialize feedback_expanders in session state if not present
+    if 'feedback_expanders' not in st.session_state:
+        st.session_state.feedback_expanders = {}
+
     chat_container = st.container()
                 
     with chat_container:
@@ -229,32 +202,49 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     
                     query = st.session_state["messages"][i-1]["content"] if i > 0 else ""
                     
-                    with st.expander("Please Provide feedback to help improve future answers", expanded=False):
+                    # Use a unique key for each message's feedback expander
+                    expander_key = f"feedback_expander_{i}"
+                    
+                    # Initialize expander state if not present
+                    if expander_key not in st.session_state.feedback_expanders:
+                        st.session_state.feedback_expanders[expander_key] = False
+
+                    with st.expander("Please Provide feedback to help improve future answers", expanded=st.session_state.feedback_expanders[expander_key]):
                         if is_feedback_sentiment_analysis_enabled():
                             usefulness = st.slider("How useful was this response?", 1, 5, 3, key=f"usefulness_{i}")
                             feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{i}")
                             if st.button("Submit Feedback", key=f"feedback_button_{i}"):
                                 submit_feedback(user_id, query, sanitized_content, usefulness > 3, usefulness, feedback)
-                                # Send event for feedback submission
                                 send_event("feedback_submission", {"usefulness": usefulness, "feedback_length": len(feedback) if feedback else 0})
+                                st.success("Thank you for your feedback!")
+                                # Close the expander after submission
+                                st.session_state.feedback_expanders[expander_key] = False
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.button("👍", key=f"upvote_{i}"):
                                     submit_simple_vote(user_id, query, sanitized_content, True)
-                                    # Send event for upvote
                                     send_event("vote_submission", {"is_upvote": True})
+                                    st.success("Thank you for your positive feedback!")
+                                    # Close the expander after submission
+                                    st.session_state.feedback_expanders[expander_key] = False
                             with col2:
                                 if st.button("👎", key=f"downvote_{i}"):
                                     submit_simple_vote(user_id, query, sanitized_content, False)
-                                    # Send event for downvote
                                     send_event("vote_submission", {"is_upvote": False})
-                                
+                                    st.success("Thank you for your feedback. We'll work on improving!")
+                                    # Close the expander after submission
+                                    st.session_state.feedback_expanders[expander_key] = False
+                        
+                        # Keep the expander open after interaction
+                        if not st.session_state.feedback_expanders[expander_key]:
+                            st.session_state.feedback_expanders[expander_key] = True
+
             elif message["role"] == "user":
                 with st.chat_message(message["role"], avatar=user_chat_icon):
                     sanitized_content = sanitize_content(message["content"])
                     render_markdown(sanitized_content)
-
+                    
     if prompt := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": prompt})
         
@@ -355,29 +345,37 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     response_time = time.time() - start_time
                     send_event("assistant_response", {"content_length": len(sanitized_response), "response_time": response_time}, duration=response_time)
 
+                    # Add feedback expander for the new response
+                    new_expander_key = f"feedback_expander_{len(st.session_state['messages'])-1}"
+                    st.session_state.feedback_expanders[new_expander_key] = False
+
                     with st.expander("Please Provide feedback to improve future answers", expanded=False):
                         if is_feedback_sentiment_analysis_enabled():
                             usefulness = st.slider("How useful was this response?", 1, 5, 3, key=f"usefulness_{len(st.session_state['messages'])-1}")
                             feedback = st.text_area("Additional feedback (optional)", key=f"feedback_text_{len(st.session_state['messages'])-1}")
                             if st.button("Submit Feedback", key=f"feedback_button_{len(st.session_state['messages'])-1}"):
                                 submit_feedback(user_id, prompt, sanitized_response, usefulness > 3, usefulness, feedback)
-                                # Send event for feedback submission
                                 send_event("feedback_submission", {"usefulness": usefulness, "feedback_length": len(feedback) if feedback else 0})
                                 st.success("Thank you for your feedback!")
+                                st.session_state.feedback_expanders[new_expander_key] = False
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.button("👍", key=f"upvote_{len(st.session_state['messages'])-1}"):
                                     submit_simple_vote(user_id, prompt, sanitized_response, True)
-                                    # Send event for upvote
                                     send_event("vote_submission", {"is_upvote": True})
                                     st.success("Thank you for your positive feedback!")
+                                    st.session_state.feedback_expanders[new_expander_key] = False
                             with col2:
                                 if st.button("👎", key=f"downvote_{len(st.session_state['messages'])-1}"):
                                     submit_simple_vote(user_id, prompt, sanitized_response, False)
-                                    # Send event for downvote
                                     send_event("vote_submission", {"is_upvote": False})
                                     st.success("Thank you for your feedback. We'll work on improving!")
+                                    st.session_state.feedback_expanders[new_expander_key] = False
+                        
+                        # Keep the expander open after interaction
+                        if not st.session_state.feedback_expanders[new_expander_key]:
+                            st.session_state.feedback_expanders[new_expander_key] = True
 
                 except Exception as e:
                     with response_area:
@@ -393,9 +391,10 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         response_time = time.time() - start_time
         logger.info(f"Response generated in {response_time:.2f} seconds")
 
-    # Add a button to clear the conversation
+     # Add a button to clear the conversation
     if st.button("Clear Conversation"):
         st.session_state["messages"] = []
+        st.session_state.feedback_expanders = {}  # Clear all feedback expander states
         st.experimental_rerun()
 
 if __name__ == "__main__":

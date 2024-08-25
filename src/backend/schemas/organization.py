@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 from fastapi import UploadFile, File
 
 class OrganizationBase(BaseModel):
@@ -31,12 +31,12 @@ class OrganizationWithFiles(OrganizationBase):
 class OrganizationResponse(OrganizationInDB):
     id: int
     name: str
-    roles: Dict[str, List[str]]
-    assistants: Dict[str, bool]
+    roles: List[str]
+    assistants: Dict[str, List[str]]
     feature_flags: Dict[str, bool]
     config_id: int
-    instructions_path: Optional[str] = None
-    chat_system_icon_path: Optional[str] = None
-    chat_user_icon_path: Optional[str] = None
-    config_toml_path: Optional[str] = None
-    main_image_path: Optional[str] = None
+    instructions_path: Optional[str]
+    chat_system_icon_path: Optional[str]
+    chat_user_icon_path: Optional[str]
+    config_toml_path: Optional[str]
+    main_image_path: Optional[str]

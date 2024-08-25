@@ -276,6 +276,7 @@ def main_app():
                 render_dashboard_analytics()
             elif tab == "Chat":
                 render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
+                render_sidebar()
             elif tab == "Knowledge Base":
                 knowledge_base_page()
             elif tab == "Analytics":
@@ -283,7 +284,7 @@ def main_app():
             elif tab == "Settings":
                 render_settings_tab()
     
-    render_sidebar()
+    
 
 def apply_custom_theme():
     try:

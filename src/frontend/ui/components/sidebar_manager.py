@@ -8,7 +8,8 @@ from ui.components.utils import restart_assistant
 from src.backend.core.client_config import ENABLED_ASSISTANTS
 import matplotlib.pyplot as plt
 from src.backend.db.session import get_db
-from src.backend.utils.org_utils import load_org_config
+from src.backend.models.models import Organization, OrganizationConfig
+from sqlalchemy.orm import Session
 
 def initialize_session_state(user_role):
     # Fetch the organization ID from the session state
@@ -17,31 +18,48 @@ def initialize_session_state(user_role):
         st.error("Organization ID not found in session state.")
         return
 
-    # Load the organization-specific config
+    # Load the organization-specific config from the database
     db = next(get_db())
     try:
-        org_config = load_org_config(org_id)
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if not org:
+            st.error(f"Organization not found for ID: {org_id}")
+            return
+
+        org_config = db.query(OrganizationConfig).filter(OrganizationConfig.id == org.config_id).first()
+        if not org_config:
+            st.error(f"Organization config not found for org ID: {org_id}")
+            return
+
+        # Parse the JSON strings from the database
+        roles = json.loads(org_config.roles)
+        assistants = json.loads(org_config.assistants)
+        feature_flags = json.loads(org_config.feature_flags)
+
+        # Get the role-specific assistants from the org config
+        role_assistants = assistants.get(user_role, [])
+
+        # Initialize assistant states based on the config
+        for assistant in ENABLED_ASSISTANTS:
+            key = f"{assistant.lower().replace(' ', '_')}_enabled"
+            if key not in st.session_state:
+                st.session_state[key] = assistant in role_assistants
+
+        # Initialize PandasTools if not already done
+        if 'pandas_tools' not in st.session_state:
+            st.session_state.pandas_tools = PandasTools()
+
+        # Store the full org config in the session state for later use
+        st.session_state['org_config'] = {
+            'roles': roles,
+            'assistants': assistants,
+            'feature_flags': feature_flags
+        }
+
     except Exception as e:
         st.error(f"Failed to load organization config: {str(e)}")
-        return
     finally:
         db.close()
-
-    # Get the role-specific assistants from the org config
-    role_assistants = org_config.get('assistants', {}).get(user_role, [])
-
-    # Initialize assistant states based on the config
-    for assistant in ENABLED_ASSISTANTS:
-        key = f"{assistant.lower().replace(' ', '_')}_enabled"
-        if key not in st.session_state:
-            st.session_state[key] = assistant in role_assistants
-
-    # Initialize PandasTools if not already done
-    if 'pandas_tools' not in st.session_state:
-        st.session_state.pandas_tools = PandasTools()
-
-    # Store the full org config in the session state for later use
-    st.session_state['org_config'] = org_config
 
 def render_sidebar():
     user_role = st.session_state.get('role')
