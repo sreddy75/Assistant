@@ -11,6 +11,8 @@ from PIL import Image
 from io import BytesIO
 import plotly.graph_objects as go
 import requests
+from markdown import markdown
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from src.backend.kr8.vectordb.pgvector.pgvector2 import PgVector2
 
@@ -82,28 +84,93 @@ def sanitize_content(content):
     return content
 
 def render_markdown(content):
-    # Function to replace markdown code blocks with st.code()
-    def replace_code_block(match):
-        language = match.group(1) or ""
-        code = match.group(2)
-        return f"$CODE_BLOCK${language}${code}$CODE_BLOCK$"
+    # Pre-process the content
+    content = re.sub(r'\*\s*([^*]+)\s*\*:', r'**\1:**', content)  # Convert *Title*: to **Title:**
+    content = re.sub(r'^\s*\*\s*', '- ', content, flags=re.MULTILINE)  # Convert * to -
+    content = re.sub(r'^\s*(\d+)\.\s*\*\s*', r'\1. ', content, flags=re.MULTILINE)  # Remove * from numbered lists
 
-    # Replace code blocks with placeholders
-    content = re.sub(r'```(\w*)\n([\s\S]*?)```', replace_code_block, content)
+    # Convert markdown to HTML
+    html = markdown(content, extensions=['fenced_code', 'codehilite', 'tables'])
+    
+    # Parse the HTML
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Process code blocks
+    for code_block in soup.find_all('pre'):
+        code = code_block.find('code')
+        if code:
+            language = code.get('class', [''])[0].replace('language-', '')
+            formatted_code = f'<pre><code class="language-{language}">{code.string}</code></pre>'
+            code_block.replace_with(BeautifulSoup(formatted_code, 'html.parser'))
+    
+    # Wrap the content in a div for styling
+    wrapped_content = f'<div class="markdown-content">{soup.prettify()}</div>'
+    
+    # Render the processed HTML
+    st.markdown(wrapped_content, unsafe_allow_html=True)
 
-    # Split content by code block placeholders
-    parts = content.split('$CODE_BLOCK$')
-
-    st.markdown('<div class="chat-message assistant-response">', unsafe_allow_html=True)
-    for i, part in enumerate(parts):
-        if i % 2 == 0:
-            # Render non-code parts as markdown
-            st.markdown(part, unsafe_allow_html=True)
-        else:
-            # Render code parts
-            language, code = part.split('$', 1)
-            st.code(code, language=language if language else None)
-    st.markdown('</div>', unsafe_allow_html=True)
+def add_markdown_styles():
+    markdown_style = """
+    <style>
+        .markdown-content {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #ffffff;
+            max-width: 800px;  /* Limit the maximum width */
+            margin: 0 auto;  /* Center the content */
+        }
+        .markdown-content h1, .markdown-content h2, .markdown-content h3, 
+        .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+            color: #ffffff;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        .markdown-content h1 { font-size: 2em; border-bottom: 1px solid #30363d; }
+        .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid #30363d; }
+        .markdown-content h3 { font-size: 1.25em; }
+        .markdown-content h4 { font-size: 1em; }
+        .markdown-content h5 { font-size: 0.875em; }
+        .markdown-content h6 { font-size: 0.85em; color: #8b949e; }
+        .markdown-content p, .markdown-content ul, .markdown-content ol {
+            margin-bottom: 16px;
+        }
+        .markdown-content ul, .markdown-content ol {
+            padding-left: 2em;
+        }
+        .markdown-content li {
+            margin-bottom: 0.25em;
+        }
+        .markdown-content code {
+            font-family: 'Courier New', Courier, monospace;
+            padding: 0.2em 0.4em;
+            margin: 0;
+            font-size: 85%;
+            background-color: rgba(110, 118, 129, 0.4);
+            border-radius: 6px;
+        }
+        .markdown-content pre {
+            padding: 16px;
+            overflow: auto;
+            font-size: 85%;
+            line-height: 1.45;
+            background-color: #161b22;
+            border-radius: 6px;
+        }
+        .markdown-content pre code {
+            background-color: transparent;
+            padding: 0;
+            margin: 0;
+            font-size: 100%;
+            word-break: normal;
+            white-space: pre;
+            background: transparent;
+            border: 0;
+        }
+    </style>
+    """
+    st.markdown(markdown_style, unsafe_allow_html=True)
     
 def determine_analyst(file, file_content):
     # Read a sample of the file to determine its content

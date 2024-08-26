@@ -20,16 +20,19 @@ def knowledge_base_page():
         manage_documents()
 
 def add_content():    
-
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Upload File")
-        uploaded_file = st.file_uploader("Choose a file", type=['txt', 'pdf', 'docx', 'csv', 'xlsx'], key="kb_file_uploader")
-        if uploaded_file:
-            st.write(f"Selected file: {uploaded_file.name}")
-            if st.button("Upload File", key="kb_upload_file_button"):
-                upload_file(uploaded_file)
+        st.subheader("Upload Files")
+        uploaded_files = st.file_uploader("Choose files", type=['txt', 'pdf', 'docx', 'csv', 'xlsx'], accept_multiple_files=True, key="kb_file_uploader")
+        if uploaded_files:
+            st.write("Selected files:")
+            for file in uploaded_files:
+                st.write(f"- {file.name}")
+            if st.button("Upload Files", key="kb_upload_files_button"):
+                for file in uploaded_files:
+                    upload_file(file)
+                st.success(f"Successfully uploaded {len(uploaded_files)} file(s)")
 
     with col2:
         st.subheader("Add URL")
@@ -96,14 +99,14 @@ def manage_documents():
         clear_knowledge_base(assistant_id)
 
 def upload_file(uploaded_file):
-    with st.spinner("Uploading file..."):
+    with st.spinner(f"Uploading file: {uploaded_file.name}..."):
         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
         response = requests.post(
             f"{BACKEND_URL}/api/v1/knowledge-base/upload-file",
             files=files,
             headers={"Authorization": f"Bearer {st.session_state.token}"}
         )
-        handle_response(response, success_message="File uploaded successfully!")
+        handle_response(response, success_message=f"File {uploaded_file.name} uploaded successfully!")
         if response.status_code == 200:
             st.session_state.documents = fetch_documents()
 

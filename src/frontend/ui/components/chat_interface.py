@@ -19,16 +19,17 @@ from src.backend.core.client_config import get_client_name
 
 # Load environment variables
 load_dotenv()
-BACKEND_URL=os.getenv("BACKEND_URL")
+BACKEND_URL = os.getenv("BACKEND_URL")
 
 client_name = get_client_name()    
 
 # Initialize the tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-MAX_TOKENS = 4096  # Adjust based on the model 
-BUFFER_TOKENS = 1000  # some room for the response
+MAX_TOKENS = 4096
+BUFFER_TOKENS = 1000
 llm_os = None
+
 def load_org_icons():
     client_name = get_client_name()
     org_id = st.session_state.get('org_id')
@@ -41,7 +42,6 @@ def load_org_icons():
     user_chat_icon = None
 
     try:
-        # Fetch chat system icon
         system_icon_response = requests.get(
             f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/chat_system_icon",
             headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
@@ -51,7 +51,6 @@ def load_org_icons():
         else:
             logger.error(f"Failed to load chat system icon. Status code: {system_icon_response.status_code}")
 
-        # Fetch user icon
         user_icon_response = requests.get(
             f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/chat_user_icon",
             headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
@@ -69,7 +68,6 @@ def load_org_icons():
 # Load the custom icons
 system_chat_icon, user_chat_icon = load_org_icons()
 
-# New function to send events to the backend
 def send_event(event_type, event_data, duration=None):
     try:
         user_id = st.session_state.get("user_id")        
@@ -92,7 +90,6 @@ def send_event(event_type, event_data, duration=None):
     except Exception as e:
         logger.error(f"Error sending event: {str(e)}")
 
-
 def count_tokens(text):
     return len(tokenizer.encode(text))
 
@@ -106,6 +103,47 @@ def truncate_conversation(messages, max_tokens):
         total_tokens += message_tokens
         truncated_messages.insert(0, message)
     return truncated_messages
+
+def stream_response(response, response_area, pulsating_dot, response_placeholder):
+    full_response = ""
+    displayed_response = ""
+    last_update_time = time.time()
+    buffer = ""
+    
+    for chunk in response.iter_content(chunk_size=1):
+        if chunk:
+            buffer += chunk.decode('utf-8')
+            if '\n' in buffer:
+                lines = buffer.split('\n')
+                for line in lines[:-1]:
+                    try:
+                        json_object = json.loads(line)
+                        new_content = json_object.get('response', '')
+                        
+                        if new_content and len(new_content) > len(full_response):
+                            # Only display the new part of the content
+                            new_part = new_content[len(full_response):]
+                            full_response = new_content
+                            displayed_response += new_part
+                            
+                            current_time = time.time()
+                            if current_time - last_update_time >= 0.1:  # Update every 100ms
+                                with response_area:
+                                    pulsating_dot.empty()
+                                    response_placeholder.markdown(displayed_response, unsafe_allow_html=True)
+                                last_update_time = current_time
+                    except json.JSONDecodeError:
+                        print(f"Failed to parse JSON: {line}")  # For debugging
+                buffer = lines[-1]
+
+    # Final update
+    if full_response:
+        with response_area:
+            pulsating_dot.empty()
+            rendered_response = render_markdown(full_response)
+            response_placeholder.markdown(rendered_response, unsafe_allow_html=True)
+    
+    return full_response
 
 def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     llm_os = None    
@@ -202,10 +240,8 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     
                     query = st.session_state["messages"][i-1]["content"] if i > 0 else ""
                     
-                    # Use a unique key for each message's feedback expander
                     expander_key = f"feedback_expander_{i}"
                     
-                    # Initialize expander state if not present
                     if expander_key not in st.session_state.feedback_expanders:
                         st.session_state.feedback_expanders[expander_key] = False
 
@@ -217,7 +253,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                 submit_feedback(user_id, query, sanitized_content, usefulness > 3, usefulness, feedback)
                                 send_event("feedback_submission", {"usefulness": usefulness, "feedback_length": len(feedback) if feedback else 0})
                                 st.success("Thank you for your feedback!")
-                                # Close the expander after submission
                                 st.session_state.feedback_expanders[expander_key] = False
                         else:
                             col1, col2 = st.columns(2)
@@ -226,17 +261,14 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                     submit_simple_vote(user_id, query, sanitized_content, True)
                                     send_event("vote_submission", {"is_upvote": True})
                                     st.success("Thank you for your positive feedback!")
-                                    # Close the expander after submission
                                     st.session_state.feedback_expanders[expander_key] = False
                             with col2:
                                 if st.button("👎", key=f"downvote_{i}"):
                                     submit_simple_vote(user_id, query, sanitized_content, False)
                                     send_event("vote_submission", {"is_upvote": False})
                                     st.success("Thank you for your feedback. We'll work on improving!")
-                                    # Close the expander after submission
                                     st.session_state.feedback_expanders[expander_key] = False
                         
-                        # Keep the expander open after interaction
                         if not st.session_state.feedback_expanders[expander_key]:
                             st.session_state.feedback_expanders[expander_key] = True
 
@@ -250,7 +282,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         
         start_time = time.time()
         
-        # Send event for user message
         send_event("user_message", {"content_length": len(prompt)})
 
         with chat_container:
@@ -275,7 +306,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     else:
                         current_messages = st.session_state["messages"]
                     
-                    # Make API call to get assistant response
                     response = requests.post(
                         f"{BACKEND_URL}/api/v1/chat/",
                         params={
@@ -286,57 +316,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                         stream=True
                     )
 
-                    full_response = ""
-                    buffer = b""
-                    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
-
-                    for chunk in response.iter_content(chunk_size=1):
-                        if chunk:
-                            buffer += chunk
-                            try:
-                                decoded_data = decoder.decode(buffer)
-                                if '\n' in decoded_data:
-                                    lines = decoded_data.split('\n')
-                                    for line in lines[:-1]:
-                                        try:
-                                            json_object = json.loads(line)
-                                            new_content = json_object.get('response', '')
-                                            if new_content:
-                                                full_response += new_content
-                                                with response_area:
-                                                    pulsating_dot.empty()
-                                                    formatted_response = html.escape(full_response).replace('\n', '<br>').replace('**', '<strong>').replace('__', '<em>')
-                                                    response_placeholder.markdown(f'<div style="white-space: pre-wrap;">{formatted_response}</div>', unsafe_allow_html=True)
-                                        except json.JSONDecodeError:
-                                            # If it's not a valid JSON, just append it to the response
-                                            full_response += line
-                                            with response_area:
-                                                pulsating_dot.empty()
-                                                formatted_response = html.escape(full_response).replace('\n', '<br>').replace('**', '<strong>').replace('__', '<em>')
-                                                response_placeholder.markdown(f'<div style="white-space: pre-wrap;">{formatted_response}</div>', unsafe_allow_html=True)
-                                    buffer = lines[-1].encode('utf-8')
-                                else:
-                                    buffer = decoded_data.encode('utf-8')
-                            except UnicodeDecodeError:
-                                # If we can't decode, just continue to the next chunk
-                                continue
-
-                    # Final update to ensure we display any remaining content
-                    if buffer:
-                        try:
-                            decoded_data = decoder.decode(buffer, final=True)
-                            json_object = json.loads(decoded_data)
-                            new_content = json_object.get('response', '')
-                            if new_content:
-                                full_response += new_content
-                        except (UnicodeDecodeError, json.JSONDecodeError):
-                            # If we can't decode or parse JSON, just append the raw decoded data
-                            full_response += decoded_data
-
-                    with response_area:
-                        pulsating_dot.empty()
-                        formatted_response = html.escape(full_response).replace('\n', '<br>').replace('**', '<strong>').replace('__', '<em>')
-                        response_placeholder.markdown(f'<div style="white-space: pre-wrap;">{formatted_response}</div>', unsafe_allow_html=True)
+                    full_response = stream_response(response, response_area, pulsating_dot, response_placeholder)
 
                     sanitized_response = full_response  
                     st.session_state["messages"].append({"role": "assistant", "content": sanitized_response})
@@ -344,8 +324,8 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     # Send event for assistant response
                     response_time = time.time() - start_time
                     send_event("assistant_response", {"content_length": len(sanitized_response), "response_time": response_time}, duration=response_time)
-
-                    # Add feedback expander for the new response
+                    
+                    # Add feedback expander for the new response after streaming is complete
                     new_expander_key = f"feedback_expander_{len(st.session_state['messages'])-1}"
                     st.session_state.feedback_expanders[new_expander_key] = False
 
@@ -372,10 +352,6 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                     send_event("vote_submission", {"is_upvote": False})
                                     st.success("Thank you for your feedback. We'll work on improving!")
                                     st.session_state.feedback_expanders[new_expander_key] = False
-                        
-                        # Keep the expander open after interaction
-                        if not st.session_state.feedback_expanders[new_expander_key]:
-                            st.session_state.feedback_expanders[new_expander_key] = True
 
                 except Exception as e:
                     with response_area:
@@ -391,7 +367,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
         response_time = time.time() - start_time
         logger.info(f"Response generated in {response_time:.2f} seconds")
 
-     # Add a button to clear the conversation
+    # Add a button to clear the conversation
     if st.button("Clear Conversation"):
         st.session_state["messages"] = []
         st.session_state.feedback_expanders = {}  # Clear all feedback expander states

@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 # Create a queue to hold initialization events
 init_queue = Queue()
 
+# Setting page config @ beginning
+st.set_page_config(layout="wide")
+
 BACKEND_URL = "http://localhost:8000"  
 
 @st.cache_resource
@@ -51,8 +54,41 @@ def get_available_roles(org_name: str):
 
 def login_form():
     client_name = get_client_name()
-    col1, col2, col3 = st.columns([1,8,1])
-    with col2:
+    
+    # Custom CSS for the login form
+    st.markdown("""
+    <style>
+    .login-form {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #2b313e;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .login-form input {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    .login-form .stButton > button {
+        width: 100%;
+    }
+    .separator {
+        width: 100%;
+        height: 2px;
+        background-color: #4CAF50;
+        margin: 1rem 0;
+    }
+    .centered-image {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:                
         # Fetch the main image from the organization's assets
         try:
             response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{client_name}/login-form/main_image")
@@ -62,7 +98,7 @@ def login_form():
                 data_url = base64.b64encode(contents).decode("utf-8")
                 
                 st.markdown(
-                    f'<div style="display: flex; justify-content: center; margin-bottom: 20px;">'
+                    f'<div class="centered-image">'
                     f'<img src="data:image/png;base64,{data_url}" alt="organization logo" width="200">'
                     f'</div>',
                     unsafe_allow_html=True,
@@ -71,18 +107,6 @@ def login_form():
                 st.error(f"Failed to load organization image. Status code: {response.status_code}")
         except requests.RequestException as e:
             st.error(f"Failed to fetch organization image: {str(e)}")
-
-        # Custom CSS for the separator
-        st.markdown("""
-        <style>
-        .separator {
-            width: 100%;
-            height: 2px;
-            background-color: red;
-            margin: 1rem 0;
-        }
-        </style>
-        """, unsafe_allow_html=True)
 
         tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
         
@@ -109,9 +133,6 @@ def login_form():
                         st.session_state.is_admin = data.get('is_admin')
                         st.session_state.is_super_admin = data.get('is_super_admin')
                         st.session_state.authenticated = True
-
-                        # Log the session state for debugging
-                        logger.info(f"Session state after login: {st.session_state}")
 
                         st.success("Logged in successfully!")
                         st.experimental_rerun()
@@ -166,6 +187,8 @@ def login_form():
                     st.success("If a user with that email exists, a password reset link has been sent.")
                 else:
                     st.error("Failed to send reset link. Please try again.")
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def initialize_app():
     if "app_initialized" not in st.session_state:
@@ -246,44 +269,44 @@ def logout():
         requests.post(f"{BACKEND_URL}/api/logout", headers={"Authorization": f"Bearer {st.session_state['token']}"})
     st.session_state.clear()
 
-def main_app():
+# def main_app():
     
-    st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">', unsafe_allow_html=True)    
-    apply_expander_style()
+#     st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">', unsafe_allow_html=True)    
+#     apply_expander_style()
 
-    col1, col2 = st.sidebar.columns([2, 1])
-    with col1:
-        if st.session_state.get('nickname'):            
-            st.text(f"Welcome, {st.session_state.get('nickname')}")                    
+#     col1, col2 = st.sidebar.columns([2, 1])
+#     with col1:
+#         if st.session_state.get('nickname'):            
+#             st.text(f"Welcome, {st.session_state.get('nickname')}")                    
             
-    with col2:
-        if st.button("Logout"):
-            logout()
-            st.rerun()
+#     with col2:
+#         if st.button("Logout"):
+#             logout()
+#             st.rerun()
 
-    tabs = ["Chat", "Knowledge Base"]
-    if st.session_state.get('is_admin', False):
-        tabs.append("Analytics")
-    if st.session_state.get('is_super_admin', False):
-        tabs.extend(["Home", "Settings"])
+#     tabs = ["Chat", "Knowledge Base"]
+#     if st.session_state.get('is_admin', False):
+#         tabs.append("Analytics")
+#     if st.session_state.get('is_super_admin', False):
+#         tabs.extend(["Home", "Settings"])
     
-    selected_tab = st.tabs(tabs)
+#     selected_tab = st.tabs(tabs)
 
-    for i, tab in enumerate(tabs):
-        with selected_tab[i]:
-            st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
+#     for i, tab in enumerate(tabs):
+#         with selected_tab[i]:
+#             st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
             
-            if tab == "Home":
-                render_dashboard_analytics()
-            elif tab == "Chat":
-                render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
-                render_sidebar()
-            elif tab == "Knowledge Base":
-                knowledge_base_page()
-            elif tab == "Analytics":
-                render_analytics_dashboard()
-            elif tab == "Settings":
-                render_settings_tab()
+#             if tab == "Home":
+#                 render_dashboard_analytics()
+#             elif tab == "Chat":
+#                 render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
+#                 render_sidebar()
+#             elif tab == "Knowledge Base":
+#                 knowledge_base_page()
+#             elif tab == "Analytics":
+#                 render_analytics_dashboard()
+#             elif tab == "Settings":
+#                 render_settings_tab()
     
     
 
@@ -638,9 +661,77 @@ def apply_expander_style():
     </style>
     """
     st.markdown(expander_style, unsafe_allow_html=True)
-                    
+
+def maximize_content_area():
+    # Hide the main menu and footer
+    hide_streamlit_style = """
+        <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        .stApp {
+            max-width: 100%;
+            padding-top: 0rem;
+        }
+        .main .block-container {
+            max-width: 100%;
+            padding-top: 1rem;
+            padding-right: 1rem;
+            padding-left: 1rem;
+            padding-bottom: 1rem;
+        }
+        .sidebar .sidebar-content {
+            width: 300px;
+        }
+        </style>
+    """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+def main_app():
+    st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">', unsafe_allow_html=True)    
+    apply_expander_style()
+
+    # Sidebar
+    with st.sidebar:
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            if st.session_state.get('nickname'):            
+                st.text(f"Welcome, {st.session_state.get('nickname')}")                    
+        with col2:
+            if st.button("Logout"):
+                logout()
+                st.rerun()
+
+    # Main content area
+    col1, col2, col3 = st.columns([1, 6, 1])
+    
+    with col2:
+        tabs = ["Chat", "Knowledge Base"]
+        if st.session_state.get('is_admin', False):
+            tabs.append("Analytics")
+        if st.session_state.get('is_super_admin', False):
+            tabs.extend(["Home", "Settings"])
+        
+        selected_tab = st.tabs(tabs)
+
+        for i, tab in enumerate(tabs):
+            with selected_tab[i]:
+                st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
+                
+                if tab == "Home":
+                    render_dashboard_analytics()
+                elif tab == "Chat":
+                    render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
+                    render_sidebar()
+                elif tab == "Knowledge Base":
+                    knowledge_base_page()
+                elif tab == "Analytics":
+                    render_analytics_dashboard()
+                elif tab == "Settings":
+                    render_settings_tab()                                            
 def main():
+    
     apply_custom_theme()
+    maximize_content_area()
     
     if not is_authenticated():
         login_form()

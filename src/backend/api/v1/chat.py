@@ -21,9 +21,12 @@ async def chat(
     
     async def stream_response():
         try:
+            previous_response = ""
             for chunk in assistant.run(message, stream=True):
-                yield (json.dumps({"response": chunk}) + "\n").encode('utf-8')
-                await asyncio.sleep(0.01)  # Small delay to ensure smooth streaming
+                current_response = previous_response + chunk
+                yield (json.dumps({"response": current_response, "delta": chunk}) + "\n").encode('utf-8')
+                previous_response = current_response
+                await asyncio.sleep(0)
         except Exception as e:
             yield (json.dumps({"error": str(e)}) + "\n").encode('utf-8')
 

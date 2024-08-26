@@ -34,7 +34,6 @@ def format_metric(value, format_string="{:.2f}", suffix=""):
         return str(value) + suffix
 
 def render_dashboard_analytics():    
-
     # Fetch data from all relevant endpoints
     sentiment_analysis = fetch_data("/api/v1/analytics/sentiment-analysis")
     feedback_analysis = fetch_data("/api/v1/analytics/feedback-analysis")
@@ -48,10 +47,11 @@ def render_dashboard_analytics():
         return
 
     # Key Insights and User Engagement at the top
+    st.header("Dashboard Overview")
     col1, col2 = st.columns(2)
 
     with col1:
-        st.header("Key Insights")
+        st.subheader("Key Insights")
         insights = []
 
         if user_engagement:
@@ -83,50 +83,44 @@ def render_dashboard_analytics():
             st.warning("Not enough data to generate insights at this time.")
 
     with col2:
-        st.header("Active Users")
+        st.subheader("Active Users")
         if user_engagement:
             daily_active = safe_get(user_engagement, 'active_users', 'daily')
             weekly_active = safe_get(user_engagement, 'active_users', 'weekly')
             monthly_active = safe_get(user_engagement, 'active_users', 'monthly')
 
-            metric_col1, metric_col2, metric_col3 = st.columns(3)
-            with metric_col1:
-                st.metric("Daily", format_metric(daily_active, "{:.0f}"))
-            with metric_col2:
-                st.metric("Weekly", format_metric(weekly_active, "{:.0f}"))
-            with metric_col3:
-                st.metric("Monthly", format_metric(monthly_active, "{:.0f}"))
+            st.write(f"Daily: {format_metric(daily_active, '{:.0f}')}")
+            st.write(f"Weekly: {format_metric(weekly_active, '{:.0f}')}")
+            st.write(f"Monthly: {format_metric(monthly_active, '{:.0f}')}")
         else:
             st.warning("User engagement data is not available.")
 
     # User Growth and Interaction Metrics
+    st.header("User Growth and Interaction")
     col1, col2 = st.columns(2)
     
     with col1:
-        st.header("User Growth")
+        st.subheader("User Growth")
         if user_engagement:
             user_growth = safe_get(user_engagement, 'user_growth', default=[])
             if user_growth:
                 user_growth_df = pd.DataFrame(user_growth)
                 user_growth_df['date'] = pd.to_datetime(user_growth_df['date'])
                 fig_user_growth = px.area(user_growth_df, x='date', y='new_users', title="User Growth Over Time")
-                st.plotly_chart(fig_user_growth)
+                st.plotly_chart(fig_user_growth, use_container_width=True)
             else:
                 st.warning("User growth data is not available.")
 
     with col2:
-        st.header("Interaction Metrics")
+        st.subheader("Interaction Metrics")
         if interaction_metrics:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                total_queries = safe_get(interaction_metrics, 'query_volume', 'total')
-                st.metric("Total Queries", format_metric(total_queries, "{:.0f}"))
-            with col2:
-                avg_response_time = safe_get(interaction_metrics, 'avg_response_time')
-                st.metric("Avg Response Time", format_metric(avg_response_time, "{:.2f}", "s"))
-            with col3:
-                avg_session_duration = safe_get(interaction_metrics, 'avg_session_duration')
-                st.metric("Avg Session Duration", format_metric(avg_session_duration, "{:.2f}", "s"))
+            total_queries = safe_get(interaction_metrics, 'query_volume', 'total')
+            avg_response_time = safe_get(interaction_metrics, 'avg_response_time')
+            avg_session_duration = safe_get(interaction_metrics, 'avg_session_duration')
+            
+            st.write(f"Total Queries: {format_metric(total_queries, '{:.0f}')}")
+            st.write(f"Avg Response Time: {format_metric(avg_response_time, '{:.2f}', 's')}")
+            st.write(f"Avg Session Duration: {format_metric(avg_session_duration, '{:.2f}', 's')}")
 
     # Query Volume Trend
     st.header("Query Volume Trend")
@@ -135,7 +129,7 @@ def render_dashboard_analytics():
         query_trend_df = pd.DataFrame(query_trend)
         query_trend_df['date'] = pd.to_datetime(query_trend_df['date'])
         fig_query_trend = px.line(query_trend_df, x='date', y='count', title="Query Volume Trend")
-        st.plotly_chart(fig_query_trend)
+        st.plotly_chart(fig_query_trend, use_container_width=True)
     else:
         st.warning("Query volume trend data is not available.")
         
@@ -159,7 +153,7 @@ def render_dashboard_analytics():
                         title="User Retention Heatmap",
                         labels=dict(x="Cohort", y="Period", color="Retention Rate")
                     )
-                st.plotly_chart(fig_retention)
+                st.plotly_chart(fig_retention, use_container_width=True)
             elif 'cohort' in retention_df.columns:
                 fig_retention = px.line(
                     retention_df, 
@@ -167,7 +161,7 @@ def render_dashboard_analytics():
                     y=retention_df.columns.drop('cohort'), 
                     title="User Retention Over Time"
                 )
-                st.plotly_chart(fig_retention)
+                st.plotly_chart(fig_retention, use_container_width=True)
             else:
                 st.write("User Retention Data:")
                 st.write(retention_df)
@@ -190,7 +184,7 @@ def render_dashboard_analytics():
                                {'range': [0, 50], 'color': "lightgray"},
                                {'range': [50, 80], 'color': "gray"}],
                            'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 80}}))
-                st.plotly_chart(fig_satisfaction)
+                st.plotly_chart(fig_satisfaction, use_container_width=True)
             else:
                 st.warning("Satisfaction score data is not available.")
 
@@ -198,56 +192,62 @@ def render_dashboard_analytics():
             avg_sentiment = safe_get(sentiment_analysis, 'average_sentiment_score')
             st.metric("Average Sentiment Score", format_metric(avg_sentiment, "{:.2f}"))
 
-        # Word Cloud
-        word_cloud_data = safe_get(quality_metrics, 'word_cloud_data', default={})
-        if word_cloud_data:
-            wordcloud = WordCloud(width=800, height=400, background_color='white').generate_from_frequencies(word_cloud_data)
-            plt.figure(figsize=(10, 5))
-            plt.imshow(wordcloud, interpolation='bilinear')
-            plt.axis('off')
-            st.pyplot(plt)
-        else:
-            st.warning("No word cloud data available.")
+            # Word Cloud
+            word_cloud_data = safe_get(quality_metrics, 'word_cloud_data', default={})
+            if word_cloud_data:
+                wordcloud = WordCloud(width=400, height=200, background_color='white').generate_from_frequencies(word_cloud_data)
+                plt.figure(figsize=(5, 2.5))
+                plt.imshow(wordcloud, interpolation='bilinear')
+                plt.axis('off')
+                st.pyplot(plt)
+            else:
+                st.warning("No word cloud data available.")
 
-        # Sentiment Trend
-        sentiment_trend = safe_get(quality_metrics, 'sentiment_trend', default=[])
-        if sentiment_trend:
-            sentiment_trend_df = pd.DataFrame(sentiment_trend)
-            sentiment_trend_df['date'] = pd.to_datetime(sentiment_trend_df['date'])
-            fig_sentiment_trend = px.line(sentiment_trend_df, x='date', y='sentiment', title="Sentiment Trend Over Time")
-            st.plotly_chart(fig_sentiment_trend)
-        else:
-            st.warning("Sentiment trend data is not available.")
+    # Sentiment Trend
+    st.header("Sentiment Trend")
+    sentiment_trend = safe_get(quality_metrics, 'sentiment_trend', default=[])
+    if sentiment_trend:
+        sentiment_trend_df = pd.DataFrame(sentiment_trend)
+        sentiment_trend_df['date'] = pd.to_datetime(sentiment_trend_df['date'])
+        fig_sentiment_trend = px.line(sentiment_trend_df, x='date', y='sentiment', title="Sentiment Trend Over Time")
+        st.plotly_chart(fig_sentiment_trend, use_container_width=True)
+    else:
+        st.warning("Sentiment trend data is not available.")
 
     # Usage Patterns
     st.header("Usage Patterns")
     if usage_patterns:
-        # Popular Topics
-        popular_topics = safe_get(usage_patterns, 'popular_topics', default=[])
-        if popular_topics:
-            popular_topics_df = pd.DataFrame(popular_topics)
-            fig_popular_topics = px.treemap(popular_topics_df, path=['topic'], values='count', title="Popular Topics")
-            st.plotly_chart(fig_popular_topics)
-        else:
-            st.warning("Popular topics data is not available.")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Popular Topics
+            popular_topics = safe_get(usage_patterns, 'popular_topics', default=[])
+            if popular_topics:
+                popular_topics_df = pd.DataFrame(popular_topics)
+                fig_popular_topics = px.treemap(popular_topics_df, path=['topic'], values='count', title="Popular Topics")
+                st.plotly_chart(fig_popular_topics, use_container_width=True)
+            else:
+                st.warning("Popular topics data is not available.")
 
-        # Peak Usage Times
-        peak_usage = safe_get(usage_patterns, 'peak_usage', default=[])
-        if peak_usage:
-            peak_usage_df = pd.DataFrame(peak_usage)
-            fig_peak_usage = px.bar(peak_usage_df, x='hour', y='count', title="Peak Usage Times")
-            st.plotly_chart(fig_peak_usage)
-        else:
-            st.warning("Peak usage data is not available.")
+        with col2:
+            # Peak Usage Times
+            peak_usage = safe_get(usage_patterns, 'peak_usage', default=[])
+            if peak_usage:
+                peak_usage_df = pd.DataFrame(peak_usage)
+                fig_peak_usage = px.bar(peak_usage_df, x='hour', y='count', title="Peak Usage Times")
+                st.plotly_chart(fig_peak_usage, use_container_width=True)
+            else:
+                st.warning("Peak usage data is not available.")
 
-        # Feature Adoption
-        feature_adoption = safe_get(usage_patterns, 'feature_adoption', default=[])
-        if feature_adoption:
-            feature_adoption_df = pd.DataFrame(feature_adoption)
-            fig_feature_adoption = px.bar(feature_adoption_df, x='feature', y='count', title="Feature Adoption")
-            st.plotly_chart(fig_feature_adoption)
-        else:
-            st.warning("Feature adoption data is not available.")
+    # Feature Adoption
+    st.header("Feature Adoption")
+    feature_adoption = safe_get(usage_patterns, 'feature_adoption', default=[])
+    if feature_adoption:
+        feature_adoption_df = pd.DataFrame(feature_adoption)
+        fig_feature_adoption = px.bar(feature_adoption_df, x='feature', y='count', title="Feature Adoption")
+        st.plotly_chart(fig_feature_adoption, use_container_width=True)
+    else:
+        st.warning("Feature adoption data is not available.")
 
     # Feedback Analysis
     st.header("Feedback Analysis")
@@ -268,7 +268,7 @@ def render_dashboard_analytics():
                 names=list(sentiment_distribution.keys()),
                 title="Sentiment Distribution"
             )
-            st.plotly_chart(fig_sentiment_dist)
+            st.plotly_chart(fig_sentiment_dist, use_container_width=True)
         else:
             st.warning("Sentiment distribution data is not available.")
 
@@ -277,7 +277,7 @@ def render_dashboard_analytics():
         if top_keywords:
             top_keywords_df = pd.DataFrame(list(top_keywords.items()), columns=['keyword', 'score'])
             fig_top_keywords = px.bar(top_keywords_df.head(10), x='keyword', y='score', title="Top Keywords in Feedback")
-            st.plotly_chart(fig_top_keywords)
+            st.plotly_chart(fig_top_keywords, use_container_width=True)
         else:
             st.warning("Top keywords data is not available.")
 
