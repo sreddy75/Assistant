@@ -13,11 +13,20 @@ from typing import Dict, Callable, List
 import networkx as nx
 import matplotlib.pyplot as plt
 import graphviz
+from src.backend.kr8.knowledge.base import AssistantKnowledge
+
 class CodeTools(Toolkit):
-    def __init__(self, knowledge_base=None):
+    def __init__(self, knowledge_base: AssistantKnowledge):
         super().__init__(name="code_tools")
         self.knowledge_base = knowledge_base
 
+        # Register methods as functions
+        self.register(self.load_project)
+        self.register(self.find_component)
+        self.register(self.get_file_content)
+        self.register(self.get_code_snippet)
+        self.register(self.get_dependency_graph)
+        
     def _get_namespace(self, project_name, project_type):
         return f"{project_type}_{project_name}"
 
@@ -31,7 +40,7 @@ class CodeTools(Toolkit):
                 logger.info(f"Inserted file {doc.name} to vector database in namespace {namespace}")
             except IntegrityError:
                 logger.warning(f"Document {doc.name} already exists in the database. Skipping insertion.")
-
+    
     def load_project(self, project_name: str, project_type: str, directory_content: Dict[str, str], progress_callback: Callable[[float, str], None] = None) -> str:
         namespace = self._get_namespace(project_name, project_type)
         if project_type == "react":

@@ -28,11 +28,6 @@ class CodeAssistant(Assistant):
         )
         self.code_tools = next((tool for tool in tools if isinstance(tool, CodeTools)), None)
 
-    def visualize_project(self, project_name: str, project_type: str) -> str:
-        return self.code_tools.visualize_project(project_name, project_type)
-
-    def get_project_summary(self, project_name: str, project_type: str) -> str:
-        return self.code_tools.generate_project_summary(project_name, project_type)
     
     def run(self, query: str, stream: bool = False) -> Union[str, Any]:
         if not self.code_tools:
@@ -64,26 +59,12 @@ class CodeAssistant(Assistant):
         
         return project_name, project_type
 
-    def summarize_dependency_graph(self, project_name: str, project_type: str) -> str:
-        graph = self.get_dependency_graph(project_name, project_type)
-        if graph:
-            summary = {
-                "total_dependencies": len(graph),
-                "top_level_dependencies": list(graph.keys())[:10],
-                "complex_dependencies": [pkg for pkg, deps in graph.items() if len(deps) > 5][:5]
-            }
-            return json.dumps(summary, indent=2)
-        return "{}"
 
     def get_dependency_graph(self, project_name: str, project_type: str) -> Dict:
         doc = self.code_tools.knowledge_base.search(query=f"project:{project_name} type:{project_type}_dependency_graph", num_documents=1)
         if doc:
             return json.loads(doc[0].content)
         return {}
-
-    def analyze_project_structure(self, project_name: str, project_type: str) -> str:
-        structure = self.code_tools.analyze_project_structure(project_name, project_type)
-        return f"Project structure for {project_type} project '{project_name}':\n{json.dumps(structure, indent=2)}"
 
     def find_component(self, project_name: str, component_name: str, project_type: str) -> str:
         result = self.code_tools.find_component(project_name, component_name, project_type)

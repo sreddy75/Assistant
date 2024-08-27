@@ -11,6 +11,7 @@ from typing import Union, Any
 from pydantic import Field
 from sqlalchemy.orm import Session
 
+from src.backend.kr8.tools.toolkit import Toolkit
 from src.backend.kr8.tools.code_tools import CodeTools
 from src.backend.kr8.assistant import Assistant
 from src.backend.kr8.embedder.sentence_transformer import SentenceTransformerEmbedder
@@ -169,14 +170,22 @@ def get_llm_os(
         user_id=user_id,
     )
 
-    pandas_tools = create_pandas_tools(user_id)
-    tools = [
-        pandas_tools,    
-        ExaTools(num_results=5, text_length_limit=2000),        
-    ]    
+    try:
+        pandas_tools = create_pandas_tools(user_id)
+        code_tools = CodeTools(knowledge_base=knowledge_base)
+        exa_tools = ExaTools(num_results=5, text_length_limit=2000)
+        
+        tools = [
+            pandas_tools,
+            exa_tools,
+            code_tools
+        ]    
 
-    if web_search:
-        tools.append(ExaTools(num_results=5, text_length_limit=2000))                            
+        if web_search:
+            tools.append(ExaTools(num_results=5, text_length_limit=2000))
+    except Exception as e:
+        logger.error(f"Failed to initialize tools: {str(e)}")
+        raise
     
     team: List[Assistant] = []
     
@@ -224,6 +233,8 @@ def get_llm_os(
         current_project: Optional[str] = Field(default=None, description="Current project name")
         current_project_type: Optional[str] = Field(default=None, description="Current project type (react or java)")
         last_search_results: Optional[List[Any]] = Field(default=None, description="Last search results")
+        tools: List[Union[Toolkit, CodeTools, PandasTools, ExaTools]] = Field(default_factory=list)
+
 
         def set_project_context(self, project_name: str, project_type: str):
             self.current_project = project_name

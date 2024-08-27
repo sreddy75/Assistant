@@ -123,7 +123,7 @@ def login_form():
                     if response.status_code == 200:
                         data = response.json()
                         logger.info(f"Login successful for user: {email}")
-                        
+
                         # Set session state variables
                         st.session_state.token = data.get('access_token')
                         st.session_state.user_id = data.get('user_id')
@@ -134,7 +134,23 @@ def login_form():
                         st.session_state.is_super_admin = data.get('is_super_admin')
                         st.session_state.authenticated = True
 
-                        st.success("Logged in successfully!")
+                        # Fetch the assistant from the backend
+                        assistant_response = requests.get(
+                            f"{BACKEND_URL}/api/v1/assistant/get-assistant",
+                            params={
+                                "user_id": st.session_state.user_id,
+                                "org_id": st.session_state.org_id,
+                                "user_role": st.session_state.role,
+                                "user_nickname": st.session_state.nickname
+                            },
+                            headers={"Authorization": f"Bearer {st.session_state.token}"}
+                        )
+                        if assistant_response.status_code == 200:
+                            st.session_state["assistant_id"] = assistant_response.json()["assistant_id"]
+                            st.success("Logged in successfully and assistant initialized!")
+                        else:
+                            st.warning("Logged in successfully, but failed to initialize assistant. Some features may be limited.")
+                        
                         st.experimental_rerun()
                     else:
                         error_msg = response.json().get("detail", "Login failed")

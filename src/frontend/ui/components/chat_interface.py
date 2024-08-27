@@ -145,6 +145,11 @@ def stream_response(response, response_area, pulsating_dot, response_placeholder
     
     return full_response
 
+def close_expander_after_delay(expander_key, delay=3):
+    time.sleep(delay)
+    st.session_state.feedback_expanders[expander_key] = False
+    st.experimental_rerun()
+    
 def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
     llm_os = None    
     logger.info("Rendering chat interface...")
@@ -254,6 +259,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                 send_event("feedback_submission", {"usefulness": usefulness, "feedback_length": len(feedback) if feedback else 0})
                                 st.success("Thank you for your feedback!")
                                 st.session_state.feedback_expanders[expander_key] = False
+                                st.experimental_rerun()
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
@@ -262,15 +268,14 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                     send_event("vote_submission", {"is_upvote": True})
                                     st.success("Thank you for your positive feedback!")
                                     st.session_state.feedback_expanders[expander_key] = False
+                                    st.experimental_rerun()
                             with col2:
                                 if st.button("👎", key=f"downvote_{i}"):
                                     submit_simple_vote(user_id, query, sanitized_content, False)
                                     send_event("vote_submission", {"is_upvote": False})
                                     st.success("Thank you for your feedback. We'll work on improving!")
                                     st.session_state.feedback_expanders[expander_key] = False
-                        
-                        if not st.session_state.feedback_expanders[expander_key]:
-                            st.session_state.feedback_expanders[expander_key] = True
+                                    st.experimental_rerun()
 
             elif message["role"] == "user":
                 with st.chat_message(message["role"], avatar=user_chat_icon):
@@ -327,7 +332,8 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                     
                     # Add feedback expander for the new response after streaming is complete
                     new_expander_key = f"feedback_expander_{len(st.session_state['messages'])-1}"
-                    st.session_state.feedback_expanders[new_expander_key] = False
+                    if new_expander_key not in st.session_state.feedback_expanders:
+                        st.session_state.feedback_expanders[new_expander_key] = False
 
                     with st.expander("Please Provide feedback to improve future answers", expanded=False):
                         if is_feedback_sentiment_analysis_enabled():
@@ -338,6 +344,7 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                 send_event("feedback_submission", {"usefulness": usefulness, "feedback_length": len(feedback) if feedback else 0})
                                 st.success("Thank you for your feedback!")
                                 st.session_state.feedback_expanders[new_expander_key] = False
+                                st.experimental_rerun()
                         else:
                             col1, col2 = st.columns(2)
                             with col1:
@@ -346,12 +353,14 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
                                     send_event("vote_submission", {"is_upvote": True})
                                     st.success("Thank you for your positive feedback!")
                                     st.session_state.feedback_expanders[new_expander_key] = False
+                                    st.experimental_rerun()
                             with col2:
                                 if st.button("👎", key=f"downvote_{len(st.session_state['messages'])-1}"):
                                     submit_simple_vote(user_id, prompt, sanitized_response, False)
                                     send_event("vote_submission", {"is_upvote": False})
                                     st.success("Thank you for your feedback. We'll work on improving!")
                                     st.session_state.feedback_expanders[new_expander_key] = False
+                                    st.experimental_rerun()
 
                 except Exception as e:
                     with response_area:
@@ -366,6 +375,14 @@ def render_chat(user_id: Optional[int] = None, user_role: Optional[str] = None):
 
         response_time = time.time() - start_time
         logger.info(f"Response generated in {response_time:.2f} seconds")
+
+    # Check if we need to close an expander
+    if st.session_state.get('close_expander', False):
+        expander_key = st.session_state.get('close_expander_key')
+        if expander_key:
+            close_expander_after_delay(expander_key)
+            st.session_state.close_expander = False
+            st.session_state.close_expander_key = None
 
     # Add a button to clear the conversation
     if st.button("Clear Conversation"):
