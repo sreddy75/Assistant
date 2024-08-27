@@ -58,9 +58,14 @@ def login_form():
     # Custom CSS for the login form
     st.markdown("""
     <style>
+    .login-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
     .login-form {
-        max-width: 400px;
-        margin: 0 auto;
+        width: 300px;
         padding: 20px;
         background-color: #2b313e;
         border-radius: 10px;
@@ -69,9 +74,15 @@ def login_form():
     .login-form input {
         width: 100%;
         margin-bottom: 10px;
+        padding: 8px;
+        border: 1px solid #4CAF50;
+        border-radius: 4px;
+        background-color: #1E1E1E;
+        color: white;
     }
     .login-form .stButton > button {
         width: 100%;
+        margin-top: 10px;
     }
     .separator {
         width: 100%;
@@ -83,6 +94,14 @@ def login_form():
         display: flex;
         justify-content: center;
         margin-bottom: 20px;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        white-space: nowrap;
+        font-size: 14px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -283,47 +302,7 @@ def is_authenticated():
 def logout():
     if 'token' in st.session_state:
         requests.post(f"{BACKEND_URL}/api/logout", headers={"Authorization": f"Bearer {st.session_state['token']}"})
-    st.session_state.clear()
-
-# def main_app():
-    
-#     st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">', unsafe_allow_html=True)    
-#     apply_expander_style()
-
-#     col1, col2 = st.sidebar.columns([2, 1])
-#     with col1:
-#         if st.session_state.get('nickname'):            
-#             st.text(f"Welcome, {st.session_state.get('nickname')}")                    
-            
-#     with col2:
-#         if st.button("Logout"):
-#             logout()
-#             st.rerun()
-
-#     tabs = ["Chat", "Knowledge Base"]
-#     if st.session_state.get('is_admin', False):
-#         tabs.append("Analytics")
-#     if st.session_state.get('is_super_admin', False):
-#         tabs.extend(["Home", "Settings"])
-    
-#     selected_tab = st.tabs(tabs)
-
-#     for i, tab in enumerate(tabs):
-#         with selected_tab[i]:
-#             st.markdown('<div class="separator"></div>', unsafe_allow_html=True)
-            
-#             if tab == "Home":
-#                 render_dashboard_analytics()
-#             elif tab == "Chat":
-#                 render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
-#                 render_sidebar()
-#             elif tab == "Knowledge Base":
-#                 knowledge_base_page()
-#             elif tab == "Analytics":
-#                 render_analytics_dashboard()
-#             elif tab == "Settings":
-#                 render_settings_tab()
-    
+    st.session_state.clear()    
     
 
 def apply_custom_theme():
