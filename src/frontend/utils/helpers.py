@@ -1,28 +1,32 @@
 import os
+import streamlit as st
 import re
 import json
-import streamlit as st
-from collections import defaultdict
-from src.backend.kr8.utils.log import logger
-import pandas as pd
-import io
-import base64
-from PIL import Image
-from io import BytesIO
-import plotly.graph_objects as go
 import requests
+import pandas as pd
+import base64
+from io import BytesIO
+from PIL import Image
+import plotly.graph_objects as go
 from markdown import markdown
 from bs4 import BeautifulSoup
+from pygments import highlight
+from pygments.lexers import get_lexer_by_name
+from pygments.formatters import HtmlFormatter
+import logging
+from utils.api import BACKEND_URL
 from dotenv import load_dotenv
-from src.backend.kr8.vectordb.pgvector.pgvector2 import PgVector2
-
 load_dotenv()
-BACKEND_URL=os.getenv("BACKEND_URL")
 
-def logout():
-    if 'token' in st.session_state:
-        requests.post(f"{BACKEND_URL}/api/logout", headers={"Authorization": f"Bearer {st.session_state['token']}"})
-    st.session_state.clear()
+def get_client_name():
+    return os.getenv('CLIENT_NAME', 'default')
+
+def setup_logging():
+    logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
+    return logger
+
+logger = setup_logging()
 
 def sanitize_content(content):
     def format_code_block(match):
@@ -33,54 +37,25 @@ def sanitize_content(content):
                 parsed = json.loads(code)
                 code = json.dumps(parsed, indent=2)
             except json.JSONDecodeError:
-                pass  # If it's not valid JSON, leave it as is
+                pass
         return f"```{lang}\n{code}\n```"
 
-    # Handle code blocks (with or without language specification)
     content = re.sub(r'```(\w*)\s*([\s\S]*?)```', format_code_block, content)
-
-    # Handle inline code
     content = re.sub(r'`([^`\n]+)`', r'`\1`', content)
-
-    # Handle headers
     content = re.sub(r'^(#+)\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
-
-    # Handle unordered lists
     content = re.sub(r'^(\s*[-*+])\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
-
-    # Handle ordered lists
     content = re.sub(r'^(\s*\d+\.)\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
-
-    # Handle bold and italic
     content = re.sub(r'\*\*(.*?)\*\*', r'**\1**', content)
     content = re.sub(r'\*(.*?)\*', r'*\1*', content)
-
-    # Handle links
     content = re.sub(r'\[(.*?)\]\((.*?)\)', r'[\1](\2)', content)
-
-    # Handle horizontal rules
     content = re.sub(r'^(-{3,}|\*{3,}|_{3,})$', '---', content, flags=re.MULTILINE)
-
-    # Replace common escape sequences
     content = content.replace('&quot;', '"').replace('&apos;', "'").replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-
-    # Replace escaped newlines with actual newlines
     content = content.replace('\\n', '\n')
-
-    # Remove extra whitespace
     content = re.sub(r'\n\s*\n', '\n\n', content)
-    
-    # Ensure consistent newlines before and after code blocks
     content = re.sub(r'([\s\S]+?)(```[\s\S]+?```)', lambda m: f"{m.group(1).strip()}\n\n{m.group(2)}\n\n", content)
-    
-    # Ensure consistent formatting for bullet points
     content = re.sub(r'^\* \*([^:]+):\*\*', r'* **\1:**', content, flags=re.MULTILINE)
-
-    # Ensure consistent newlines after headers
     content = re.sub(r'(#+.*?)\n(?!\n)', r'\1\n\n', content)
-
     content = content.strip()
-
     return content
 
 def render_markdown(content):
@@ -112,95 +87,33 @@ def render_markdown(content):
 def add_markdown_styles():
     markdown_style = """
     <style>
-        .markdown-content {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #ffffff;
-            max-width: 800px;  /* Limit the maximum width */
-            margin: 0 auto;  /* Center the content */
-        }
-        .markdown-content h1, .markdown-content h2, .markdown-content h3, 
-        .markdown-content h4, .markdown-content h5, .markdown-content h6 {
-            color: #ffffff;
-            margin-top: 24px;
-            margin-bottom: 16px;
-            font-weight: 600;
-            line-height: 1.25;
-        }
-        .markdown-content h1 { font-size: 2em; border-bottom: 1px solid #30363d; }
-        .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid #30363d; }
-        .markdown-content h3 { font-size: 1.25em; }
-        .markdown-content h4 { font-size: 1em; }
-        .markdown-content h5 { font-size: 0.875em; }
-        .markdown-content h6 { font-size: 0.85em; color: #8b949e; }
-        .markdown-content p, .markdown-content ul, .markdown-content ol {
-            margin-bottom: 16px;
-        }
-        .markdown-content ul, .markdown-content ol {
-            padding-left: 2em;
-        }
-        .markdown-content li {
-            margin-bottom: 0.25em;
-        }
-        .markdown-content code {
-            font-family: 'Courier New', Courier, monospace;
-            padding: 0.2em 0.4em;
-            margin: 0;
-            font-size: 85%;
-            background-color: rgba(110, 118, 129, 0.4);
-            border-radius: 6px;
-        }
-        .markdown-content pre {
-            padding: 16px;
-            overflow: auto;
-            font-size: 85%;
-            line-height: 1.45;
-            background-color: #161b22;
-            border-radius: 6px;
-        }
-        .markdown-content pre code {
-            background-color: transparent;
-            padding: 0;
-            margin: 0;
-            font-size: 100%;
-            word-break: normal;
-            white-space: pre;
-            background: transparent;
-            border: 0;
-        }
+    /* Add your markdown styles here */
     </style>
     """
     st.markdown(markdown_style, unsafe_allow_html=True)
-    
-def determine_analyst(file, file_content):
-    # Read a sample of the file to determine its content
-    if file.name.endswith('.csv'):
-        df = pd.read_csv(io.StringIO(file_content), nrows=5)
-    elif file.name.endswith(('.xlsx', '.xls')):
-        df = pd.read_excel(io.BytesIO(base64.b64decode(file_content)), nrows=5)
-    else:
-        return None
 
-    # Check column names for keywords
-    columns = df.columns.str.lower()
-    if any(keyword in columns for keyword in ['revenue', 'financial', 'profit', 'cost']):
-        return 'financial'
-    else:
-        return 'data'
+def safe_get(data, *keys, default=None):
+    for key in keys:
+        if isinstance(data, dict) and key in data:
+            data = data[key]
+        else:
+            return default
+    return data
+
+def format_metric(value, format_string="{:.2f}", suffix=""):
+    if value is None:
+        return "N/A"
+    try:
+        return f"{format_string.format(value)}{suffix}"
+    except (ValueError, TypeError):
+        return str(value) + suffix
 
 def display_base64_image(base64_string):
     try:
-        # Remove the "data:image/png;base64," part if present
         if "base64," in base64_string:
             base64_string = base64_string.split("base64,")[1]
-        
-        # Decode the base64 string
         img_data = base64.b64decode(base64_string)
-        
-        # Open the image using PIL
         img = Image.open(BytesIO(img_data))
-        
-        # Display the image using Streamlit
         st.image(img, use_column_width=True)
     except Exception as e:
         st.error(f"Error displaying image: {e}")
@@ -231,3 +144,44 @@ def restart_assistant():
     if "file_uploader_key" in st.session_state:
         st.session_state["file_uploader_key"] += 1
     st.rerun()
+
+def handle_response(response, success_message=None):
+    if response.status_code == 200:
+        if success_message:
+            st.success(success_message)
+        return True
+    elif response.status_code == 400:
+        error_detail = json.loads(response.text).get('detail', 'Unknown error')
+        if isinstance(error_detail, list):
+            for error in error_detail:
+                st.error(f"Error: {error.get('msg', 'Unknown error')}")
+        else:
+            st.error(f"Error: {error_detail}")
+    elif response.status_code == 401:
+        st.error("Authentication failed. Please log in again.")
+    elif response.status_code == 404:
+        st.error("Resource not found. Please check your input.")
+    else:
+        st.error(f"An error occurred: {response.text}")
+    return False
+
+def send_event(event_type, event_data, duration=None):
+    try:
+        user_id = st.session_state.get("user_id")        
+        payload = {
+            "user_id": user_id,            
+            "event_type": event_type,
+            "event_data": event_data,
+            "duration": duration
+        }
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/analytics/user-events",
+            json=payload,
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+        )
+        if response.status_code != 200:
+            logger.error(f"Failed to send event: {response.text}")
+        else:
+            logger.info(f"Event sent successfully: {event_type} for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error sending event: {str(e)}")

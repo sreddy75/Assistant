@@ -1,26 +1,18 @@
-import json
 import streamlit as st
 import requests
-from src.backend.kr8.tools.pandas import PandasTools
-from src.backend.kr8.tools.code_tools import CodeTools
-from ui.components.utils import restart_assistant
-from src.backend.core.client_config import ENABLED_ASSISTANTS
-import matplotlib.pyplot as plt
+import json
+from utils.api import BACKEND_URL
+from utils.helpers import restart_assistant
+from config.settings import ENABLED_ASSISTANTS
 from src.backend.db.session import get_db
 from src.backend.models.models import Organization, OrganizationConfig
-from sqlalchemy.orm import Session
-from src.backend.core.config import settings
-
-BACKEND_URL = settings.BACKEND_URL
 
 def initialize_session_state(user_role):
-    # Fetch the organization ID from the session state
     org_id = st.session_state.get('org_id')
     if not org_id:
         st.error("Organization ID not found in session state.")
         return
 
-    # Load the organization-specific config from the database
     db = next(get_db())
     try:
         org = db.query(Organization).filter(Organization.id == org_id).first()
@@ -33,25 +25,17 @@ def initialize_session_state(user_role):
             st.error(f"Organization config not found for org ID: {org_id}")
             return
 
-        # Parse the JSON strings from the database
         roles = json.loads(org_config.roles)
         assistants = json.loads(org_config.assistants)
         feature_flags = json.loads(org_config.feature_flags)
 
-        # Get the role-specific assistants from the org config
         role_assistants = assistants.get(user_role, [])
 
-        # Initialize assistant states based on the config
         for assistant in ENABLED_ASSISTANTS:
             key = f"{assistant.lower().replace(' ', '_')}_enabled"
             if key not in st.session_state:
                 st.session_state[key] = assistant in role_assistants
 
-        # Initialize PandasTools if not already done
-        if 'pandas_tools' not in st.session_state:
-            st.session_state.pandas_tools = PandasTools()
-
-        # Store the full org config in the session state for later use
         st.session_state['org_config'] = {
             'roles': roles,
             'assistants': assistants,
@@ -88,7 +72,6 @@ def render_sidebar():
                     st.session_state[key] = enabled
                     restart_assistant()
 
-    # Check if Code Assistant is enabled
     if "Code Assistant" in available_assistants:        
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
         st.sidebar.subheader("Project Management")
@@ -114,7 +97,7 @@ def render_sidebar():
             if not st.session_state.project_files_processed:
                 if st.sidebar.button(f"Process {project_type} Project"):
                     process_project(project_type, project_name, project_files)
-            
+
         st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
 
 def process_project(project_type, project_name, project_files):
@@ -146,8 +129,7 @@ def process_project(project_type, project_name, project_files):
                     run_response = requests.post(f"{BACKEND_URL}/api/v1/assistant/create-run", params={"assistant_id": assistant_id})
                     if run_response.status_code == 200:
                         run_id = run_response.json().get("run_id")
-                        
-                        # Use the assistant's CodeTools
+
                         load_project_response = requests.post(
                             f"{BACKEND_URL}/api/v1/assistant/load-project",
                             json={
@@ -157,7 +139,7 @@ def process_project(project_type, project_name, project_files):
                                 "directory_content": directory_content
                             }
                         )
-                        
+
                         if load_project_response.status_code == 200:
                             result = load_project_response.json().get("result")
                             st.success(result)
@@ -177,3 +159,6 @@ def process_project(project_type, project_name, project_files):
         finally:
             progress_bar.empty()
             status_text.empty()
+
+if __name__ == "__main__":
+    render_sidebar()

@@ -1,13 +1,12 @@
 import streamlit as st
 import requests
-import json
 import pandas as pd
-from src.backend.core.config import settings
+from utils.api import BACKEND_URL
+from utils.helpers import handle_response
+from utils.file_processor import process_file
 
-BACKEND_URL = settings.BACKEND_URL
+def render_knowledge_base():    
 
-def knowledge_base_page():        
-    # Create tabs for different sections
     tab1, tab2, tab3 = st.tabs(["Add Content", "Search Documents", "Manage Documents"])
 
     with tab1:
@@ -19,7 +18,7 @@ def knowledge_base_page():
     with tab3:
         manage_documents()
 
-def add_content():    
+def add_content():
     col1, col2 = st.columns(2)
 
     with col1:
@@ -40,7 +39,7 @@ def add_content():
         if st.button("Add URL", key="kb_add_url_button"):
             add_url(input_url)
 
-def search_documents():    
+def search_documents():
     search_query = st.text_input("Enter search query", key="kb_search_query")
     if st.button("Search", key="kb_search_button"):
         with st.spinner("Searching..."):
@@ -60,7 +59,6 @@ def search_documents():
                     st.info("No documents found matching your search query.")
 
 def manage_documents():
-
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader("Document List")
@@ -74,10 +72,10 @@ def manage_documents():
     if st.session_state.documents:
         df = pd.DataFrame(st.session_state.documents)
         df = df[['name', 'chunks']]  # Select only name and chunks columns
-        
+
         # Display the dataframe
         st.dataframe(df, hide_index=True)
-        
+
         # Add delete buttons below the table
         st.subheader("Delete Documents")
         for index, row in df.iterrows():
@@ -89,7 +87,7 @@ def manage_documents():
                     if delete_document(row['name']):
                         st.success(f"Deleted document: {row['name']}")
                         st.session_state.documents = fetch_documents()
-                        st.experimental_rerun()
+                        st.rerun()
     else:
         st.info("No documents found in the knowledge base.")
 
@@ -153,25 +151,5 @@ def delete_document(document_name):
     )
     return handle_response(response)
 
-def handle_response(response, success_message=None):
-    if response.status_code == 200:
-        if success_message:
-            st.success(success_message)
-        return True
-    elif response.status_code == 400:
-        error_detail = json.loads(response.text).get('detail', 'Unknown error')
-        if isinstance(error_detail, list):
-            for error in error_detail:
-                st.error(f"Error: {error.get('msg', 'Unknown error')}")
-        else:
-            st.error(f"Error: {error_detail}")
-    elif response.status_code == 401:
-        st.error("Authentication failed. Please log in again.")
-    elif response.status_code == 404:
-        st.error("Resource not found. Please check your input.")
-    else:
-        st.error(f"An error occurred: {response.text}")
-    return False
-
 if __name__ == "__main__":
-    knowledge_base_page()
+    render_knowledge_base()
