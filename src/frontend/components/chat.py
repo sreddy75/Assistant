@@ -130,7 +130,13 @@ def render_chat(user_id, user_role):
             padding: 10px;
             margin-bottom: 10px;
             font-style: italic;
-        }        
+        }       
+        .feedback-expander {
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+        } 
         </style>
         """, unsafe_allow_html=True)
 
@@ -163,6 +169,13 @@ def render_chat(user_id, user_role):
         else:
             st.session_state["messages"] = []
 
+     # Initialize feedback_submitted in session state
+    if "feedback_submitted" not in st.session_state:
+        st.session_state.feedback_submitted = {}
+    
+    if "feedback_timestamps" not in st.session_state:
+        st.session_state.feedback_timestamps = {}
+            
     # Fetch the introduction message only if the chat history is empty
     if not st.session_state["messages"]:
         intro_response = requests.get(
@@ -175,11 +188,31 @@ def render_chat(user_id, user_role):
                 st.session_state["messages"].insert(0, {"role": "assistant", "content": introduction})
 
     # Display chat messages
-    for message in st.session_state["messages"]:
+    for i, message in enumerate(st.session_state["messages"]):
         with st.chat_message(message["role"], avatar=system_chat_icon if message["role"] == "assistant" else user_chat_icon):
             content1 = sanitize_content(message["content"])
             content2 = render_markdown(content1)
             st.markdown(content2, unsafe_allow_html=True)
+
+            # Add feedback expander for assistant messages (except the first one)
+            if message["role"] == "assistant" and i > 0:
+                feedback_key = f"feedback_{i}"
+                current_time = time.time()
+                
+                if not st.session_state.feedback_submitted.get(feedback_key, False):
+                    with st.expander("Provide feedback", expanded=False):
+                        usefulness_rating = st.slider("Rate the usefulness of this response", 1, 5, 3, key=f"slider_{i}")
+                        feedback_text = st.text_area("Additional feedback (optional)", key=f"text_{i}")
+                        if st.button("Submit Feedback", key=f"button_{i}"):
+                            submit_feedback(user_id, st.session_state["messages"][i-1]["content"], message["content"], 
+                                            usefulness_rating > 3, usefulness_rating, feedback_text)
+                            st.session_state.feedback_submitted[feedback_key] = True
+                            st.session_state.feedback_timestamps[feedback_key] = current_time
+                            st.rerun()
+                elif current_time - st.session_state.feedback_timestamps.get(feedback_key, 0) < 5:
+                    st.success("Feedback submitted successfully!")
+                else:
+                    st.info("Thank you for your feedback!")
 
     # Chat input
     if user_input := st.chat_input("What would you like to know?"):
@@ -210,6 +243,25 @@ def render_chat(user_id, user_role):
                 full_response = stream_response(response, response_area, pulsating_dot, response_placeholder)
                 st.session_state["messages"].append({"role": "assistant", "content": full_response})
 
+                # Add feedback expander for the new assistant message
+                feedback_key = "feedback_new"
+                current_time = time.time()
+                
+                if not st.session_state.feedback_submitted.get(feedback_key, False):
+                    with st.expander("Provide feedback", expanded=False):
+                        usefulness_rating = st.slider("Rate the usefulness of this response", 1, 5, 3, key="slider_new")
+                        feedback_text = st.text_area("Additional feedback (optional)", key="text_new")
+                        if st.button("Submit Feedback", key="button_new"):
+                            submit_feedback(user_id, user_input, full_response, 
+                                            usefulness_rating > 3, usefulness_rating, feedback_text)
+                            st.session_state.feedback_submitted[feedback_key] = True
+                            st.session_state.feedback_timestamps[feedback_key] = current_time
+                            st.rerun()
+                elif current_time - st.session_state.feedback_timestamps.get(feedback_key, 0) < 5:
+                    st.success("Feedback submitted successfully!")
+                else:
+                    st.info("Thank you for your feedback!")
+
             except requests.RequestException as e:
                 st.error(f"An error occurred while communicating with the server: {str(e)}")
             except Exception as e:
@@ -220,6 +272,8 @@ def render_chat(user_id, user_role):
     # Add a button to clear the conversation
     if st.button("Clear Conversation"):
         st.session_state["messages"] = []
+        st.session_state.feedback_submitted = {}
+        st.session_state.feedback_timestamps = {}
         st.rerun()
                 
 def submit_feedback(user_id, query, response, is_upvote, usefulness_rating, feedback_text):
