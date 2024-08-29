@@ -12,7 +12,7 @@ from utils.helpers import setup_logging
 def main():
     setup_logging()
     apply_custom_theme()
-    maximize_content_area()
+    # maximize_content_area()
     apply_expander_style()
 
     if not is_authenticated():
@@ -42,34 +42,48 @@ def render_main_app():
         unsafe_allow_html=True
     )
 
+    # User greeting
+    user_nickname = st.session_state.get('nickname', 'User')
+    st.header(f"Hello, {user_nickname}!")
+
     # Initialize session state for navigation
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "Dashboard"
 
-    # Navigation
-    pages = ["Dashboard", "Chat", "Knowledge Base", "Analytics", "Settings"]
-    st.session_state.current_page = st.selectbox("Navigation", pages, index=pages.index(st.session_state.current_page))
+    # Navigation using tabs
+    tabs = st.tabs(["Dashboard", "Chat", "Knowledge Base", "Analytics", "Settings"])
 
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
     # Main content area
     st.markdown('<div class="content-area">', unsafe_allow_html=True)
-    if st.session_state.current_page == "Dashboard":
+    
+    with tabs[0]:
+        st.session_state.current_page = "Dashboard"
         render_home_page()
-    elif st.session_state.current_page == "Chat":
+    
+    with tabs[1]:
+        st.session_state.current_page = "Chat"
         render_chat_page()
-    elif st.session_state.current_page == "Knowledge Base":
+    
+    with tabs[2]:
+        st.session_state.current_page = "Knowledge Base"
         render_knowledge_base_page()
-    elif st.session_state.current_page == "Analytics":
+    
+    with tabs[3]:
+        st.session_state.current_page = "Analytics"
         if st.session_state.get('is_admin', False):
             render_analytics_page()
         else:
             st.error("You don't have permission to access this page.")
-    elif st.session_state.current_page == "Settings":
+    
+    with tabs[4]:
+        st.session_state.current_page = "Settings"
         if st.session_state.get('is_super_admin', False):
             render_settings_page()
         else:
             st.error("You don't have permission to access this page.")
+
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Sidebar (only rendered on the Chat page)

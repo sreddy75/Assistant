@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 from utils.api import fetch_data
 from utils.helpers import safe_get, format_metric
 
-def render_analytics_dashboard():
+
+def get_analytics_data():
     # Fetch data from all relevant endpoints
     sentiment_analysis = fetch_data("/api/v1/analytics/sentiment-analysis")
     feedback_analysis = fetch_data("/api/v1/analytics/feedback-analysis")
@@ -22,8 +23,12 @@ def render_analytics_dashboard():
     if all(data is None for data in [sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns]):
         st.warning("Failed to fetch data from the API. Please check the server connection.")
         return
+    
+    return sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns
 
-    # Key Insights and User Engagement at the top
+def render_analytics_dashboard():
+    
+    sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns = get_analytics_data()        
     
     col1, col2 = st.columns(2)
 

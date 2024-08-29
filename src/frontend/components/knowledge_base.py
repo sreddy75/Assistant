@@ -6,6 +6,32 @@ from utils.helpers import handle_response
 from utils.file_processor import process_file
 
 def render_knowledge_base():    
+    st.markdown("""
+    <style>
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: var(--secondary-background-color);
+        border-radius: 5px 5px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: var(--primary-color);
+        color: white;
+    }
+    .upload-section, .search-section, .manage-section {
+        background-color: var(--secondary-background-color);
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     tab1, tab2, tab3 = st.tabs(["Add Content", "Search Documents", "Manage Documents"])
 
@@ -19,6 +45,7 @@ def render_knowledge_base():
         manage_documents()
 
 def add_content():
+    st.markdown('<div class="upload-section">', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
 
     with col1:
@@ -39,7 +66,10 @@ def add_content():
         if st.button("Add URL", key="kb_add_url_button"):
             add_url(input_url)
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
 def search_documents():
+    st.markdown('<div class="search-section">', unsafe_allow_html=True)
     search_query = st.text_input("Enter search query", key="kb_search_query")
     if st.button("Search", key="kb_search_button"):
         with st.spinner("Searching..."):
@@ -57,8 +87,10 @@ def search_documents():
                             st.write(f"Metadata: {doc['meta_data']}")
                 else:
                     st.info("No documents found matching your search query.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def manage_documents():
+    st.markdown('<div class="manage-section">', unsafe_allow_html=True)
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader("Document List")
@@ -95,6 +127,7 @@ def manage_documents():
     if st.button("Clear Knowledge Base", key="clear_kb"):
         assistant_id = st.session_state.get("assistant_id")
         clear_knowledge_base(assistant_id)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def upload_file(uploaded_file):
     with st.spinner(f"Uploading file: {uploaded_file.name}..."):

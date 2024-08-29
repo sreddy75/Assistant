@@ -3,14 +3,14 @@ from io import BytesIO
 import streamlit as st
 import requests
 from utils.api import BACKEND_URL, get_auth_header
-from utils.helpers import get_client_name
+from utils.helpers import get_client_name, validate_email, validate_password
 
 client_name = get_client_name()
 
 def is_authenticated():
     """
     Check if the user is authenticated.
-    
+
     Returns:
     bool: True if authenticated, False otherwise.
     """
@@ -54,25 +54,28 @@ def login_form():
     </style>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([2, 2, 2])
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        
+
         data_url = get_main_image()
-        
+
         st.markdown(
             f'<div class="centered-image">'
             f'<img src="data:image/png;base64,{data_url}" alt="organization logo" width="200">'
             f'</div>',
             unsafe_allow_html=True,
         )
-        
+
         tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
-        
+
         with tab1:
             email = st.text_input("Email", key="login_email", value="suren@kr8it.com")
             password = st.text_input("Password", type="password", key="login_password", value="Sur3n#12")
-            if st.button("Log In"):                                
-                login(email, password)
+            if st.button("Log In"):
+                if validate_email(email) and password:
+                    login(email, password)
+                else:
+                    st.error("Please enter a valid email and password.")
 
         with tab2:
             register_form()
@@ -83,7 +86,7 @@ def login_form():
 def login(email, password):
     """
     Attempt to log in the user with provided credentials.
-    
+
     Args:
     email (str): User's email
     password (str): User's password
@@ -126,10 +129,11 @@ def register_form():
     """
     new_email = st.text_input("Email", key="register_email")
     new_password = st.text_input("Password", type="password", key="register_password")
+    confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
     first_name = st.text_input("First Name", key="register_first_name")
     last_name = st.text_input("Last Name", key="register_last_name")
     nickname = st.text_input("Nickname", key="register_nickname")
-    
+
     # Fetch available roles
     response = requests.get(f"{BACKEND_URL}/api/v1/organizations/{client_name}/roles")
     if response.status_code == 200:
@@ -140,12 +144,18 @@ def register_form():
         role = None
 
     if st.button("Register"):
-        register(new_email, new_password, first_name, last_name, nickname, role)
+        if validate_email(new_email) and validate_password(new_password):
+            if new_password == confirm_password:
+                register(new_email, new_password, first_name, last_name, nickname, role)
+            else:
+                st.error("Passwords do not match.")
+        else:
+            st.error("Please enter a valid email and a strong password.")
 
 def register(email, password, first_name, last_name, nickname, role):
     """
     Attempt to register a new user with provided information.
-    
+
     Args:
     email (str): User's email
     password (str): User's password
@@ -154,9 +164,6 @@ def register(email, password, first_name, last_name, nickname, role):
     nickname (str): User's nickname
     role (str): User's role
     """
-    from utils.api import get_client_name
-    client_name = get_client_name()
-    
     response = requests.post(
         f"{BACKEND_URL}/api/v1/auth/register",
         json={
@@ -180,12 +187,15 @@ def reset_password_form():
     """
     reset_email = st.text_input("Email", key="reset_email")
     if st.button("Reset Password"):
-        reset_password(reset_email)
+        if validate_email(reset_email):
+            reset_password(reset_email)
+        else:
+            st.error("Please enter a valid email address.")
 
 def reset_password(email):
     """
     Attempt to initiate a password reset for the provided email.
-    
+
     Args:
     email (str): User's email
     """
@@ -217,7 +227,7 @@ def initialize_assistant():
 def verify_email(token):
     """
     Verify a user's email with the provided token.
-    
+
     Args:
     token (str): Email verification token
     """
@@ -227,18 +237,24 @@ def verify_email(token):
         st.info("You can now log in to your account")
     else:
         st.error(response.json().get("detail", "Email verification failed"))
-        
-def get_main_image():
-    # Fetch the main image from the organization's assets
-        try:
-            response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{client_name}/login-form/main_image")
-            if response.status_code == 200:
-                image_data = BytesIO(response.content)
-                contents = image_data.getvalue()
-                data_url = base64.b64encode(contents).decode("utf-8")
-                return data_url
 
-            else:
-                st.error(f"Failed to load organization image. Status code: {response.status_code}")
-        except requests.RequestException as e:
-            st.error(f"Failed to fetch organization image: {str(e)}")
+def get_main_image():
+    """
+    Fetch the main image from the organization's assets.
+    
+    Returns:
+    str: Base64 encoded image data
+    """
+    try:
+        response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{client_name}/login-form/main_image")
+        if response.status_code == 200:
+            image_data = BytesIO(response.content)
+            contents = image_data.getvalue()
+            data_url = base64.b64encode(contents).decode("utf-8")
+            return data_url
+        else:
+            st.error(f"Failed to load organization image. Status code: {response.status_code}")
+            return ""
+    except requests.RequestException as e:
+        st.error(f"Failed to fetch organization image: {str(e)}")
+        return ""

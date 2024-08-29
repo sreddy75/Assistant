@@ -1,18 +1,13 @@
-import random
+from asyncio.log import logger
 import traceback
-from venv import logger
 import streamlit as st
 import requests
 import json
 import time
-import threading
 from PIL import Image
 from io import BytesIO
-from src.backend.core.client_config import is_feedback_sentiment_analysis_enabled
-from utils.helpers import sanitize_content, render_markdown, send_event
+from utils.helpers import sanitize_content, render_markdown
 from utils.api import BACKEND_URL
-from utils.auth import is_authenticated
-from utils.file_processor import process_file_for_analyst
 from config.settings import get_client_name
 
 def load_org_icons():
@@ -50,6 +45,11 @@ def load_org_icons():
 
     return system_chat_icon, user_chat_icon
 
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 def stream_response(response, response_area, pulsating_dot, response_placeholder):
     full_response = ""
     buffer = ""
@@ -62,40 +62,77 @@ def stream_response(response, response_area, pulsating_dot, response_placeholder
                 for line in lines[:-1]:
                     try:
                         json_object = json.loads(line)
-                        new_content = json_object.get('response', '')
+                        new_content = json_object.get('delta', '')
+                        logger.debug(f"New content: {new_content}")
 
                         if new_content:
-                            full_response = new_content  # Always use the full new_content
+                            full_response += new_content
+                            logger.debug(f"Full response: {full_response}")
 
                             with response_area:
-                                if full_response.strip():
-                                    pulsating_dot.empty()
-                                    response_placeholder.markdown(full_response, unsafe_allow_html=True)
+                                pulsating_dot.empty()
+                                response_placeholder.markdown(render_markdown(sanitize_content(full_response)), unsafe_allow_html=True)
                     except json.JSONDecodeError:
-                        print(f"Failed to parse JSON: {line}")  # For debugging
+                        logger.error(f"Failed to parse JSON: {line}")
                 buffer = lines[-1]
 
     # Final update
     if full_response:
         with response_area:
             pulsating_dot.empty()
-            try:
-                rendered_response = render_markdown(full_response)
-                if rendered_response is None:
-                    rendered_response = full_response  # Fall back to unrendered response
-
-                if rendered_response.strip():
-                    response_placeholder.markdown(rendered_response, unsafe_allow_html=True)
-                else:
-                    response_placeholder.markdown("No response received.", unsafe_allow_html=True)
-            except Exception as e:
-                print(f"Error in rendering response: {str(e)}")
-                response_placeholder.markdown("An error occurred while rendering the response.", unsafe_allow_html=True)
+            response_placeholder.markdown(render_markdown(sanitize_content(full_response)), unsafe_allow_html=True)
 
     return full_response
 
 def render_chat(user_id, user_role):
     system_chat_icon, user_chat_icon = load_org_icons()
+
+    st.markdown("""
+        <style>
+        .stTabs {
+            margin-bottom: -2rem;
+        }
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 80px);
+            margin-top: -2rem;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background-color: var(--secondary-background-color);
+            border-radius: 10px;
+            margin-bottom: 1rem;
+        }
+        .chat-input {
+            margin-top: 20px;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+        .pulsating-dot {
+            width: 30px;
+            height: 30px;
+            background: rgba(255, 0, 0, 1);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+            display: inline-block;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+         .system-message {
+            background-color: #f0f0f0;
+            border-left: 5px solid #4CAF50;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-style: italic;
+        }        
+        </style>
+        """, unsafe_allow_html=True)
 
     if "assistant_id" not in st.session_state:
         response = requests.get(
@@ -140,18 +177,23 @@ def render_chat(user_id, user_role):
     # Display chat messages
     for message in st.session_state["messages"]:
         with st.chat_message(message["role"], avatar=system_chat_icon if message["role"] == "assistant" else user_chat_icon):
-            st.markdown(render_markdown(sanitize_content(message["content"])), unsafe_allow_html=True)
+            content1 = sanitize_content(message["content"])
+            content2 = render_markdown(content1)
+            st.markdown(content2, unsafe_allow_html=True)
 
     # Chat input
     if user_input := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": user_input})
-        
+
         with st.chat_message("user", avatar=user_chat_icon):
             st.markdown(user_input)
 
         with st.chat_message("assistant", avatar=system_chat_icon):
-            response_placeholder = st.empty()
-            full_response = ""
+            response_area = st.container()
+            with response_area:
+                response_placeholder = st.empty()
+                pulsating_dot = st.empty()
+                pulsating_dot.markdown('<div class="pulsating-dot"></div>', unsafe_allow_html=True)
 
             try:
                 response = requests.post(
@@ -163,18 +205,15 @@ def render_chat(user_id, user_role):
                     headers={"Authorization": f"Bearer {st.session_state.get('token')}"},
                     stream=True
                 )
+                response.raise_for_status()
 
-                for chunk in response.iter_content(chunk_size=1):
-                    if chunk:
-                        full_response += chunk.decode('utf-8')
-                        response_placeholder.markdown(render_markdown(sanitize_content(full_response)), unsafe_allow_html=True)
-
+                full_response = stream_response(response, response_area, pulsating_dot, response_placeholder)
                 st.session_state["messages"].append({"role": "assistant", "content": full_response})
 
+            except requests.RequestException as e:
+                st.error(f"An error occurred while communicating with the server: {str(e)}")
             except Exception as e:
                 st.error(f"An unexpected error occurred: {str(e)}")
-                logger.error(f"Unexpected error: {str(e)}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
 
         st.rerun()
 

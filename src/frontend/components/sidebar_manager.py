@@ -6,7 +6,7 @@ from utils.helpers import restart_assistant
 from config.settings import ENABLED_ASSISTANTS
 from src.backend.db.session import get_db
 from src.backend.models.models import Organization, OrganizationConfig
-
+from components.settings_manager import render_model_selection
 def initialize_session_state(user_role):
     org_id = st.session_state.get('org_id')
     if not org_id:
@@ -54,7 +54,7 @@ def render_sidebar():
         return    
 
     initialize_session_state(user_role)
-    st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
+    st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)
 
     org_config = st.session_state.get('org_config')
     if not org_config:
@@ -73,11 +73,11 @@ def render_sidebar():
                     restart_assistant()
 
     if "Code Assistant" in available_assistants:        
-        st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
+        st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)
         st.sidebar.subheader("Project Management")
 
         project_type = st.sidebar.selectbox("Select Project Type", ["React", "Java"])
-        project_name = st.sidebar.text_input(f"Enter Project Name")
+        project_name = st.sidebar.text_input("Enter Project Name")
 
         file_types = ["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"]
         if project_type == "Java":
@@ -98,67 +98,68 @@ def render_sidebar():
                 if st.sidebar.button(f"Process {project_type} Project"):
                     process_project(project_type, project_name, project_files)
 
-        st.sidebar.markdown('<hr class="dark-divider">', unsafe_allow_html=True)
+        st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)
+        
+    render_model_selection            
 
 def process_project(project_type, project_name, project_files):
-    progress_bar = st.empty()
-    status_text = st.empty()
+    progress_bar = st.sidebar.progress(0)
+    status_text = st.sidebar.empty()
 
-    with st.spinner(f"Processing {project_type} project files..."):
-        try:
-            directory_content = {}
-            total_files = len(project_files)
+    try:
+        directory_content = {}
+        total_files = len(project_files)
 
-            for i, file in enumerate(project_files):
-                file_content = file.read().decode('utf-8', errors='ignore')
-                directory_content[file.name] = file_content
+        for i, file in enumerate(project_files):
+            file_content = file.read().decode('utf-8', errors='ignore')
+            directory_content[file.name] = file_content
 
-                progress = (i + 1) / total_files
-                progress_bar.progress(progress)
-                status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
+            progress = (i + 1) / total_files
+            progress_bar.progress(progress)
+            status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
 
-            assistant_id = st.session_state.get("assistant_id")
-            if not assistant_id:
-                st.error("Assistant ID not found. Please make sure you're properly logged in.")
-                return
+        assistant_id = st.session_state.get("assistant_id")
+        if not assistant_id:
+            st.sidebar.error("Assistant ID not found. Please make sure you're properly logged in.")
+            return
 
-            response = requests.get(f"{BACKEND_URL}/api/v1/assistant/assistant-info/{assistant_id}")
-            if response.status_code == 200:
-                assistant_info = response.json()
-                if assistant_info.get("has_knowledge_base"):
-                    run_response = requests.post(f"{BACKEND_URL}/api/v1/assistant/create-run", params={"assistant_id": assistant_id})
-                    if run_response.status_code == 200:
-                        run_id = run_response.json().get("run_id")
+        response = requests.get(f"{BACKEND_URL}/api/v1/assistant/assistant-info/{assistant_id}")
+        if response.status_code == 200:
+            assistant_info = response.json()
+            if assistant_info.get("has_knowledge_base"):
+                run_response = requests.post(f"{BACKEND_URL}/api/v1/assistant/create-run", params={"assistant_id": assistant_id})
+                if run_response.status_code == 200:
+                    run_id = run_response.json().get("run_id")
 
-                        load_project_response = requests.post(
-                            f"{BACKEND_URL}/api/v1/assistant/load-project",
-                            json={
-                                "assistant_id": assistant_id,
-                                "project_name": project_name,
-                                "project_type": project_type.lower(),
-                                "directory_content": directory_content
-                            }
-                        )
+                    load_project_response = requests.post(
+                        f"{BACKEND_URL}/api/v1/assistant/load-project",
+                        json={
+                            "assistant_id": assistant_id,
+                            "project_name": project_name,
+                            "project_type": project_type.lower(),
+                            "directory_content": directory_content
+                        }
+                    )
 
-                        if load_project_response.status_code == 200:
-                            result = load_project_response.json().get("result")
-                            st.success(result)
-                            st.session_state['current_project'] = project_name
-                            st.session_state['current_project_type'] = project_type.lower()
-                            st.session_state.project_files_processed = True
-                        else:
-                            st.error("Failed to load project. Please try again.")
+                    if load_project_response.status_code == 200:
+                        result = load_project_response.json().get("result")
+                        st.sidebar.success(result)
+                        st.session_state['current_project'] = project_name
+                        st.session_state['current_project_type'] = project_type.lower()
+                        st.session_state.project_files_processed = True
                     else:
-                        st.error("Failed to create a new run. Please try again.")
+                        st.sidebar.error("Failed to load project. Please try again.")
                 else:
-                    st.error("The assistant does not have a knowledge base initialized. Please try restarting the application.")
+                    st.sidebar.error("Failed to create a new run. Please try again.")
             else:
-                st.error("Failed to get assistant information. Please try again.")
-        except Exception as e:
-            st.error(f"Error processing {project_type} project files: {str(e)}")
-        finally:
-            progress_bar.empty()
-            status_text.empty()
+                st.sidebar.error("The assistant does not have a knowledge base initialized. Please try restarting the application.")
+        else:
+            st.sidebar.error("Failed to get assistant information. Please try again.")
+    except Exception as e:
+        st.sidebar.error(f"Error processing {project_type} project files: {str(e)}")
+    finally:
+        progress_bar.empty()
+        status_text.empty()
 
 if __name__ == "__main__":
     render_sidebar()

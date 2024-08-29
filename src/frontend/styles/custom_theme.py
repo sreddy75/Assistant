@@ -11,7 +11,6 @@ def apply_custom_theme():
     Apply a custom theme to the Streamlit app based on the organization's configuration.
     """
     try:
-        
         response = requests.get(f"{BACKEND_URL}/api/v1/organizations/public-config/{client_name}")
         response.raise_for_status()
         config_content = response.text
@@ -56,7 +55,7 @@ def apply_custom_theme():
             /* Buttons */
             .stButton > button {{
                 color: {theme_config['theme']['backgroundColor']};                
-                background-color: #25cf47;
+                background-color: {theme_config['theme']['primaryColor']};
                 border: none;
                 border-radius: 4px;
                 padding: 0.5rem 1rem;
@@ -95,7 +94,7 @@ def apply_custom_theme():
                 opacity: 0.8;
             }}
 
-             /* Expander */
+            /* Expander */
             .streamlit-expanderHeader {{
                 background-color: {theme_config['theme']['secondaryBackgroundColor']};
                 color: {theme_config['theme']['textColor']};
@@ -160,28 +159,28 @@ def apply_custom_theme():
 
             /* Sidebar styling */
             [data-testid="stSidebar"] {{
-                background-color: #292727;
+                background-color: {theme_config['theme']['secondaryBackgroundColor']};
             }}
             [data-testid="stSidebar"] .stButton > button {{
-                background-color: #25cf47;
-                color: white;
+                background-color: {theme_config['theme']['primaryColor']};
+                color: {theme_config['theme']['backgroundColor']};
             }}
             [data-testid="stSidebar"] .stTextInput > div > div > input {{
-                background-color: #3E3E3E;
-                color: white;
+                background-color: {theme_config['theme']['backgroundColor']};
+                color: {theme_config['theme']['textColor']};
             }}
             [data-testid="stSidebar"] .stSelectbox > div > div > div {{
-                background-color: #3E3E3E;
-                color: white;
+                background-color: {theme_config['theme']['backgroundColor']};
+                color: {theme_config['theme']['textColor']};
             }}
             [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
-                color: white;
+                color: {theme_config['theme']['textColor']};
             }}
             [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {{
-                color: white;
+                color: {theme_config['theme']['textColor']};
             }}
             [data-testid="stSidebar"] .stCheckbox > label > span {{
-                color: white;
+                color: {theme_config['theme']['textColor']};
             }}
 
             /* Hide Streamlit Hamburger Menu and "Deploy" Button */
@@ -196,116 +195,13 @@ def apply_custom_theme():
 
             /* Chat message styling */
             .chat-message, .chat-message p, .chat-message li, .chat-message h1, .chat-message h2, .chat-message h3, .chat-message h4, .chat-message h5, .chat-message h6 {{
-                color: white !important;
+                color: {theme_config['theme']['textColor']} !important;
             }}
             .assistant-response, .assistant-response p, .assistant-response li, .assistant-response h1, .assistant-response h2, .assistant-response h3, .assistant-response h4, .assistant-response h5, .assistant-response h6 {{
-                color: white !important;
+                color: {theme_config['theme']['textColor']} !important;
             }}
             .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {{
-                color: white !important;
-            }}
-            
-              /* Pulsating spike animation */
-            @keyframes pulse-spike {{
-                0% {{ transform: scaleY(0.4); opacity: 0.3; }}
-                50% {{ transform: scaleY(1); opacity: 1; }}
-                100% {{ transform: scaleY(0.4); opacity: 0.3; }}
-            }}
-            .pulsating-spike-container {{
-                display: flex;
-                align-items: center;
-                margin-bottom: 10px;
-            }}
-            .pulsating-spike {{
-                width: 4px;
-                height: 20px;
-                background-color: #ff0000;
-                display: inline-block;
-                margin-right: 3px;
-                animation: pulse-spike 0.8s ease-in-out infinite;
-            }}
-            .pulsating-spike:nth-child(2) {{
-                animation-delay: 0.1s;
-            }}
-            .pulsating-spike:nth-child(3) {{
-                animation-delay: 0.2s;
-            }}
-            .amusing-remark {{
-                margin-left: 10px;
-                font-style: italic;
-                color: #888;
-            }}
-          
-            /* Separator for tabs */
-            .separator {{
-                width: 100%;
-                height: 2px;
-                background-color: red;
-                margin: 1rem 0;
-            }}
-            
-              /* Comprehensive Slider Styling */
-            .stSlider label,
-            .stSlider text,
-            .stSlider .st-bb,
-            .stSlider .st-bv,
-            .stSlider .st-cj,
-            .stSlider .st-cl,
-            .stSlider [data-baseweb="slider"] {{
-                color: white !important;
-            }}
-            
-            /* Ensure all text within the slider container is white */
-            [data-testid="stSlider"] {{
-                color: white !important;
-            }}
-            
-            /* Target specific parts of the slider */
-            [data-testid="stSlider"] > div > div > div {{
-                color: white !important;
-            }}
-            
-            /* Slider thumb label */
-            [data-testid="stSlider"] [data-testid="stThumbValue"] {{
-                color: white !important;
-            }}
-            
-             /* Enhanced Expander Styling */
-            .streamlit-expanderHeader {{
-                background-color: {theme_config['theme']['primaryColor']};
-                color: {theme_config['theme']['backgroundColor']};
-                border-radius: 8px 8px 0 0;
-                border: 2px solid {theme_config['theme']['primaryColor']};
-                padding: 0.75rem 1rem;
-                font-weight: 600;
-                font-size: 1.1em;
-                transition: all 0.3s ease;
-                margin-top: 1rem;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }}
-            .streamlit-expanderHeader:hover {{
-                background-color: {theme_config['theme']['secondaryBackgroundColor']};
-                color: {theme_config['theme']['primaryColor']};
-            }}
-            .streamlit-expanderContent {{
-                background-color: {theme_config['theme']['secondaryBackgroundColor']};
-                color: {theme_config['theme']['textColor']};
-                border: 2px solid {theme_config['theme']['primaryColor']};
-                border-top: none;
-                border-radius: 0 0 8px 8px;
-                padding: 1rem;
-                margin-bottom: 1rem;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }}
-            
-            /* Expander icon styling */
-            .streamlit-expanderHeader svg {{
-                transform: scale(1.5);
-                fill: {theme_config['theme']['backgroundColor']};
-                transition: all 0.3s ease;
-            }}
-            .streamlit-expanderHeader:hover svg {{
-                fill: {theme_config['theme']['primaryColor']};
+                color: {theme_config['theme']['textColor']} !important;
             }}
         </style>
         """

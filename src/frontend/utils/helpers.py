@@ -66,10 +66,10 @@ def render_markdown(content):
 
     # Convert markdown to HTML
     html = markdown(content, extensions=['fenced_code', 'codehilite', 'tables'])
-    
+
     # Parse the HTML
     soup = BeautifulSoup(html, 'html.parser')
-    
+
     # Process code blocks
     for code_block in soup.find_all('pre'):
         code = code_block.find('code')
@@ -77,12 +77,11 @@ def render_markdown(content):
             language = code.get('class', [''])[0].replace('language-', '')
             formatted_code = f'<pre><code class="language-{language}">{code.string}</code></pre>'
             code_block.replace_with(BeautifulSoup(formatted_code, 'html.parser'))
-    
+
     # Wrap the content in a div for styling
     wrapped_content = f'<div class="markdown-content">{soup.prettify()}</div>'
-    
-    # Render the processed HTML
-    st.markdown(wrapped_content, unsafe_allow_html=True)
+
+    return wrapped_content
 
 def add_markdown_styles():
     markdown_style = """
@@ -185,3 +184,23 @@ def send_event(event_type, event_data, duration=None):
             logger.info(f"Event sent successfully: {event_type} for user {user_id}")
     except Exception as e:
         logger.error(f"Error sending event: {str(e)}")
+        
+def validate_email(email):
+    """Validate email format."""
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return re.match(pattern, email) is not None
+
+def validate_password(password):
+    """Validate password strength."""
+    if len(password) < 8:
+        return False
+    if not re.search(r"\d", password):
+        return False
+    if not re.search(r"[A-Z]", password):
+        return False
+    if not re.search(r"[a-z]", password):
+        return False
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return False
+    return True
+        
