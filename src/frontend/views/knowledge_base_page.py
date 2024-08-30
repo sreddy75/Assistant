@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
-from utils.api import BACKEND_URL
+from utils.api import BACKEND_URL, delete_data, fetch_data, post_data, search_knowledge_base, upload_document
 from utils.helpers import handle_response
 from utils.file_processor import process_file
 
@@ -73,20 +73,14 @@ def search_documents():
     search_query = st.text_input("Enter search query", key="kb_search_query")
     if st.button("Search", key="kb_search_button"):
         with st.spinner("Searching..."):
-            response = requests.post(
-                f"{BACKEND_URL}/api/v1/knowledge-base/search",
-                json={"query": search_query},
-                headers={"Authorization": f"Bearer {st.session_state.token}"}
-            )
-            if handle_response(response):
-                results = response.json()
-                if results:
-                    for doc in results:
-                        with st.expander(f"Result: {doc['name']}"):
-                            st.write(f"Content: {doc['content'][:200]}...")
-                            st.write(f"Metadata: {doc['meta_data']}")
-                else:
-                    st.info("No documents found matching your search query.")
+            results = search_knowledge_base(search_query)
+            if results:
+                for doc in results:
+                    with st.expander(f"Result: {doc['name']}"):
+                        st.write(f"Content: {doc['content'][:200]}...")
+                        st.write(f"Metadata: {doc['meta_data']}")
+            else:
+                st.info("No documents found matching your search query.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 def manage_documents():
@@ -131,58 +125,40 @@ def manage_documents():
 
 def upload_file(uploaded_file):
     with st.spinner(f"Uploading file: {uploaded_file.name}..."):
-        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-        response = requests.post(
-            f"{BACKEND_URL}/api/v1/knowledge-base/upload-file",
-            files=files,
-            headers={"Authorization": f"Bearer {st.session_state.token}"}
-        )
-        handle_response(response, success_message=f"File {uploaded_file.name} uploaded successfully!")
-        if response.status_code == 200:
+        response = upload_document(uploaded_file)
+        if response:
+            st.success(f"File {uploaded_file.name} uploaded successfully!")
             st.session_state.documents = fetch_documents()
+        else:
+            st.error(f"Failed to upload file: {uploaded_file.name}")
 
 def add_url(input_url):
     if input_url:
         with st.spinner("Processing URL..."):
-            response = requests.post(
-                f"{BACKEND_URL}/api/v1/knowledge-base/add-url",
-                params={"url": input_url},
-                headers={"Authorization": f"Bearer {st.session_state.token}"}
-            )
-            if handle_response(response, success_message=f"Successfully added URL: {input_url}"):
+            response = post_data("/api/v1/knowledge-base/add-url", {"url": input_url})
+            if response:
+                st.success(f"Successfully added URL: {input_url}")
                 if "processed_files" not in st.session_state:
                     st.session_state.processed_files = []
                 st.session_state.processed_files.append(input_url)
                 st.session_state.documents = fetch_documents()
+            else:
+                st.error(f"Failed to add URL: {input_url}")
 
 def clear_knowledge_base(assistant_id):
-    response = requests.post(
-        f"{BACKEND_URL}/api/v1/knowledge-base/clear-knowledge-base",
-        json={"assistant_id": assistant_id},
-        headers={"Authorization": f"Bearer {st.session_state.token}"}
-    )
-    if response.status_code == 200:
+    response = post_data("/api/v1/knowledge-base/clear-knowledge-base", {"assistant_id": assistant_id})
+    if response:
         st.session_state["processed_files"] = []
         st.success("Knowledge base cleared")
         st.session_state.documents = []
     else:
-        st.error(f"Failed to clear knowledge base: {response.text}")
+        st.error("Failed to clear knowledge base")
 
 def fetch_documents():
-    response = requests.get(
-        f"{BACKEND_URL}/api/v1/knowledge-base/documents",
-        headers={"Authorization": f"Bearer {st.session_state.token}"}
-    )
-    if handle_response(response):
-        return response.json()
-    return []
+    return fetch_data("/api/v1/knowledge-base/documents") or []
 
 def delete_document(document_name):
-    response = requests.delete(
-        f"{BACKEND_URL}/api/v1/knowledge-base/documents/{document_name}",
-        headers={"Authorization": f"Bearer {st.session_state.token}"}
-    )
-    return handle_response(response)
+    return delete_data(f"/api/v1/knowledge-base/documents/{document_name}")
 
 if __name__ == "__main__":
     render_knowledge_base_page()

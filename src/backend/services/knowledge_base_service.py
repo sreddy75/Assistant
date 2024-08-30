@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 import io
 import logging
+import re
 import uuid
 from src.backend.kr8.vectordb.pgvector import PgVector2
 from src.backend.kr8.embedder.sentence_transformer import SentenceTransformerEmbedder
@@ -64,12 +65,12 @@ class KnowledgeBaseService:
 
     async def process_pdf(self, filename: str, file_content: io.BytesIO) -> DocumentResponse:
         reader = PDFReader()
-        auto_rag_documents = reader.read(file_content)
+        auto_rag_documents = reader.read(file_content, original_filename=filename)
         if not auto_rag_documents:
             raise ValueError(f"Could not read PDF: {filename}")
-        
+
         self.vector_db.upsert(auto_rag_documents)
-        
+
         # Return the first document as a sample
         doc = auto_rag_documents[0]
         return DocumentResponse(
@@ -78,8 +79,8 @@ class KnowledgeBaseService:
             content=doc.content[:1000],  # Limit content for response
             meta_data=doc.meta_data,
             user_id=self.user.id,
-            created_at=doc.usage.get('created_at'),
-            updated_at=doc.usage.get('updated_at')
+            created_at=doc.meta_data.get('creation_date'),
+            updated_at=datetime.now().isoformat()
         )
 
     async def process_docx(self, filename: str, file_content: io.BytesIO) -> DocumentResponse:
@@ -204,28 +205,41 @@ class KnowledgeBaseService:
     def get_documents(self) -> List[DocumentResponse]:
         self.ensure_table_exists()
         document_info = self.vector_db.list_document_names()
-        
-        documents = []
+
+        # Group chunks by base document name
+        document_groups = defaultdict(lambda: {'chunks': 0, 'pages': set()})
         for doc_info in document_info:
-            base_name = doc_info['name']
-            main_doc = self.vector_db.get_document_by_name(base_name)
-            if main_doc:
-                documents.append(
-                    DocumentResponse(
-                        id=main_doc.id,
-                        name=base_name,
-                        content=main_doc.content[:1000],  # Limit content for response
-                        meta_data=main_doc.meta_data,
-                        user_id=self.user.id,
-                        org_id=self.user.organization_id,
-                        created_at=main_doc.usage.get('created_at'),
-                        updated_at=main_doc.usage.get('updated_at'),
-                        chunks=doc_info['chunks']
-                    )
-                )
+            name = doc_info['name']
+            # Extract base name and page number
+            match = re.match(r'(.+)_page_(\d+)', name)
+            if match:
+                base_name, page_num = match.groups()
+                document_groups[base_name]['chunks'] += doc_info['chunks']
+                document_groups[base_name]['pages'].add(int(page_num))
             else:
-                logging.warning(f"Could not retrieve document for name: {base_name}")
-        
+                # If it doesn't match the pattern, treat it as a single-chunk document
+                document_groups[name]['chunks'] = doc_info['chunks']
+
+        documents = []
+        for base_name, info in document_groups.items():
+            meta_data = {
+                "total_chunks": info['chunks'],
+                "total_pages": len(info['pages']) if info['pages'] else 1
+            }
+            documents.append(
+                DocumentResponse(
+                    id=base_name,
+                    name=base_name,
+                    content="",  # Leave content empty
+                    meta_data=meta_data,
+                    user_id=self.user.id,
+                    org_id=self.user.organization_id,
+                    created_at=None,
+                    updated_at=None,
+                    chunks=info['chunks']
+                )
+            )
+
         logging.debug(f"Returning {len(documents)} documents")
         return documents
 
@@ -235,7 +249,7 @@ class KnowledgeBaseService:
             DocumentResponse(
                 id=doc.id,
                 name=doc.name,
-                content=doc.content,
+                content=doc.content,  # Include the content for search results
                 meta_data=doc.meta_data,
                 user_id=self.user.id,
                 org_id=self.user.organization_id, 
@@ -244,24 +258,12 @@ class KnowledgeBaseService:
             ) for doc in results if doc.meta_data.get('user_id') == self.user.id
         ]
 
-    def delete_document(self, document_name: str) -> DocumentResponse:
-        document = self.vector_db.get_document_by_name(document_name)
-        if not document:
-            raise ValueError("Document not found")
-        
-        deleted = self.vector_db.delete_document_by_name(document_name)
+    def delete_document(self, document_name: str) -> bool:
+        # Delete all chunks associated with the document
+        deleted = self.vector_db.delete_document(document_name)
         if not deleted:
             raise ValueError("Failed to delete document")
-        
-        return DocumentResponse(
-            id=document.id,
-            name=document.name,
-            content=document.content,
-            meta_data=document.meta_data,
-            user_id=self.user.id,
-            created_at=document.usage.get('created_at'),
-            updated_at=document.usage.get('updated_at')
-        )
+        return True
 
     def update_document(self, document_name: str, document_update: DocumentUpdate) -> DocumentResponse:
         document = self.vector_db.get_document_by_name(document_name)

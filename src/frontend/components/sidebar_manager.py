@@ -47,15 +47,21 @@ def initialize_session_state(user_role):
     finally:
         db.close()
 
-def render_sidebar():
+def render_sidebar():            
     user_role = st.session_state.get('role')
     if not user_role:
         st.sidebar.error("User role not found. Please log in again.")
         return    
 
     initialize_session_state(user_role)
-    st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)
-
+    
+    with st.sidebar:
+        # User greeting
+        user_nickname = st.session_state.get('nickname', 'User')
+        st.header(f"Hello, :green[{user_nickname}]!", divider="red")
+        
+    st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)    
+    
     org_config = st.session_state.get('org_config')
     if not org_config:
         st.sidebar.error("Organization configuration not loaded. Please refresh the page.")
@@ -72,35 +78,34 @@ def render_sidebar():
                     st.session_state[key] = enabled
                     restart_assistant()
 
-    if "Code Assistant" in available_assistants:        
-        st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)
-        st.sidebar.subheader("Project Management")
+    if "Code Assistant" in available_assistants:   
+        with st.sidebar.expander("Code Assistant", expanded=False):                 
+            st.sidebar.subheader("Project Management")
 
-        project_type = st.sidebar.selectbox("Select Project Type", ["React", "Java"])
-        project_name = st.sidebar.text_input("Enter Project Name")
+            project_type = st.sidebar.selectbox("Select Project Type", ["React", "Java"])
+            project_name = st.sidebar.text_input("Enter Project Name")
 
-        file_types = ["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"]
-        if project_type == "Java":
-            file_types.extend(["java", "xml", "properties", "gradle"])
+            file_types = ["js", "jsx", "ts", "tsx", "css", "json", "html", "md", "yml", "yaml", "txt"]
+            if project_type == "Java":
+                file_types.extend(["java", "xml", "properties", "gradle"])
 
-        project_files = st.sidebar.file_uploader(
-            f"Upload {project_type} Project Files or Directory", 
-            type=file_types,
-            key="project_file_uploader",
-            accept_multiple_files=True
-        )
+            project_files = st.sidebar.file_uploader(
+                f"Upload {project_type} Project Files or Directory", 
+                type=file_types,
+                key="project_file_uploader",
+                accept_multiple_files=True
+            )
 
-        if project_files:
-            if 'project_files_processed' not in st.session_state:
-                st.session_state.project_files_processed = False
+            if project_files:
+                if 'project_files_processed' not in st.session_state:
+                    st.session_state.project_files_processed = False
 
-            if not st.session_state.project_files_processed:
-                if st.sidebar.button(f"Process {project_type} Project"):
-                    process_project(project_type, project_name, project_files)
-
-        st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)
-        
-    render_model_selection            
+                if not st.session_state.project_files_processed:
+                    if st.sidebar.button(f"Process {project_type} Project"):
+                        process_project(project_type, project_name, project_files)            
+    
+    with st.sidebar.expander("Select Model", expanded=False):         
+        render_model_selection            
 
 def process_project(project_type, project_name, project_files):
     progress_bar = st.sidebar.progress(0)

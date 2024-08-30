@@ -41,11 +41,7 @@ def render_main_app():
         """,
         unsafe_allow_html=True
     )
-
-    # User greeting
-    user_nickname = st.session_state.get('nickname', 'User')
-    st.header(f"Hello, {user_nickname}!")
-
+    
     # Initialize session state for navigation
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "Dashboard"
@@ -55,6 +51,10 @@ def render_main_app():
 
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
+    st.markdown('<div class="sidebar-area">', unsafe_allow_html=True)
+    render_sidebar()
+    st.markdown('</div>', unsafe_allow_html=True)  # Close main-container
+    
     # Main content area
     st.markdown('<div class="content-area">', unsafe_allow_html=True)
     
@@ -86,16 +86,9 @@ def render_main_app():
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Sidebar (only rendered on the Chat page)
-    if st.session_state.current_page == "Chat":
-        st.markdown('<div class="sidebar-area">', unsafe_allow_html=True)
-        render_sidebar()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)  # Close main-container
 
     # Logout button
-    if st.sidebar.button("Logout", key="logout_button"):
+    if st.sidebar.button("Logout", key="logout_button"):        
         logout()
         st.rerun()
 
