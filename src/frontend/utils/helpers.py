@@ -56,6 +56,22 @@ def sanitize_content(content):
     content = re.sub(r'^\* \*([^:]+):\*\*', r'* **\1:**', content, flags=re.MULTILINE)
     content = re.sub(r'(#+.*?)\n(?!\n)', r'\1\n\n', content)
     content = content.strip()
+    
+    # Preserve line breaks
+    content = content.replace('\n', '<br>')
+
+    # Convert markdown lists to HTML
+    content = re.sub(r'(\d+)\.\s+(.*?)(?=<br>|\Z)', r'<ol start="\1"><li>\2</li></ol>', content)
+    content = re.sub(r'\*\s+(.*?)(?=<br>|\Z)', r'<ul><li>\1</li></ul>', content)
+
+    # Convert markdown headers to HTML
+    for i in range(6, 0, -1):
+        content = re.sub(rf'{"#" * i}\s+(.*?)(?=<br>|\Z)', rf'<h{i}>\1</h{i}>', content)
+
+    # Convert markdown bold and italic to HTML
+    content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content)
+    content = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content)
+
     return content
 
 def render_markdown(content):

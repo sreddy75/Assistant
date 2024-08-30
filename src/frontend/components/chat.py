@@ -71,6 +71,7 @@ def stream_response(response, response_area, pulsating_dot, response_placeholder
 
                             with response_area:
                                 pulsating_dot.empty()
+                                # Update the existing markdown instead of creating a new one
                                 response_placeholder.markdown(render_markdown(sanitize_content(full_response)), unsafe_allow_html=True)
                     except json.JSONDecodeError:
                         logger.error(f"Failed to parse JSON: {line}")
@@ -98,16 +99,25 @@ def render_chat(user_id, user_role):
             height: calc(100vh - 80px);
             margin-top: -2rem;
         }
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            background-color: var(--secondary-background-color);
-            border-radius: 10px;
-            margin-bottom: 1rem;
+        .chat-message {
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        white-space: pre-wrap;
         }
-        .chat-input {
-            margin-top: 20px;
+        .chat-message.user {
+            background-color: #e6f3ff;
+        }
+        .chat-message.assistant {
+            background-color: #f0f0f0;
+        }
+        .chat-message p {
+            margin-bottom: 0.5rem;
+        }
+        .chat-message ul, .chat-message ol {
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+            padding-left: 1.5rem;
         }
         @keyframes pulse {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
@@ -115,8 +125,8 @@ def render_chat(user_id, user_role):
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
         }
         .pulsating-dot {
-            width: 30px;
-            height: 30px;
+            width: 20px;
+            height: 20px;
             background: rgba(255, 0, 0, 1);
             border-radius: 50%;
             animation: pulse 2s infinite;
