@@ -8,6 +8,7 @@ from src.backend.db.session import get_db
 from src.backend.models.models import Organization, OrganizationConfig
 from components.settings_manager import render_model_selection
 def initialize_session_state(user_role):
+
     org_id = st.session_state.get('org_id')
     if not org_id:
         st.error("Organization ID not found in session state.")
@@ -41,6 +42,18 @@ def initialize_session_state(user_role):
             'assistants': assistants,
             'feature_flags': feature_flags
         }
+        
+        if 'assistant_id' not in st.session_state:
+            response = requests.get(f"{BACKEND_URL}/api/v1/assistant/get-assistant", 
+                                    params={"user_id": st.session_state.user_id,
+                                            "org_id": st.session_state.org_id,
+                                            "user_role": user_role,
+                                            "user_nickname": st.session_state.nickname})
+            if response.status_code == 200:
+                st.session_state.assistant_id = response.json()["assistant_id"]
+                st.sidebar.write(f"Debug: New Assistant ID = {st.session_state.assistant_id}")  # Debug line
+            else:
+                st.sidebar.error("Failed to get assistant. Please try reloading the page.")
 
     except Exception as e:
         st.error(f"Failed to load organization config: {str(e)}")
