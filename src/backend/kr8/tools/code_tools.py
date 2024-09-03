@@ -1,9 +1,10 @@
 # code_tools.py
 
+import asyncio
 import json
 import os
 from sqlite3 import IntegrityError
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, AsyncGenerator
 from src.backend.kr8.tools import Toolkit
 from src.backend.kr8.document import Document
 from src.backend.kr8.utils.log import logger
@@ -41,6 +42,149 @@ class CodeTools(Toolkit):
             except IntegrityError:
                 logger.warning(f"Document {doc.name} already exists in the database. Skipping insertion.")
     
+    async def load_project_async(self, project_name: str, project_type: str, directory_content: Dict[str, str]) -> AsyncGenerator[Dict[str, any], None]:
+        namespace = self._get_namespace(project_name, project_type)
+        if project_type == "react":
+            async for update in self._load_react_project_async(project_name, directory_content):
+                yield update
+        elif project_type == "java":
+            async for update in self._load_java_project_async(project_name, directory_content):
+                yield update
+        else:
+            yield {"status": "error", "message": f"Unsupported project type: {project_type}"}
+
+    async def _load_react_project_async(self, project_name: str, directory_content: Dict[str, str]) -> AsyncGenerator[Dict[str, any], None]:
+        project_namespace = f"react_project_{project_name}"
+        supported_extensions = ['.js', '.jsx', '.ts', '.tsx', '.css', '.scss', '.json', '.html', '.md', '.yml', '.yaml', '.env']
+        
+        total_files = len(directory_content)
+        processed_files = 0
+        package_json = None
+
+        for file_path, file_content in directory_content.items():
+            _, ext = os.path.splitext(file_path)
+            
+            if file_path.endswith('package.json'):
+                package_json = json.loads(file_content)
+                continue
+
+            if ext in supported_extensions or os.path.basename(file_path) in ['package.json', '.gitignore', '.eslintrc', '.prettierrc', 'tsconfig.json']:
+                doc = Document(
+                    name=file_path,
+                    content=file_content,
+                    meta_data={
+                        "project": project_name,
+                        "type": "react_file",
+                        "file_type": ext
+                    }
+                )
+                await self._upsert_document_async(doc)
+
+            processed_files += 1
+            progress = processed_files / total_files
+            yield {"status": "processing", "progress": progress, "message": f"Processing file {processed_files} of {total_files}: {file_path}"}
+            await asyncio.sleep(0)  # Allow other tasks to run
+
+        if package_json:
+            dependency_graph = generate_react_dependency_graph(package_json)
+            await self._store_dependency_graph_async(project_name, dependency_graph, "react")
+            yield {"status": "processing", "progress": 0.9, "message": "Generated dependency graph"}
+
+        yield {"status": "complete", "progress": 1.0, "message": f"React project '{project_name}' loaded successfully. Processed {processed_files} files and generated dependency graph."}
+
+    async def _load_java_project_async(self, project_name: str, directory_content: Dict[str, str]) -> AsyncGenerator[Dict[str, any], None]:
+        project_namespace = f"java_project_{project_name}"
+        supported_extensions = ['.java', '.xml', '.properties', '.gradle', '.md', '.yml', '.yaml']
+        
+        total_files = len(directory_content)
+        processed_files = 0
+        pom_xml = None
+        build_gradle = None
+
+        all_files = self._get_all_files(directory_content)
+        total_files = len(all_files)
+
+        for file_path, file_content in all_files.items():
+            try:
+                _, ext = os.path.splitext(file_path)
+
+                if file_path.endswith('pom.xml'):
+                    pom_xml = file_content
+                elif file_path.endswith('build.gradle'):
+                    build_gradle = file_content
+
+                if ext in supported_extensions or os.path.basename(file_path) in ['pom.xml', 'build.gradle', '.gitignore']:
+                    doc = Document(
+                        name=file_path,
+                        content=file_content,
+                        meta_data={
+                            "project": project_name,
+                            "type": "java_file",
+                            "file_type": ext
+                        }
+                    )
+                    await self._upsert_document_async(doc)
+
+                processed_files += 1
+                progress = processed_files / total_files
+                yield {"status": "processing", "progress": progress, "message": f"Processing file {processed_files} of {total_files}: {file_path}"}
+                await asyncio.sleep(0)  # Allow other tasks to run
+
+            except Exception as e:
+                yield {"status": "error", "message": f"Error processing file {file_path}: {str(e)}"}
+
+        try:
+            if pom_xml or build_gradle:
+                dependency_graph = generate_java_dependency_graph(pom_xml, build_gradle)
+                await self._store_dependency_graph_async(project_name, dependency_graph, "java")
+                yield {"status": "processing", "progress": 0.9, "message": "Generated dependency graph"}
+        except Exception as e:
+            yield {"status": "error", "message": f"Error generating dependency graph: {str(e)}"}
+
+        try:
+            project_analysis = self._analyze_java_project_structure(all_files)
+            await self._store_project_analysis_async(project_name, project_analysis, "java")
+            yield {"status": "processing", "progress": 0.95, "message": "Completed project analysis"}
+        except Exception as e:
+            yield {"status": "error", "message": f"Error analyzing project structure: {str(e)}"}
+
+        yield {"status": "complete", "progress": 1.0, "message": f"Java project '{project_name}' loaded successfully. Processed {processed_files} files, generated dependency graph, and analyzed project structure."}
+
+    async def _upsert_document_async(self, doc):
+        try:
+            await self.knowledge_base.vector_db.upsert_async([doc])
+            logger.info(f"Upserted file {doc.name} to vector database")
+        except AttributeError:
+            try:
+                await self.knowledge_base.vector_db.insert_async([doc])
+                logger.info(f"Inserted file {doc.name} to vector database")
+            except IntegrityError:
+                logger.warning(f"Document {doc.name} already exists in the database. Skipping insertion.")
+
+    async def _store_dependency_graph_async(self, project_name: str, dependency_graph: Dict, project_type: str):
+        doc = Document(
+            name=f"{project_name}_dependency_graph",
+            content=json.dumps(dependency_graph, indent=2),
+            meta_data={
+                "project": project_name,
+                "type": f"{project_type}_dependency_graph"
+            }
+        )
+        await self._upsert_document_async(doc)
+        logger.info(f"Upserted dependency graph for project {project_name}")
+
+    async def _store_project_analysis_async(self, project_name: str, project_analysis: Dict, project_type: str):
+        doc = Document(
+            name=f"{project_name}_project_analysis",
+            content=json.dumps(project_analysis, indent=2),
+            meta_data={
+                "project": project_name,
+                "type": f"{project_type}_project_analysis"
+            }
+        )
+        await self._upsert_document_async(doc)
+        logger.info(f"Upserted project analysis for project {project_name}")
+        
     def load_project(self, project_name: str, project_type: str, directory_content: Dict[str, str], progress_callback: Callable[[float, str], None] = None) -> str:
         namespace = self._get_namespace(project_name, project_type)
         if project_type == "react":

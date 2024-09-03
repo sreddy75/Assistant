@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import json
+import asyncio
+from sseclient import SSEClient
 from utils.api import BACKEND_URL
 from utils.helpers import restart_assistant
 from config.settings import ENABLED_ASSISTANTS
@@ -71,9 +73,7 @@ def render_sidebar():
     with st.sidebar:
         # User greeting
         user_nickname = st.session_state.get('nickname', 'User')
-        st.header(f"Hello, :green[{user_nickname}]!", divider="red")
-        
-    st.sidebar.markdown('<hr class="sidebar-separator">', unsafe_allow_html=True)    
+        st.header(f"Hello, :green[{user_nickname}] !", divider="red")
     
     org_config = st.session_state.get('org_config')
     if not org_config:
@@ -115,64 +115,53 @@ def render_sidebar():
 
                 if not st.session_state.project_files_processed:
                     if st.sidebar.button(f"Process {project_type} Project"):
-                        process_project(project_type, project_name, project_files)            
-    
-    with st.sidebar.expander("Select Model", expanded=False):         
-        render_model_selection            
+                        process_project(project_type, project_name, project_files)
 
 def process_project(project_type, project_name, project_files):
     progress_bar = st.sidebar.progress(0)
     status_text = st.sidebar.empty()
 
     try:
-        directory_content = {}
-        total_files = len(project_files)
-
-        for i, file in enumerate(project_files):
-            file_content = file.read().decode('utf-8', errors='ignore')
-            directory_content[file.name] = file_content
-
-            progress = (i + 1) / total_files
-            progress_bar.progress(progress)
-            status_text.text(f"Processing file {i+1} of {total_files}: {file.name}")
+        directory_content = {
+            file.name: file.read().decode('utf-8', errors='ignore')
+            for file in project_files
+        }
 
         assistant_id = st.session_state.get("assistant_id")
         if not assistant_id:
             st.sidebar.error("Assistant ID not found. Please make sure you're properly logged in.")
             return
 
-        response = requests.get(f"{BACKEND_URL}/api/v1/assistant/assistant-info/{assistant_id}")
-        if response.status_code == 200:
-            assistant_info = response.json()
-            if assistant_info.get("has_knowledge_base"):
-                run_response = requests.post(f"{BACKEND_URL}/api/v1/assistant/create-run", params={"assistant_id": assistant_id})
-                if run_response.status_code == 200:
-                    run_id = run_response.json().get("run_id")
+        with st.spinner('Processing project...'):
+            response = requests.post(
+                f"{BACKEND_URL}/api/v1/assistant/load-project-stream",
+                json={
+                    "assistant_id": assistant_id,
+                    "project_name": project_name,
+                    "project_type": project_type.lower(),
+                    "directory_content": directory_content
+                },
+                stream=True
+            )
 
-                    load_project_response = requests.post(
-                        f"{BACKEND_URL}/api/v1/assistant/load-project",
-                        json={
-                            "assistant_id": assistant_id,
-                            "project_name": project_name,
-                            "project_type": project_type.lower(),
-                            "directory_content": directory_content
-                        }
-                    )
-
-                    if load_project_response.status_code == 200:
-                        result = load_project_response.json().get("result")
-                        st.sidebar.success(result)
+            client = SSEClient(response)
+            for event in client.events():
+                if event.data:
+                    data = json.loads(event.data)
+                    if 'error' in data:
+                        st.sidebar.error(f"Error: {data['error']}")
+                        break
+                    if 'progress' in data:
+                        progress_bar.progress(data['progress'])
+                    if 'message' in data:
+                        status_text.text(data['message'])
+                    if data.get('status') == 'complete':
+                        st.sidebar.success(data['message'])
                         st.session_state['current_project'] = project_name
                         st.session_state['current_project_type'] = project_type.lower()
                         st.session_state.project_files_processed = True
-                    else:
-                        st.sidebar.error("Failed to load project. Please try again.")
-                else:
-                    st.sidebar.error("Failed to create a new run. Please try again.")
-            else:
-                st.sidebar.error("The assistant does not have a knowledge base initialized. Please try restarting the application.")
-        else:
-            st.sidebar.error("Failed to get assistant information. Please try again.")
+                        break
+
     except Exception as e:
         st.sidebar.error(f"Error processing {project_type} project files: {str(e)}")
     finally:

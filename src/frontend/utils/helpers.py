@@ -8,7 +8,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 import plotly.graph_objects as go
-from markdown import markdown
+from markdown_it import MarkdownIt
 from bs4 import BeautifulSoup
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
@@ -27,77 +27,6 @@ def setup_logging():
     return logger
 
 logger = setup_logging()
-
-def sanitize_content(content):
-    def format_code_block(match):
-        lang = match.group(1) or ''
-        code = match.group(2).strip()
-        if lang.lower() == 'json':
-            try:
-                parsed = json.loads(code)
-                code = json.dumps(parsed, indent=2)
-            except json.JSONDecodeError:
-                pass
-        return f"```{lang}\n{code}\n```"
-
-    content = re.sub(r'```(\w*)\s*([\s\S]*?)```', format_code_block, content)
-    content = re.sub(r'`([^`\n]+)`', r'`\1`', content)
-    content = re.sub(r'^(#+)\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
-    content = re.sub(r'^(\s*[-*+])\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
-    content = re.sub(r'^(\s*\d+\.)\s*(.*?)$', lambda m: f'{m.group(1)} {m.group(2).strip()}', content, flags=re.MULTILINE)
-    content = re.sub(r'\*\*(.*?)\*\*', r'**\1**', content)
-    content = re.sub(r'\*(.*?)\*', r'*\1*', content)
-    content = re.sub(r'\[(.*?)\]\((.*?)\)', r'[\1](\2)', content)
-    content = re.sub(r'^(-{3,}|\*{3,}|_{3,})$', '---', content, flags=re.MULTILINE)
-    content = content.replace('&quot;', '"').replace('&apos;', "'").replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-    content = content.replace('\\n', '\n')
-    content = re.sub(r'\n\s*\n', '\n\n', content)
-    content = re.sub(r'([\s\S]+?)(```[\s\S]+?```)', lambda m: f"{m.group(1).strip()}\n\n{m.group(2)}\n\n", content)
-    content = re.sub(r'^\* \*([^:]+):\*\*', r'* **\1:**', content, flags=re.MULTILINE)
-    content = re.sub(r'(#+.*?)\n(?!\n)', r'\1\n\n', content)
-    content = content.strip()
-    
-    # Preserve line breaks
-    content = content.replace('\n', '<br>')
-
-    # Convert markdown lists to HTML
-    content = re.sub(r'(\d+)\.\s+(.*?)(?=<br>|\Z)', r'<ol start="\1"><li>\2</li></ol>', content)
-    content = re.sub(r'\*\s+(.*?)(?=<br>|\Z)', r'<ul><li>\1</li></ul>', content)
-
-    # Convert markdown headers to HTML
-    for i in range(6, 0, -1):
-        content = re.sub(rf'{"#" * i}\s+(.*?)(?=<br>|\Z)', rf'<h{i}>\1</h{i}>', content)
-
-    # Convert markdown bold and italic to HTML
-    content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content)
-    content = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content)
-
-    return content
-
-def render_markdown(content):
-    # Pre-process the content
-    content = re.sub(r'\*\s*([^*]+)\s*\*:', r'**\1:**', content)  # Convert *Title*: to **Title:**
-    content = re.sub(r'^\s*\*\s*', '- ', content, flags=re.MULTILINE)  # Convert * to -
-    content = re.sub(r'^\s*(\d+)\.\s*\*\s*', r'\1. ', content, flags=re.MULTILINE)  # Remove * from numbered lists
-
-    # Convert markdown to HTML
-    html = markdown(content, extensions=['fenced_code', 'codehilite', 'tables'])
-
-    # Parse the HTML
-    soup = BeautifulSoup(html, 'html.parser')
-
-    # Process code blocks
-    for code_block in soup.find_all('pre'):
-        code = code_block.find('code')
-        if code:
-            language = code.get('class', [''])[0].replace('language-', '')
-            formatted_code = f'<pre><code class="language-{language}">{code.string}</code></pre>'
-            code_block.replace_with(BeautifulSoup(formatted_code, 'html.parser'))
-
-    # Wrap the content in a div for styling
-    wrapped_content = f'<div class="markdown-content">{soup.prettify()}</div>'
-
-    return wrapped_content
 
 def add_markdown_styles():
     markdown_style = """

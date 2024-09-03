@@ -82,7 +82,7 @@ def create_pandas_tools(user_id: Optional[int]) -> PandasTools:
     return PandasTools(user_id=user_id)
 
 def get_llm(llm_id: str, fallback_model: str):
-    if llm_id in ["llama3"]:
+    if llm_id in ["llama3.1"]:
         ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
         try:
             return Ollama(
@@ -166,7 +166,7 @@ def get_llm_os(
             collection=f"org_{org_id}_user_{user_id}_documents" if user_id is not None else "llm_os_documents",
             embedder=SentenceTransformerEmbedder(model="all-MiniLM-L6-v2"),
         ),
-        num_documents=50,
+        num_documents=100,
         user_id=user_id,
     )
 

@@ -357,7 +357,7 @@ def render_model_selection():
             llm_options = ["gpt-4", "claude-3.5"]
             llm_id = st.selectbox("Select Closed Source Model", options=llm_options)
         else: 
-            llm_options = ["llama3", "tinyllama"]
+            llm_options = ["llama3.1"]
             llm_id = st.selectbox("Select Open Source Model", options=llm_options)
 
         if "llm_id" not in st.session_state:

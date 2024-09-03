@@ -48,7 +48,7 @@ class Assistant(BaseModel):
     memory: AssistantMemory = AssistantMemory()
     add_chat_history_to_messages: bool = False
     add_chat_history_to_prompt: bool = False
-    num_history_messages: int = 6
+    num_history_messages: int = 10
     create_memories: bool = False
     update_memory_after_run: bool = True
 

@@ -6,7 +6,6 @@ import json
 import time
 from PIL import Image
 from io import BytesIO
-from utils.helpers import sanitize_content, render_markdown
 from utils.api import BACKEND_URL
 from config.settings import get_client_name
 
@@ -72,7 +71,7 @@ def stream_response(response, response_area, pulsating_dot, response_placeholder
                             with response_area:
                                 pulsating_dot.empty()
                                 # Update the existing markdown instead of creating a new one
-                                response_placeholder.markdown(render_markdown(sanitize_content(full_response)), unsafe_allow_html=True)
+                                response_placeholder.markdown(full_response, unsafe_allow_html=True)
                     except json.JSONDecodeError:
                         logger.error(f"Failed to parse JSON: {line}")
                 buffer = lines[-1]
@@ -81,7 +80,7 @@ def stream_response(response, response_area, pulsating_dot, response_placeholder
     if full_response:
         with response_area:
             pulsating_dot.empty()
-            response_placeholder.markdown(render_markdown(sanitize_content(full_response)), unsafe_allow_html=True)
+            response_placeholder.markdown(full_response, unsafe_allow_html=True)
 
     return full_response
 
@@ -200,9 +199,8 @@ def render_chat(user_id, user_role):
     # Display chat messages
     for i, message in enumerate(st.session_state["messages"]):
         with st.chat_message(message["role"], avatar=system_chat_icon if message["role"] == "assistant" else user_chat_icon):
-            content1 = sanitize_content(message["content"])
-            content2 = render_markdown(content1)
-            st.markdown(content2, unsafe_allow_html=True)
+            content = message["content"]
+            st.markdown(content, unsafe_allow_html=True)
 
             # Add feedback expander for assistant messages (except the first one)
             if message["role"] == "assistant" and i > 0:
@@ -224,7 +222,7 @@ def render_chat(user_id, user_role):
                 else:
                     st.info("Thank you for your feedback!")
 
-    # Chat input
+      # Chat input
     if user_input := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": user_input})
 
@@ -250,8 +248,12 @@ def render_chat(user_id, user_role):
                 )
                 response.raise_for_status()
 
-                full_response = stream_response(response, response_area, pulsating_dot, response_placeholder)
-                st.session_state["messages"].append({"role": "assistant", "content": full_response})
+                full_response = stream_response(response, response_area, pulsating_dot, response_placeholder)                
+                st.session_state["messages"].append({"role": "assistant", "content": full_response})                
+
+                # Update the displayed message with the sanitized content
+                with response_area:
+                    response_placeholder.markdown(full_response, unsafe_allow_html=True)
 
                 # Add feedback expander for the new assistant message
                 feedback_key = "feedback_new"

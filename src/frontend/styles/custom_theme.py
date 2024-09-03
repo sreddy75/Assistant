@@ -222,7 +222,7 @@ def maximize_content_area():
             padding-top: 0rem;
         }
         .main .block-container {
-            max-width: 100%;
+            max-width: 80%;
             padding-top: 1rem;
             padding-right: 1rem;
             padding-left: 1rem;

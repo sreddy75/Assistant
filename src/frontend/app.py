@@ -8,55 +8,83 @@ from views.analytics_page import render_analytics_page
 from views.settings_page import render_settings_page
 from components.sidebar_manager import render_sidebar
 from utils.helpers import setup_logging
+import datetime
 
 def main():
     setup_logging()
     apply_custom_theme()
-    # maximize_content_area()
+    maximize_content_area()
     apply_expander_style()
-
+    
+    render_layout()
+    
     if not is_authenticated():
         login_form()
     else:
         render_main_app()
 
+def render_layout():
+    current_year = datetime.datetime.now().year
+    layout = f"""
+    <style>
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    .stApp {{ 
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+    }}
+    .main-content {{
+        flex: 1 0 auto;
+        padding-bottom: 40px;  /* Height of the footer */
+        width: 100%;
+        max-width: 100%;
+    }}
+    .footer {{
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 30px;
+        line-height: 30px;
+        background-color: #979ca6;
+        text-align: center;
+        color: #080606;
+        font-size: 12px;
+        border-top: 1px solid #e5e5e5;
+        z-index: 999;
+    }}
+    .stApp > header {{
+        z-index: 1000;
+    }}
+    .stApp > .withScreencast {{
+        z-index: 1000;
+    }}
+    </style>
+
+    <div class="main-content">
+    """
+    st.markdown(layout, unsafe_allow_html=True)
+
+def render_footer():
+    current_year = datetime.datetime.now().year
+    footer = f"""
+    </div>
+    <div class="footer">
+        © {current_year} KR8 IT PTY LTD. All rights reserved.
+    </div>
+    """
+    st.markdown(footer, unsafe_allow_html=True)
+
 def render_main_app():
-    st.markdown(
-        """
-        <style>
-        .main-container {
-            display: flex;
-            flex-direction: row;
-        }
-        .content-area {
-            flex: 1;
-            padding-right: 20px;
-        }
-        .sidebar-area {
-            width: 300px;
-            padding-left: 20px;
-            border-left: 1px solid #ddd;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-    
     # Initialize session state for navigation
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "Dashboard"
 
     # Navigation using tabs
     tabs = st.tabs(["Dashboard", "Chat", "Knowledge Base", "Analytics", "Settings"])
-
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
-
-    st.markdown('<div class="sidebar-area">', unsafe_allow_html=True)
-    render_sidebar()
-    st.markdown('</div>', unsafe_allow_html=True)  # Close main-container
     
-    # Main content area
-    st.markdown('<div class="content-area">', unsafe_allow_html=True)
+    render_sidebar()
     
     with tabs[0]:
         st.session_state.current_page = "Dashboard"
@@ -84,9 +112,6 @@ def render_main_app():
         else:
             st.error("You don't have permission to access this page.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
     # Logout button
     if st.sidebar.button("Logout", key="logout_button"):        
         logout()
@@ -94,3 +119,6 @@ def render_main_app():
 
 if __name__ == "__main__":
     main()
+
+# Add this at the very end of your script
+render_footer()

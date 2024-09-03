@@ -1,5 +1,8 @@
+import asyncio
+import json
 from typing import Dict
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from src.backend.schemas.code_tool_schemas import ProjectLoadRequest
 from src.backend.kr8.tools.code_tools import CodeTools
 from src.backend.kr8.assistant.assistant_manager import get_assistant_manager, AssistantManager
@@ -79,3 +82,32 @@ async def load_project(
             raise HTTPException(status_code=400, detail="Assistant does not have tools attribute")
     else:
         raise HTTPException(status_code=404, detail="Assistant not found")
+    
+@router.post("/load-project-stream")
+async def load_project_stream(
+    request: ProjectLoadRequest = Body(...),
+    assistant_manager: AssistantManager = Depends(get_assistant_manager)
+):
+    assistant = assistant_manager.get_assistant_by_id(request.assistant_id)
+    if not assistant:
+        raise HTTPException(status_code=404, detail="Assistant not found")
+
+    if not hasattr(assistant, 'tools'):
+        raise HTTPException(status_code=400, detail="Assistant does not have tools attribute")
+
+    code_tools = next((tool for tool in assistant.tools if isinstance(tool, CodeTools)), None)
+    if not code_tools:
+        raise HTTPException(status_code=400, detail="CodeTools not found in assistant")
+
+    async def event_stream():
+        try:
+            async for update in code_tools.load_project_async(
+                project_name=request.project_name,
+                project_type=request.project_type,
+                directory_content=request.directory_content
+            ):
+                yield f"data: {json.dumps(update)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

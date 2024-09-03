@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import Integer, delete, update
 from ...document.base import Usage
 from src.backend.kr8.embedder.openai import OpenAIEmbedder
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 try:
     from sqlalchemy.dialects import postgresql
@@ -44,7 +45,8 @@ class PgVector2(VectorDb):
         index: Optional[Union[Ivfflat, HNSW]] = HNSW(),
         user_id: Optional[int] = None,
         org_id: Optional[int] = None,
-        project_namespace: Optional[str] = None  # Add this line
+        project_namespace: Optional[str] = None,
+        async_session: Optional[async_sessionmaker[AsyncSession]] = None
     ):
         self.project_namespace = project_namespace
         self.user_id = user_id
@@ -68,11 +70,31 @@ class PgVector2(VectorDb):
         self.db_engine: Engine = _engine
         self.metadata: MetaData = MetaData(schema=self.schema)
 
+        # Create sync engine if not provided
+        if self.db_engine is None and db_url is not None:
+            self.db_engine = create_engine(db_url)
+
+        # Sync session
+        if self.db_engine:
+            self.Session = sessionmaker(bind=self.db_engine)
+        else:
+            self.Session = None
+
+        # Async session
+        if async_session:
+            self.async_session = async_session
+        elif db_url:
+            async_engine = create_async_engine(db_url)
+            self.async_session = async_sessionmaker(async_engine, expire_on_commit=False)
+        else:
+            self.async_session = None
+            
         # Embedder for embedding the document contents
         _embedder = embedder
+        
         if _embedder is None:            
-
             _embedder = OpenAIEmbedder()
+            
         self.embedder: Embedder = _embedder
         self.dimensions: int = self.embedder.dimensions
 
@@ -83,7 +105,10 @@ class PgVector2(VectorDb):
         self.index: Optional[Union[Ivfflat, HNSW]] = index
 
         # Database session
-        self.Session: sessionmaker[Session] = sessionmaker(bind=self.db_engine)
+        if async_session:
+            self.async_session = async_session
+        else:
+            self.Session = sessionmaker(bind=self.db_engine)
 
         # Database table for the collection
         self.table: Table = self.get_table()
@@ -328,6 +353,116 @@ class PgVector2(VectorDb):
                 sess.commit()
                 logger.info(f"Committed {counter} documents")
 
+    async def upsert_async(self, documents: List[Document], batch_size: int = 20) -> None:
+        if not self.async_session:
+            raise ValueError("Async session not available. Make sure to provide db_url or async_session in the constructor.")
+
+        logger.debug(f"Upserting {len(documents)} documents asynchronously")
+        try:
+            async with self.async_session() as sess:
+                async with sess.begin():
+                    counter = 0
+                    for document in documents:
+                        try:
+                            logger.debug(f"Processing document: {document.name}")
+                            document.embed(embedder=self.embedder)
+                            cleaned_content = document.content.replace("\x00", "\ufffd")
+                            content_hash = md5(cleaned_content.encode()).hexdigest()
+                            _id = document.id or content_hash
+                            logger.debug(f"Upserting document into vector DB: {_id}")
+                            stmt = postgresql.insert(self.table).values(
+                                id=_id,
+                                name=document.name,
+                                meta_data=document.meta_data,
+                                content=cleaned_content,
+                                embedding=document.embedding,
+                                usage=document.usage,
+                                content_hash=content_hash,
+                                user_id=self.user_id,
+                                org_id=self.org_id,
+                            )
+                            stmt = stmt.on_conflict_do_update(
+                                index_elements=["id"],
+                                set_=dict(
+                                    name=stmt.excluded.name,
+                                    meta_data=stmt.excluded.meta_data,
+                                    content=stmt.excluded.content,
+                                    embedding=stmt.excluded.embedding,
+                                    usage=stmt.excluded.usage,
+                                    content_hash=stmt.excluded.content_hash,
+                                ),
+                            )
+                            await sess.execute(stmt)
+                            counter += 1
+                            logger.debug(f"Upserted document: {document.id} | {document.name} | {document.meta_data}")
+
+                            if counter >= batch_size:
+                                await sess.commit()
+                                logger.info(f"Committed {counter} documents")
+                                counter = 0
+                        except Exception as e:
+                            logger.error(f"Error upserting document {document.name}: {str(e)}")
+                            logger.exception("Traceback:")
+
+                    if counter > 0:
+                        await sess.commit()
+                        logger.info(f"Committed final {counter} documents")
+        except ImportError as e:
+            if "greenlet" in str(e):
+                logger.error("The greenlet library is required for async operations. Please install it using 'pip install greenlet'.")
+            raise
+        except Exception as e:
+            logger.error(f"Error in upsert_async: {str(e)}")
+            logger.exception("Traceback:")
+        finally:
+            logger.debug("Finished upsert_async operation")
+
+    async def insert_async(self, documents: List[Document], batch_size: int = 10) -> None:
+        if not self.async_session:
+            raise ValueError("Async session not available. Make sure to provide db_url or async_session in the constructor.")
+
+        async with self.async_session() as sess:
+            async with sess.begin():
+                counter = 0
+                for document in documents:
+                    try:
+                        logger.info(f"Embedding document: {document.name}")
+                        document.embed(embedder=self.embedder)
+                        logger.info(f"Embedded document: {document.name}, embedding shape: {len(document.embedding)}")
+                        cleaned_content = document.content.replace("\x00", "\ufffd")
+                        content_hash = md5(cleaned_content.encode()).hexdigest()                
+                        usage = Usage.from_dict(document.usage)
+                        logger.info(f"Inserting document into vector DB:")
+                        logger.info(f"  Name: {document.name}")
+                        logger.info(f"  Metadata: {document.meta_data}")
+                        logger.info(f"  Usage: {usage.to_dict()}")
+                        logger.info(f"  Content preview: {cleaned_content[:100]}...")
+                        stmt = postgresql.insert(self.table).values(
+                            id=document.id,
+                            name=document.name,
+                            meta_data=document.meta_data,
+                            content=cleaned_content,
+                            embedding=document.embedding,
+                            usage=usage.to_dict(),
+                            content_hash=content_hash,
+                            user_id=self.user_id,
+                            org_id=self.org_id,
+                        )
+                        await sess.execute(stmt)
+                        counter += 1
+                        logger.debug(f"Inserted document: {document.name} ({document.meta_data})")
+
+                        if counter >= batch_size:
+                            await sess.commit()
+                            logger.info(f"Committed {counter} documents")
+                            counter = 0
+                    except Exception as e:
+                        logger.error(f"Error inserting document: {e}")
+                        logger.exception("Traceback:")
+
+                if counter > 0:
+                    await sess.commit()
+                    logger.info(f"Committed final {counter} documents")
     def search(self, query: str, limit: int = 5, collection: Optional[str] = None, filters: Optional[Dict[str, Any]] = None) -> List[Document]:
         collection = collection or self.collection
         query_embedding = self.embedder.get_embedding(query)

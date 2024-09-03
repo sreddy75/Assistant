@@ -76,7 +76,9 @@ def login_form():
                     login(email, password)
                 else:
                     st.error("Please enter a valid email and password.")
-
+        
+        st.divider()
+        
         with tab2:
             register_form()
 

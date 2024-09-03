@@ -1,16 +1,18 @@
 from datetime import datetime, timedelta
-from fastapi import Depends, HTTPException, status
-from jose import JWTError
-import jwt
-from passlib.context import CryptContext
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from src.backend.models.models import User, TokenData
-from src.backend.core.config import settings
-from src.backend.db.session import get_db
+from typing import Optional
 
-# Security setup
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
+import jwt
+
+from src.backend.db.session import get_db
+from src.backend.models.models import User
+from src.backend.core.config import settings
+
+# to get a string like this run:
+# openssl rand -hex 32
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
@@ -28,12 +30,14 @@ def get_user(db: Session, email: str):
     return db.query(User).filter(User.email == email).first()
 
 def authenticate_user(db: Session, email: str, password: str):
-    user = get_user(db, email=email)
-    if not user or not verify_password(password, user.hashed_password):
+    user = get_user(db, email)
+    if not user:
+        return False
+    if not verify_password(password, user.hashed_password):
         return False
     return user
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -52,13 +56,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        org_id: int = payload.get("org_id")
-        if email is None or org_id is None:
+        if email is None:
             raise credentials_exception
-        token_data = TokenData(email=email, org_id=org_id)
-    except JWTError:
+    except jwt.PyJWTError:
         raise credentials_exception
-    user = get_user(db, email=token_data.email)
-    if user is None or user.organization_id != org_id:
+    user = get_user(db, email=email)
+    if user is None:
         raise credentials_exception
     return user
+
+async def get_current_active_user(current_user: User = Depends(get_current_user)):
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user

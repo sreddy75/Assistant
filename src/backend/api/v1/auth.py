@@ -3,11 +3,9 @@ import json
 import logging
 import os
 from src.backend.core.celery_app import celery_app
-import logging
 from email_validator import EmailNotValidError
 from fastapi import APIRouter, Body, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from jose import JWTError
 import jwt
 from pydantic import EmailStr
 from pydantic_core import ValidationError
@@ -38,7 +36,7 @@ async def validate_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return {"valid": True, "email": payload.get("sub")}
-    except JWTError:
+    except jwt.PyJWTError:
         return {"valid": False}
 
 @router.post("/login")
@@ -132,7 +130,7 @@ async def verify_email(token: str, db: Session = Depends(get_db)):
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=400, detail="Invalid token")
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     
     user = get_user(db, email=email)
@@ -164,7 +162,7 @@ async def reset_password(token: str = Body(...), new_password: str = Body(...), 
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=400, detail="Invalid token")
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     
     user = get_user(db, email=email)
@@ -189,7 +187,7 @@ async def is_authenticated(token: str = Depends(oauth2_scheme)):
         email: str = payload.get("sub")
         if email is None:
             return {"authenticated": False}
-    except JWTError:
+    except jwt.PyJWTError:
         return {"authenticated": False}
     return {"authenticated": True}
 

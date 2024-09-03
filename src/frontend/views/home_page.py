@@ -14,7 +14,7 @@ def render_home_page():
         return        
 
     # Quick stats
-    with st.expander(label="Quick stats", expanded=False, icon=":material/query_stats:"):
+    with st.expander(label="Quick stats", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric(label="Active Chats", value="5", delta="-2")
@@ -25,7 +25,7 @@ def render_home_page():
 
     st.divider()
     
-    with st.expander(label="Analytics", expanded=False, icon=":material/analytics:"):
+    with st.expander(label="Analytics", expanded=False):
         # Render analytics dashboard
         st.header("Analytics Overview")
         col1, col2, col3 = st.columns(3)
@@ -56,7 +56,7 @@ def render_home_page():
     
     # st.divider()        
     
-    with st.expander(label="System Status", expanded=False, icon=":material/signal_wifi_statusbar_not_connected:"):
+    with st.expander(label="System Status", expanded=False):
     # System Status
         st.subheader("System Status")
         system_status = {
@@ -72,7 +72,7 @@ def render_home_page():
     st.divider()       
     
     # Tips or Help Section
-    with st.expander(label="Tips & Help", expanded=False, icon=":material/help:"):
+    with st.expander(label="Tips & Help", expanded=False):
         st.markdown("""
         - Use the sidebar to navigate between different sections of the app.
         - You can start a new chat from the 'Chat' page.
@@ -80,6 +80,8 @@ def render_home_page():
         - Check the 'Analytics' page for detailed insights into your usage.
         - If you need help, click on the '?' icon in the top-right corner of any page.
         """)
+        
+    st.divider()        
 
 if __name__ == "__main__":
     render_home_page()
