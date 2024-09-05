@@ -70,7 +70,7 @@ async def get_documents(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.delete("/documents/{document_name}", response_model=DocumentResponse)
+@router.delete("/documents/{document_name}", response_model=Dict[str, bool])
 async def delete_document(
     document_name: str,
     current_user: User = Depends(get_current_user),
@@ -78,10 +78,13 @@ async def delete_document(
 ):
     kb_service = KnowledgeBaseService(db, current_user)
     try:
-        return kb_service.delete_document(document_name)
+        result = kb_service.delete_document(document_name)
+        return {"success": result}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @router.put("/documents/{document_name}", response_model=DocumentResponse)
 async def update_document(
     document_name: str,

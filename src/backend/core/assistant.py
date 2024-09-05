@@ -39,6 +39,7 @@ from src.backend.kr8.assistant.team.company_analyst import EnhancedCompanyAnalys
 from src.backend.kr8.assistant.team.code_assistant import CodeAssistant
 from src.backend.kr8.assistant.team.product_owner import EnhancedProductOwner
 from src.backend.kr8.assistant.team.business_analyst import EnhancedBusinessAnalyst
+from src.backend.kr8.assistant.team.call_center_assistant import CallCenterAssistant
 from src.backend.models.models import Organization
 
 
@@ -154,7 +155,6 @@ def get_llm_os(
         client_name = org.name
     else:
         raise ValueError("org_id must be provided")
-
     
     # Use org_config to determine available assistants and feature flags
     available_assistants = org_config['assistants'].get(user_role, [])
@@ -199,6 +199,7 @@ def get_llm_os(
         "Enhanced Quality Analyst": EnhancedQualityAnalyst,
         "Business Analyst": EnhancedBusinessAnalyst,
         "Enhanced Data Analyst": EnhancedDataAnalyst,
+        "Call Center Assistant": CallCenterAssistant,
         "Enhanced Financial Analyst": EnhancedFinancialAnalyst,
         "Product Owner": EnhancedProductOwner,
         "Web Search": ExaTools,
@@ -212,7 +213,7 @@ def get_llm_os(
             else:
                 assistant_kwargs = {
                     "llm": llm,
-                    "tools": [pandas_tools, ExaTools()] if assistant in ["Business Analyst", "Product Owner"] else [pandas_tools],
+                    "tools": [pandas_tools, ExaTools()] if assistant in ["Business Analyst", "Call Center Assistant", "Product Owner"] else [pandas_tools],
                     "debug_mode": debug_mode
                 }
                 if assistant == "Code Assistant":

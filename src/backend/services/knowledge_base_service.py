@@ -262,7 +262,7 @@ class KnowledgeBaseService:
         # Delete all chunks associated with the document
         deleted = self.vector_db.delete_document(document_name)
         if not deleted:
-            raise ValueError("Failed to delete document")
+            raise ValueError(f"Failed to delete document: {document_name}")
         return True
 
     def update_document(self, document_name: str, document_update: DocumentUpdate) -> DocumentResponse:

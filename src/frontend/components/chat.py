@@ -1,4 +1,5 @@
-from asyncio.log import logger
+import json
+import logging
 import traceback
 import streamlit as st
 import requests
@@ -8,6 +9,8 @@ from PIL import Image
 from io import BytesIO
 from utils.api import BACKEND_URL
 from config.settings import get_client_name
+
+logger = logging.getLogger(__name__)
 
 def load_org_icons():
     client_name = get_client_name()
@@ -65,12 +68,19 @@ def stream_response(response, response_area, pulsating_dot, response_placeholder
                         logger.debug(f"New content: {new_content}")
 
                         if new_content:
+                            # Check if it's a delegated response
+                            try:
+                                delegated_response = json.loads(new_content)
+                                if isinstance(delegated_response, dict) and "delegated_assistant" in delegated_response:
+                                    new_content = f"Response from {delegated_response['delegated_assistant']}:\n{delegated_response['delegated_response']}\n"
+                            except json.JSONDecodeError:
+                                pass  # Not a JSON response, use as is
+
                             full_response += new_content
                             logger.debug(f"Full response: {full_response}")
 
                             with response_area:
                                 pulsating_dot.empty()
-                                # Update the existing markdown instead of creating a new one
                                 response_placeholder.markdown(full_response, unsafe_allow_html=True)
                     except json.JSONDecodeError:
                         logger.error(f"Failed to parse JSON: {line}")
@@ -178,7 +188,7 @@ def render_chat(user_id, user_role):
         else:
             st.session_state["messages"] = []
 
-     # Initialize feedback_submitted in session state
+    # Initialize feedback_submitted in session state
     if "feedback_submitted" not in st.session_state:
         st.session_state.feedback_submitted = {}
     
@@ -222,7 +232,7 @@ def render_chat(user_id, user_role):
                 else:
                     st.info("Thank you for your feedback!")
 
-      # Chat input
+    # Chat input
     if user_input := st.chat_input("What would you like to know?"):
         st.session_state["messages"].append({"role": "user", "content": user_input})
 
@@ -248,10 +258,12 @@ def render_chat(user_id, user_role):
                 )
                 response.raise_for_status()
 
-                full_response = stream_response(response, response_area, pulsating_dot, response_placeholder)                
-                st.session_state["messages"].append({"role": "assistant", "content": full_response})                
+                full_response = stream_response(response, response_area, pulsating_dot, response_placeholder)
+                
+                # The full_response is already properly formatted, so we don't need to check again
+                st.session_state["messages"].append({"role": "assistant", "content": full_response})
 
-                # Update the displayed message with the sanitized content
+                # Update the displayed message with the full response
                 with response_area:
                     response_placeholder.markdown(full_response, unsafe_allow_html=True)
 

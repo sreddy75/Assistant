@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     ENABLE_PRODUCT_OWNER: bool = False
     ENABLE_BUSINESS_ANALYST: bool = False
     ENABLE_RESEARCH_ASSISTANT: bool = False
+    ENABLE_CALL_CENTER_ASSISTANT: bool = False
     ENABLE_CODE_ASSISTANT: bool = False
     ENABLE_COMPANY_ANALYST: bool = False
     ENABLE_FEEDBACK_SENTIMENT_ANALYSIS: bool = False

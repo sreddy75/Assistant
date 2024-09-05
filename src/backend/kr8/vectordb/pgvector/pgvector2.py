@@ -296,6 +296,41 @@ class PgVector2(VectorDb):
     def upsert_available(self) -> bool:
         return True
 
+    def clear(self) -> bool:
+        with self.Session() as sess:
+            with sess.begin():
+                stmt = delete(self.table)
+                if self.user_id:
+                    stmt = stmt.where(self.table.c.user_id == self.user_id)
+                result = sess.execute(stmt)
+                return result.rowcount > 0
+
+    def delete(self, collection: Optional[str] = None) -> None:
+        collection = collection or self.collection
+        if self.table_exists():
+            with self.Session() as sess:
+                with sess.begin():
+                    sess.execute(text(f"DROP TABLE IF EXISTS {collection}"))
+            self.logger.info(f"Deleted collection: {collection}")
+
+    def exists(self) -> bool:
+        return self.table_exists()
+
+    def optimize(self) -> None:
+        if self.index is None:
+            return
+
+        with self.Session() as sess:
+            with sess.begin():
+                if isinstance(self.index, Ivfflat):
+                    sess.execute(text(f"SET ivfflat.probes = {self.index.probes}"))
+                    sess.execute(text(f"CREATE INDEX IF NOT EXISTS {self.index.name} ON {self.table.name} USING ivfflat (embedding vector_l2_ops) WITH (lists = {self.index.lists})"))
+                elif isinstance(self.index, HNSW):
+                    sess.execute(text(f"SET hnsw.ef_search = {self.index.ef_search}"))
+                    sess.execute(text(f"CREATE INDEX IF NOT EXISTS {self.index.name} ON {self.table.name} USING hnsw (embedding vector_l2_ops) WITH (m = {self.index.m}, ef_construction = {self.index.ef_construction})"))
+        
+        self.logger.info("Optimized vector database")
+        
     def upsert(self, documents: List[Document], batch_size: int = 20) -> None:
         logger.debug(f"Upserting {len(documents)} documents")
         with self.Session() as sess:
@@ -561,15 +596,29 @@ class PgVector2(VectorDb):
                 return deleted
             
     def delete_document(self, identifier: str) -> bool:
-        with self.Session() as sess:
-            with sess.begin():
-                stmt = delete(self.table).where(
-                    (self.table.c.name == identifier) | (self.table.c.id == identifier)
-                )
-                if self.user_id:
-                    stmt = stmt.where(self.table.c.user_id == self.user_id)
-                result = sess.execute(stmt)
-                return result.rowcount > 0
+            with self.Session() as sess:
+                with sess.begin():
+                    # Create a pattern to match the document name and any potential chunks
+                    base_name = re.sub(r'_chunk_\d+$', '', identifier)
+                    pattern = f"{base_name}%"
+                    
+                    # Use the LIKE operator to match the document name and its chunks
+                    stmt = delete(self.table).where(
+                        self.table.c.name.like(pattern)
+                    )
+                    
+                    if self.user_id:
+                        stmt = stmt.where(self.table.c.user_id == self.user_id)
+                    
+                    result = sess.execute(stmt)
+                    deleted_count = result.rowcount
+                    
+                    if deleted_count > 0:
+                        self.logger.info(f"Deleted {deleted_count} chunks for document: {identifier}")
+                        return True
+                    else:
+                        self.logger.warning(f"No chunks found for document: {identifier}")
+                        return False
     
     def update_document(self, document: Document) -> None:
         with self.Session() as sess:

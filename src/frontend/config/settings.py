@@ -8,7 +8,11 @@ load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # List of enabled assistants
-ENABLED_ASSISTANTS = ["General Assistant", "Code Assistant", "Data Analyst"]
+ENABLED_ASSISTANTS = ['Web Search', 
+                      'Code Assistant', 'Product Owner', 'Enhanced Financial Analyst', 
+                      'Business Analyst', 'Enhanced Data Analyst', 'Enhanced Quality Analyst',
+                      'Call Center Assistant'
+                      ]
 
 # Client name
 CLIENT_NAME = os.getenv("CLIENT_NAME", "default_client")

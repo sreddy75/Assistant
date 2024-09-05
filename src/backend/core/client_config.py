@@ -75,6 +75,7 @@ AVAILABLE_ASSISTANTS = [
     "Investment Assistant",
     "Company Analyst",
     "Maintenance Engineer",
+    "Call Center Assistant",
 ]
 
 ENABLED_ASSISTANTS = [assistant for assistant in AVAILABLE_ASSISTANTS if is_assistant_enabled(assistant)]

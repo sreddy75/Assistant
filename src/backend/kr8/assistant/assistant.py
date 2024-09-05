@@ -1,82 +1,88 @@
-import json
-from os import getenv
-import traceback
-from uuid import uuid4
-from textwrap import dedent
+from asyncio.log import logger
 from datetime import datetime
-from typing import Callable, List, Any, Optional, Dict, Iterator, Union, Type, Literal, cast, AsyncIterator
-from urllib.parse import urlparse
-
-from pydantic import BaseModel, ConfigDict, field_validator, Field, ValidationError
-
-from src.backend.kr8.document import Document
-from src.backend.kr8.assistant.run import AssistantRun
-from src.backend.kr8.knowledge.base import AssistantKnowledge
-from src.backend.kr8.llm.base import LLM
-from src.backend.kr8.llm.message import Message
-from src.backend.kr8.llm.references import References
-from src.backend.kr8.memory.assistant import AssistantMemory, MemoryRetrieval, Memory
-from src.backend.kr8.prompt.template import PromptTemplate
-from src.backend.kr8.storage.assistant import AssistantStorage
-from src.backend.kr8.utils.format_str import remove_indent
-from src.backend.kr8.tools import Tool, Toolkit, Function
-from src.backend.kr8.utils.log import logger, set_log_level_to_debug
-from src.backend.kr8.utils.message import get_text_from_message
-from src.backend.kr8.utils.merge_dict import merge_dictionaries
+from os import getenv
+from textwrap import dedent
 from src.backend.kr8.utils.timer import Timer
+import traceback
+from typing import AsyncIterator, Callable, Iterator, List, Dict, Any, Optional, Union, Literal, Type, cast, ClassVar
+from urllib.parse import urlparse
+from uuid import uuid4
+from jsonschema import ValidationError
+from psycopg import OperationalError
+from pydantic import BaseModel, ConfigDict, field_validator, Field
+import json as json_module
 
 from sqlalchemy import create_engine
-from sqlalchemy.exc import OperationalError
+from src.backend.kr8.document.base import Document
+from src.backend.kr8.llm.base import LLM
+from src.backend.kr8.llm.references import References
+from src.backend.kr8.utils.log import set_log_level_to_debug
+from src.backend.kr8.utils.merge_dict import merge_dictionaries
+from src.backend.kr8.utils.message import get_text_from_message
+from src.backend.kr8.llm.message import Message
+
+from src.backend.kr8.assistant.run import AssistantRun
+from src.backend.kr8.knowledge.base import AssistantKnowledge
+from src.backend.kr8.memory.assistant import AssistantMemory
+from src.backend.kr8.prompt.template import PromptTemplate
+from src.backend.kr8.storage.assistant.base import AssistantStorage
+from src.backend.kr8.tools.tool import Tool
+from src.backend.kr8.tools import Function
+from src.backend.kr8.tools.toolkit import Toolkit  
+
 class Assistant(BaseModel):
-    # -*- Assistant settings
+    # Class variables
+    json: ClassVar[Any] = json_module  # Annotate as ClassVar
+
+    # Instance variables (existing code)
     llm: Optional[LLM] = None
     introduction: Optional[str] = None
     name: Optional[str] = None
     assistant_data: Optional[Dict[str, Any]] = None
     user_nickname: Optional[str] = "friend"
 
-    # -*- Run settings
+    # Run settings
     run_id: Optional[str] = Field(None, validate_default=True)
     run_name: Optional[str] = None
     run_data: Optional[Dict[str, Any]] = None
 
-    # -*- User settings
+    # User settings
     user_id: Optional[int] = None
     user_data: Optional[Dict[str, Any]] = None
 
-    # -*- Assistant Memory
-    memory: AssistantMemory = AssistantMemory()
+    # Assistant Memory
+    memory: AssistantMemory = Field(default_factory=AssistantMemory)
     add_chat_history_to_messages: bool = False
     add_chat_history_to_prompt: bool = False
     num_history_messages: int = 10
     create_memories: bool = False
     update_memory_after_run: bool = True
 
-    # -*- Assistant Knowledge Base
+    # Assistant Knowledge Base
     knowledge_base: Optional[AssistantKnowledge] = None
     add_references_to_prompt: bool = False
 
-    # -*- Assistant Storage
+    # Assistant Storage
     storage: Optional[AssistantStorage] = None
     db_row: Optional[AssistantRun] = None
 
-    # -*- Assistant Tools
+    # Assistant Tools
     tools: Optional[List[Union[Tool, Toolkit, Callable, Dict, Function]]] = None
     show_tool_calls: bool = False
     tool_call_limit: Optional[int] = None
     tool_choice: Optional[Union[str, Dict[str, Any]]] = None
 
-    # -*- Default tools
+    # Default tools
     read_chat_history: bool = False
     search_knowledge: bool = True
     update_knowledge: bool = False
     read_tool_call_history: bool = False
     use_tools: bool = False
 
-    # -*- Assistant Messages
+    # Assistant Messages
     additional_messages: Optional[List[Union[Dict, Message]]] = None
 
-    # -*- Prompt Settings
+    # Prompt Settings
     system_prompt: Optional[str] = None
     system_prompt_template: Optional[PromptTemplate] = None
     build_default_system_prompt: bool = True
@@ -100,25 +106,25 @@ class Assistant(BaseModel):
     references_format: Literal["json", "yaml"] = "json"
     chat_history_function: Optional[Callable[..., Optional[str]]] = None
 
-    # -*- Assistant Output Settings
+    # Assistant Output Settings
     output_model: Optional[Type[BaseModel]] = None
     parse_output: bool = True
     output: Optional[Any] = None
     save_output_to_file: Optional[str] = None
 
-    # -*- Assistant Task data
+    # Assistant Task data
     task_data: Optional[Dict[str, Any]] = None
 
-    # -*- Assistant Team
+    # Assistant Team
     team: Optional[List["Assistant"]] = None
     role: Optional[str] = None
     add_delegation_instructions: bool = True
 
-    # -*- Debug and monitoring settings
+    # Debug and monitoring settings
     debug_mode: bool = False
-    monitoring: bool = getenv("PHI_MONITORING", "false").lower() == "true"
+    monitoring: bool = Field(default_factory=lambda: getenv("PHI_MONITORING", "false").lower() == "true")
 
-    # -*- Offline mode
+    # Offline mode
     offline_mode: bool = False
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -140,10 +146,23 @@ class Assistant(BaseModel):
 
     def is_part_of_team(self) -> bool:
         return self.team is not None and len(self.team) > 0
-    
+        
     def get_delegation_function(self, assistant: "Assistant", index: int) -> Function:
         def _delegate_task_to_assistant(task_description: str) -> str:
-            return assistant.run(task_description, stream=False)  # type: ignore
+            # Fetch references from the knowledge base
+            references = self.get_references_from_knowledge_base(task_description)
+            
+            # Add references to the task description
+            task_with_references = self.add_references_to_task(task_description, references)
+            
+            # Run the task on the delegated assistant
+            delegated_response = assistant.run(task_with_references, stream=False)
+            
+            # Wrap the delegated response to identify it
+            return json_module.dumps({
+                "delegated_assistant": assistant.name,
+                "delegated_response": delegated_response
+            })
 
         assistant_name = assistant.name.replace(" ", "_").lower() if assistant.name else f"assistant_{index}"
         if assistant.name is None:
@@ -155,10 +174,23 @@ class Assistant(BaseModel):
         Args:
             task_description (str): A clear and concise description of the task the assistant should achieve.
         Returns:
-            str: The result of the delegated task.
+            str: The result of the delegated task, including the assistant name and response.
         """
         )
         return delegation_function
+
+    def get_references_from_knowledge_base(self, query: str) -> List[Dict[str, str]]:
+        if self.knowledge_base is None:
+            return []
+        
+        results = self.knowledge_base.search(query)
+        return [{"name": doc.name, "content": doc.content} for doc in results]
+
+    def add_references_to_task(self, task_description: str, references: List[Dict[str, str]]) -> str:
+        if references:
+            reference_str = "\n\nRelevant references:\n" + "\n".join([f"- {ref['name']}" for ref in references])
+            return f"{task_description}{reference_str}"
+        return task_description
 
     def get_delegation_prompt(self) -> str:
         if self.team and len(self.team) > 0:
@@ -183,7 +215,7 @@ class Assistant(BaseModel):
             delegation_prompt += "</assistants>"
             return delegation_prompt
         return ""
-
+    
     def update_llm(self) -> None:
         if self.llm is None:
             try:
@@ -412,6 +444,10 @@ class Assistant(BaseModel):
 
         logger.info("All local connections successful")
 
+    def _delegate_task_to_assistant(self, task_description: str, references: Optional[List[Dict[str, str]]] = None) -> str:
+        task_with_references = self.add_references_to_task(task_description, references)
+        return self.run(task_with_references, stream=False)    
+    
     def run(
         self,
         message: Optional[Union[List, Dict, str]] = None,
@@ -530,7 +566,7 @@ class Assistant(BaseModel):
                 logger.debug(f"Searching knowledge base for: {message}")
                 search_results = self.search_knowledge_base(message)
                 logger.debug(f"Knowledge base search results: {search_results}")
-                search_results = json.loads(search_results)
+                search_results = json_module.loads(search_results)
                 if search_results.get("results"):
                     context = "Relevant information from the knowledge base:\n"
                     for doc in search_results["results"]:
@@ -551,10 +587,26 @@ class Assistant(BaseModel):
         try:
             if stream and self.streamable:
                 for response_chunk in self.llm.response_stream(messages=llm_messages):
+                    # Check if the response is a delegated one
+                    try:
+                        delegated_response = json_module.loads(response_chunk)
+                        if isinstance(delegated_response, dict) and "delegated_assistant" in delegated_response:
+                            # Process the delegated response
+                            yield f"Response from {delegated_response['delegated_assistant']}:\n{delegated_response['delegated_response']}\n"
+                        else:
+                            yield response_chunk
+                    except json_module.JSONDecodeError:
+                        yield response_chunk
                     llm_response += response_chunk
-                    yield response_chunk
             else:
                 llm_response = self.llm.response(messages=llm_messages)
+                # Check if the response is a delegated one
+                try:
+                    delegated_response = json_module.loads(llm_response)
+                    if isinstance(delegated_response, dict) and "delegated_assistant" in delegated_response:
+                        llm_response = f"Response from {delegated_response['delegated_assistant']}:\n{delegated_response['delegated_response']}"
+                except json_module.JSONDecodeError:
+                    pass  # Not a JSON response, use as is
         except Exception as e:
             logger.error(f"Error generating response: {traceback.format_exc()}")
             yield f"I'm having trouble generating a response right now, {self.user_nickname}. Please try again later."
@@ -718,7 +770,7 @@ class Assistant(BaseModel):
             
             # Before passing the message to the LLM, perform a knowledge base search
             if isinstance(message, str):
-                search_results = json.loads(self.search_knowledge_base(message))
+                search_results = json_module.loads(self.search_knowledge_base(message))
                 if "results" in search_results:
                     context = "Relevant information from the knowledge base:\n"
                     for doc in search_results["results"]:
@@ -1095,7 +1147,7 @@ class Assistant(BaseModel):
     def get_json_output_prompt(self) -> str:
         json_output_prompt = "\nProvide your output as a JSON containing the following fields:"
         if self.output_model is not None:
-            json_output_prompt += f"\n{json.dumps(self.output_model.model_json_schema(), indent=2)}"
+            json_output_prompt += f"\n{json_module.dumps(self.output_model.model_json_schema(), indent=2)}"
         else:
             json_output_prompt += "Provide the output as JSON."
         json_output_prompt += "\nStart your response with `{` and end it with `}`."
@@ -1121,7 +1173,7 @@ class Assistant(BaseModel):
             chats_added += 1
             if num_chats is not None and chats_added >= num_chats:
                 break
-        return json.dumps(history)
+        return json_module.dumps(history)
 
     def get_tool_call_history(self, num_calls: int = 3) -> str:
         """Use this function to get the tools called by the assistant in reverse chronological order."""
@@ -1129,12 +1181,12 @@ class Assistant(BaseModel):
         if len(tool_calls) == 0:
             return ""
         logger.debug(f"tool_calls: {tool_calls}")
-        return json.dumps(tool_calls)
+        return json_module.dumps(tool_calls)
 
     def search_knowledge_base(self, query: str) -> str:
         """Use this function to search the knowledge base for information about a query."""
         if self.knowledge_base is None:
-            return json.dumps({"error": "Knowledge base not available"})
+            return json_module.dumps({"error": "Knowledge base not available"})
         
         reference_timer = Timer()
         reference_timer.start()        
@@ -1144,7 +1196,7 @@ class Assistant(BaseModel):
         reference_timer.stop()
         
         if not results:
-            return json.dumps({"message": "No relevant documents found in the knowledge base."})
+            return json_module.dumps({"message": "No relevant documents found in the knowledge base."})
         
         references = []
         for doc in results:
@@ -1156,7 +1208,7 @@ class Assistant(BaseModel):
         _ref = References(query=query, references=references, time=round(reference_timer.elapsed, 4))
         self.memory.add_references(references=_ref)
         
-        return json.dumps({"results": references}, indent=2)
+        return json_module.dumps({"results": references}, indent=2)
 
     def add_to_knowledge_base(self, query: str, result: str) -> str:
         """Use this function to add information to the knowledge base for future use."""
@@ -1165,7 +1217,7 @@ class Assistant(BaseModel):
         document_name = self.name
         if document_name is None:
             document_name = query.replace(" ", "_").replace("?", "").replace("!", "").replace(".", "")
-        document_content = json.dumps({"query": query, "result": result})
+        document_content = json_module.dumps({"query": query, "result": result})
         logger.info(f"Adding document to knowledge base: {document_name}: {document_content}")
         self.knowledge_base.load_document(
             document=Document(
@@ -1232,7 +1284,7 @@ class Assistant(BaseModel):
         elif isinstance(response, BaseModel):
             return response.model_dump_json(exclude_none=True, indent=4)
         else:
-            return json.dumps(response, indent=4)
+            return json_module.dumps(response, indent=4)
 
     def print_response(
         self,

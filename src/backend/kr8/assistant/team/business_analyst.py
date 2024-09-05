@@ -1,7 +1,7 @@
 from src.backend.kr8.assistant.assistant import Assistant
 from src.backend.kr8.tools.exa import ExaTools
 from src.backend.kr8.tools.pandas import PandasTools
-from typing import List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from pydantic import Field, BaseModel
 
 class EnhancedBusinessAnalyst(Assistant, BaseModel):
@@ -46,3 +46,27 @@ class EnhancedBusinessAnalyst(Assistant, BaseModel):
 
     def get_pandas_tools(self):
         return self.pandas_tools
+    
+    def run(self, task_description: str, stream: bool = False) -> str:
+        # If the task_description contains references, parse them out
+        task, references = self.parse_task_and_references(task_description)
+        
+        # Process references if provided
+        if references:
+            processed_references = self.process_references(references)
+            task = f"{task}\n\nRelevant references:\n{processed_references}"
+        
+        # Existing run logic
+        return super().run(task, stream=stream)
+
+    def parse_task_and_references(self, task_description: str) -> Tuple[str, Optional[List[Dict[str, str]]]]:
+        parts = task_description.split("\n\nRelevant references:")
+        if len(parts) > 1:
+            task = parts[0]
+            references_str = parts[1].strip()
+            references = [{"name": ref.strip("- ")} for ref in references_str.split("\n") if ref.strip()]
+            return task, references
+        return task_description, None
+
+    def process_references(self, references: List[Dict[str, str]]) -> str:
+        return "\n".join([f"- {ref['name']}" for ref in references])
