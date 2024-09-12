@@ -4,74 +4,74 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from wordcloud import WordCloud
-import io
-import base64
 import matplotlib.pyplot as plt
 from utils.api import fetch_data
 from utils.helpers import safe_get, format_metric
-
-
-def get_analytics_data():
-    # Fetch data from all relevant endpoints
-    sentiment_analysis = fetch_data("/api/v1/analytics/sentiment-analysis")
-    feedback_analysis = fetch_data("/api/v1/analytics/feedback-analysis")
-    user_engagement = fetch_data("/api/v1/analytics/user-engagement")
-    interaction_metrics = fetch_data("/api/v1/analytics/interaction-metrics")
-    quality_metrics = fetch_data("/api/v1/analytics/quality-metrics")
-    usage_patterns = fetch_data("/api/v1/analytics/usage-patterns")
-
-    if all(data is None for data in [sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns]):
-        st.warning("Failed to fetch data from the API. Please check the server connection.")
-        return
-    
-    return sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns
+import json
 
 def render_analytics_dashboard():
-    
-    sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns = get_analytics_data()        
-    
+    st.title("Analytics Dashboard")
+
+    if st.button("Refresh Analytics"):
+        st.cache_data.clear()
+        st.success("Cache cleared. Fetching fresh data...")
+
+    analytics_data = get_analytics_data()
+
+    if isinstance(analytics_data, dict) and 'error' in analytics_data:
+        st.error(f"Failed to fetch analytics data: {analytics_data['error']}")
+        return
+
     col1, col2 = st.columns(2)
 
     with col1:
-        render_key_insights(user_engagement, interaction_metrics, quality_metrics, usage_patterns)
+        render_key_insights(analytics_data)
 
     with col2:
-        render_active_users(user_engagement)
+        render_active_users(analytics_data)
 
-    # User Growth and Interaction Metrics
     st.header("User Growth and Interaction")
     col1, col2 = st.columns(2)
 
     with col1:
-        render_user_growth(user_engagement)
+        render_user_growth(analytics_data)
 
     with col2:
-        render_interaction_metrics(interaction_metrics)
+        render_interaction_metrics(analytics_data)
 
-    # Query Volume Trend
-    render_query_volume_trend(interaction_metrics)
+    render_query_volume_trend(analytics_data)
+    render_user_retention(analytics_data)
+    render_quality_metrics(analytics_data)
+    render_sentiment_trend(analytics_data)
+    render_usage_patterns(analytics_data)
+    render_feature_adoption(analytics_data)
+    render_feedback_analysis(analytics_data)
 
-    # User Retention Visualization
-    render_user_retention(user_engagement)
+@st.cache_data(ttl=300)
+def get_analytics_data():
+    try:
+        all_analytics = fetch_data("/api/v1/analytics/all-analytics")
+        
+        if isinstance(all_analytics, str):
+            all_analytics = json.loads(all_analytics)
+        
+        if not isinstance(all_analytics, dict):
+            raise ValueError("Unexpected data format from API")
+        
+        return all_analytics
+    except json.JSONDecodeError:
+        return {"error": "Failed to parse analytics data"}
+    except Exception as e:
+        return {"error": f"An error occurred: {str(e)}"}
 
-    # Quality Metrics
-    render_quality_metrics(quality_metrics, sentiment_analysis)
-
-    # Sentiment Trend
-    render_sentiment_trend(quality_metrics)
-
-    # Usage Patterns
-    render_usage_patterns(usage_patterns)
-
-    # Feature Adoption
-    render_feature_adoption(usage_patterns)
-
-    # Feedback Analysis
-    render_feedback_analysis(feedback_analysis)
-
-def render_key_insights(user_engagement, interaction_metrics, quality_metrics, usage_patterns):
+def render_key_insights(data):
     st.subheader("Key Insights")
     insights = []
+
+    user_engagement = data.get("user_engagement", {})
+    interaction_metrics = data.get("interaction_metrics", {})
+    quality_metrics = data.get("quality_metrics", {})
+    usage_patterns = data.get("usage_patterns", {})
 
     if user_engagement:
         user_growth = safe_get(user_engagement, 'user_growth')
@@ -101,7 +101,8 @@ def render_key_insights(user_engagement, interaction_metrics, quality_metrics, u
     else:
         st.warning("Not enough data to generate insights at this time.")
 
-def render_active_users(user_engagement):
+def render_active_users(data):
+    user_engagement = data.get("user_engagement", {})
     st.subheader("Active Users")
     if user_engagement:
         daily_active = safe_get(user_engagement, 'active_users', 'daily')
@@ -114,7 +115,8 @@ def render_active_users(user_engagement):
     else:
         st.warning("User engagement data is not available.")
 
-def render_user_growth(user_engagement):
+def render_user_growth(data):
+    user_engagement = data.get("user_engagement", {})
     st.subheader("User Growth")
     if user_engagement:
         user_growth = safe_get(user_engagement, 'user_growth', default=[])
@@ -126,7 +128,8 @@ def render_user_growth(user_engagement):
         else:
             st.warning("User growth data is not available.")
 
-def render_interaction_metrics(interaction_metrics):
+def render_interaction_metrics(data):
+    interaction_metrics = data.get("interaction_metrics", {})
     st.subheader("Interaction Metrics")
     if interaction_metrics:
         total_queries = safe_get(interaction_metrics, 'query_volume', 'total')
@@ -137,7 +140,8 @@ def render_interaction_metrics(interaction_metrics):
         st.write(f"Avg Response Time: {format_metric(avg_response_time, '{:.2f}', 's')}")
         st.write(f"Avg Session Duration: {format_metric(avg_session_duration, '{:.2f}', 's')}")
 
-def render_query_volume_trend(interaction_metrics):
+def render_query_volume_trend(data):
+    interaction_metrics = data.get("interaction_metrics", {})
     st.header("Query Volume Trend")
     query_trend = safe_get(interaction_metrics, 'query_volume', 'recent_trend', default=[])
     if query_trend:
@@ -148,7 +152,8 @@ def render_query_volume_trend(interaction_metrics):
     else:
         st.warning("Query volume trend data is not available.")
 
-def render_user_retention(user_engagement):
+def render_user_retention(data):
+    user_engagement = data.get("user_engagement", {})
     st.header("User Retention")
     if user_engagement:
         user_retention = safe_get(user_engagement, 'user_retention', default=[])
@@ -183,7 +188,9 @@ def render_user_retention(user_engagement):
         else:
             st.warning("User retention data is not available.")
 
-def render_quality_metrics(quality_metrics, sentiment_analysis):
+def render_quality_metrics(data):
+    quality_metrics = data.get("quality_metrics", {})
+    sentiment_analysis = data.get("sentiment_analysis", {})
     st.header("Quality Metrics")
     if quality_metrics and sentiment_analysis:
         col1, col2 = st.columns(2)
@@ -207,7 +214,6 @@ def render_quality_metrics(quality_metrics, sentiment_analysis):
             avg_sentiment = safe_get(sentiment_analysis, 'average_sentiment_score')
             st.metric("Average Sentiment Score", format_metric(avg_sentiment, "{:.2f}"))
 
-            # Word Cloud
             word_cloud_data = safe_get(quality_metrics, 'word_cloud_data', default={})
             if word_cloud_data:
                 wordcloud = WordCloud(width=400, height=200, background_color='white').generate_from_frequencies(word_cloud_data)
@@ -218,7 +224,8 @@ def render_quality_metrics(quality_metrics, sentiment_analysis):
             else:
                 st.warning("No word cloud data available.")
 
-def render_sentiment_trend(quality_metrics):
+def render_sentiment_trend(data):
+    quality_metrics = data.get("quality_metrics", {})
     st.header("Sentiment Trend")
     sentiment_trend = safe_get(quality_metrics, 'sentiment_trend', default=[])
     if sentiment_trend:
@@ -229,13 +236,13 @@ def render_sentiment_trend(quality_metrics):
     else:
         st.warning("Sentiment trend data is not available.")
 
-def render_usage_patterns(usage_patterns):
+def render_usage_patterns(data):
+    usage_patterns = data.get("usage_patterns", {})
     st.header("Usage Patterns")
     if usage_patterns:
         col1, col2 = st.columns(2)
 
         with col1:
-            # Popular Topics
             popular_topics = safe_get(usage_patterns, 'popular_topics', default=[])
             if popular_topics:
                 popular_topics_df = pd.DataFrame(popular_topics)
@@ -245,7 +252,6 @@ def render_usage_patterns(usage_patterns):
                 st.warning("Popular topics data is not available.")
 
         with col2:
-            # Peak Usage Times
             peak_usage = safe_get(usage_patterns, 'peak_usage', default=[])
             if peak_usage:
                 peak_usage_df = pd.DataFrame(peak_usage)
@@ -254,7 +260,8 @@ def render_usage_patterns(usage_patterns):
             else:
                 st.warning("Peak usage data is not available.")
 
-def render_feature_adoption(usage_patterns):
+def render_feature_adoption(data):
+    usage_patterns = data.get("usage_patterns", {})
     st.header("Feature Adoption")
     feature_adoption = safe_get(usage_patterns, 'feature_adoption', default=[])
     if feature_adoption:
@@ -264,7 +271,8 @@ def render_feature_adoption(usage_patterns):
     else:
         st.warning("Feature adoption data is not available.")
 
-def render_feedback_analysis(feedback_analysis):
+def render_feedback_analysis(data):
+    feedback_analysis = data.get("feedback_analysis", {})
     st.header("Feedback Analysis")
     if feedback_analysis:
         col1, col2 = st.columns(2)
@@ -275,7 +283,6 @@ def render_feedback_analysis(feedback_analysis):
             feedback_count = safe_get(feedback_analysis, 'feedback_count')
             st.metric("Feedback Count", format_metric(feedback_count, "{:.0f}"))
 
-        # Sentiment Distribution
         sentiment_distribution = safe_get(feedback_analysis, 'sentiment_distribution', default={})
         if sentiment_distribution:
             fig_sentiment_dist = px.pie(
@@ -287,7 +294,6 @@ def render_feedback_analysis(feedback_analysis):
         else:
             st.warning("Sentiment distribution data is not available.")
 
-        # Top Keywords
         top_keywords = safe_get(feedback_analysis, 'top_keywords', default={})
         if top_keywords:
             top_keywords_df = pd.DataFrame(list(top_keywords.items()), columns=['keyword', 'score'])

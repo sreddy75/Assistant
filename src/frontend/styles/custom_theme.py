@@ -40,6 +40,33 @@ def apply_custom_theme():
                 border-radius: 4px;
             }}
 
+            /* Login page*/
+            .login-form {{
+                max-width: 400px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: {theme_config['theme']['primaryColor']};
+                border-radius: 10px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+            .login-form input {{
+                width: 100%;
+                margin-bottom: 10px;
+            }}
+            .login-form .stButton > button {{
+                width: 100%;
+            }}
+            .separator {{
+                width: 100%;
+                height: 2px;
+                background-color: #4CAF50;
+                margin: 1rem 0;
+            }}
+            .centered-image {{
+                display: flex;
+                justify-content: center;
+                margin-bottom: 20px;
+            }}
             /* Select box */
             .stSelectbox > div > div::before {{
                 background-color: {theme_config['theme']['primaryColor']};

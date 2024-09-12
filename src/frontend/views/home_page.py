@@ -1,10 +1,11 @@
 import streamlit as st
 from components.analytics_dashboard import (
-        get_analytics_data, render_active_users, render_key_insights, render_interaction_metrics,
-        render_quality_metrics
-    )
+    get_analytics_data, render_active_users, render_key_insights, render_interaction_metrics,
+    render_quality_metrics
+)
 from utils.auth import is_authenticated
 from utils.helpers import setup_logging
+import json
 
 logger = setup_logging()
 
@@ -29,35 +30,40 @@ def render_home_page():
         # Render analytics dashboard
         st.header("Analytics Overview")
         col1, col2, col3 = st.columns(3)
-        sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns = get_analytics_data()        
+        analytics_data = get_analytics_data()
+        
+        if isinstance(analytics_data, str):
+            try:
+                analytics_data = json.loads(analytics_data)
+            except json.JSONDecodeError:
+                st.error("Failed to parse analytics data. Please check the API response.")
+                return
+
+        sentiment_analysis = analytics_data.get('sentiment_analysis', {})
+        feedback_analysis = analytics_data.get('feedback_analysis', {})
+        user_engagement = analytics_data.get('user_engagement', {})
+        interaction_metrics = analytics_data.get('interaction_metrics', {})
+        quality_metrics = analytics_data.get('quality_metrics', {})
+        usage_patterns = analytics_data.get('usage_patterns', {})
+
         with col1:
             render_active_users(user_engagement)
         with col2:
-            render_key_insights(user_engagement, interaction_metrics, quality_metrics, usage_patterns)
+            combined_data = {
+                'user_engagement': user_engagement,
+                'interaction_metrics': interaction_metrics,
+                'quality_metrics': quality_metrics,
+                'usage_patterns': usage_patterns
+            }
+            render_key_insights(combined_data)
         with col3:
             render_interaction_metrics(interaction_metrics)
         
-        render_quality_metrics(quality_metrics, sentiment_analysis)    
+        render_quality_metrics(analytics_data)
     
     st.divider()
     
-    # Recent Activity
-    # with st.expander(label="System Status", expanded=False, icon=":material/activity:"):
-        # st.subheader("Recent Activity")
-        # activities = [
-        #     "Uploaded new document: 'Project Proposal.pdf'",
-        #     "Completed chat session with Code Assistant",
-        #     "Updated user profile information",
-        #     "Analyzed data set using Data Analyst",
-        #     "Started new project: 'Web App Redesign'"
-        # ]
-        # for activity in activities:
-        #     st.write(f"• {activity}")
-    
-    # st.divider()        
-    
     with st.expander(label="System Status", expanded=False):
-    # System Status
         st.subheader("System Status")
         system_status = {
             "AI Models": "Operational",

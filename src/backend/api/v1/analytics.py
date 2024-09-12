@@ -1,56 +1,91 @@
 import logging
-import math
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from src.backend.db.session import get_db
 from src.backend.models.models import UserEvent
 from src.backend.services.analytics_service import AnalyticsService
+from fastapi_cache import FastAPICache
+from fastapi_cache.decorator import cache
 
 router = APIRouter()
-
 analytics_service = AnalyticsService()
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def replace_nan_with_none(obj):
-    if isinstance(obj, float) and math.isnan(obj):
-        return None
-    elif isinstance(obj, dict):
-        return {k: replace_nan_with_none(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [replace_nan_with_none(v) for v in obj]
-    return obj
+@router.get("/all-analytics")
+@cache(expire=300)  # Cache for 5 minutes
+async def get_all_analytics(db: Session = Depends(get_db)):
+    try:
+        return {
+            "sentiment_analysis": analytics_service.get_sentiment_analysis(db),
+            "feedback_analysis": analytics_service.analyze_feedback_text(db),
+            "user_engagement": analytics_service.get_user_engagement_metrics(db),
+            "interaction_metrics": analytics_service.get_interaction_metrics(db),
+            "quality_metrics": analytics_service.get_quality_metrics(db),
+            "usage_patterns": analytics_service.get_usage_patterns(db)
+        }
+    except Exception as e:
+        logger.error(f"Error in get_all_analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/sentiment-analysis")
+@cache(expire=300)
 async def get_sentiment_analysis(db: Session = Depends(get_db)):
     try:
-        logger.debug("Entering get_sentiment_analysis endpoint")
-        result = analytics_service.get_sentiment_analysis(db)
-        logger.debug(f"Raw result from get_sentiment_analysis: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from get_sentiment_analysis: {cleaned_result}")
-        return cleaned_result
+        return analytics_service.get_sentiment_analysis(db)
     except Exception as e:
-        logger.exception("Error in get_sentiment_analysis endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in get_sentiment_analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/feedback-analysis")
+@cache(expire=300)
 async def get_feedback_analysis(db: Session = Depends(get_db)):
     try:
-        logger.debug("Entering get_feedback_analysis endpoint")
-        result = analytics_service.analyze_feedback_text(db)
-        logger.debug(f"Raw result from analyze_feedback_text: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from analyze_feedback_text: {cleaned_result}")
-        return cleaned_result
+        return analytics_service.analyze_feedback_text(db)
     except Exception as e:
-        logger.exception("Error in get_feedback_analysis endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in get_feedback_analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/user-engagement")
+@cache(expire=300)
+async def get_user_engagement_metrics(db: Session = Depends(get_db)):
+    try:
+        return analytics_service.get_user_engagement_metrics(db)
+    except Exception as e:
+        logger.error(f"Error in get_user_engagement_metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/interaction-metrics")
+@cache(expire=300)
+async def get_interaction_metrics(db: Session = Depends(get_db)):
+    try:
+        return analytics_service.get_interaction_metrics(db)
+    except Exception as e:
+        logger.error(f"Error in get_interaction_metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/quality-metrics")
+@cache(expire=300)
+async def get_quality_metrics(db: Session = Depends(get_db)):
+    try:
+        return analytics_service.get_quality_metrics(db)
+    except Exception as e:
+        logger.error(f"Error in get_quality_metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/usage-patterns")
+@cache(expire=300)
+async def get_usage_patterns(db: Session = Depends(get_db)):
+    try:
+        return analytics_service.get_usage_patterns(db)
+    except Exception as e:
+        logger.error(f"Error in get_usage_patterns: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.post("/user-events")
 async def save_user_event(event: UserEvent, db: Session = Depends(get_db)):
     try:
-        logger.debug(f"Entering save_user_event endpoint with event: {event}")
         result = analytics_service.save_user_event(
             db, 
             event.user_id,             
@@ -58,86 +93,28 @@ async def save_user_event(event: UserEvent, db: Session = Depends(get_db)):
             event.event_data, 
             event.duration
         )
-        logger.debug(f"Result from save_user_event: {result}")
+        if result:
+            # Clear the cache when new data is added
+            await FastAPICache.clear(namespace="analytics")
         return {"message": "Event saved successfully"}
     except Exception as e:
-        logger.exception("Error in save_user_event endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        logger.error(f"Error in save_user_event: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save event")
+
 @router.get("/user-events")
+@cache(expire=300)
 async def get_user_events(user_id: int = None, db: Session = Depends(get_db)):
     try:
-        logger.debug(f"Entering get_user_events endpoint with user_id: {user_id}")
-        result = analytics_service.get_user_events(db, user_id)
-        logger.debug(f"Raw result from get_user_events: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from get_user_events: {cleaned_result}")
-        return cleaned_result
+        return analytics_service.get_user_events(db, user_id)
     except Exception as e:
-        logger.exception("Error in get_user_events endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in get_user_events: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user events")
 
 @router.get("/event-summary")
+@cache(expire=300)
 async def get_event_summary(db: Session = Depends(get_db)):
     try:
-        logger.debug("Entering get_event_summary endpoint")
-        result = analytics_service.get_event_summary(db)
-        logger.debug(f"Raw result from get_event_summary: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from get_event_summary: {cleaned_result}")
-        return cleaned_result
+        return analytics_service.get_event_summary(db)
     except Exception as e:
-        logger.exception("Error in get_event_summary endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@router.get("/user-engagement")
-async def get_user_engagement_metrics(db: Session = Depends(get_db)):
-    try:
-        logger.debug("Entering get_user_engagement_metrics endpoint")
-        result = analytics_service.get_user_engagement_metrics(db)
-        logger.debug(f"Raw result from get_user_engagement_metrics: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from get_user_engagement_metrics: {cleaned_result}")
-        return cleaned_result
-    except Exception as e:
-        logger.exception("Error in get_user_engagement_metrics endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/interaction-metrics")
-async def get_interaction_metrics(db: Session = Depends(get_db)):
-    try:
-        logger.debug("Entering get_interaction_metrics endpoint")
-        result = analytics_service.get_interaction_metrics(db)
-        logger.debug(f"Raw result from get_interaction_metrics: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from get_interaction_metrics: {cleaned_result}")
-        return cleaned_result
-    except Exception as e:
-        logger.exception("Error in get_interaction_metrics endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/quality-metrics")
-async def get_quality_metrics(db: Session = Depends(get_db)):
-    try:
-        logger.debug("Entering get_quality_metrics endpoint")
-        result = analytics_service.get_quality_metrics(db)
-        logger.debug(f"Raw result from get_quality_metrics: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from get_quality_metrics: {cleaned_result}")
-        return cleaned_result
-    except Exception as e:
-        logger.exception("Error in get_quality_metrics endpoint")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/usage-patterns")
-async def get_usage_patterns(db: Session = Depends(get_db)):
-    try:
-        logger.debug("Entering get_usage_patterns endpoint")
-        result = analytics_service.get_usage_patterns(db)
-        logger.debug(f"Raw result from get_usage_patterns: {result}")
-        cleaned_result = replace_nan_with_none(result)
-        logger.debug(f"Cleaned result from get_usage_patterns: {cleaned_result}")
-        return cleaned_result
-    except Exception as e:
-        logger.exception("Error in get_usage_patterns endpoint")
-        raise HTTPException(status_code=500, detail=str(e))    
+        logger.error(f"Error in get_event_summary: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch event summary")

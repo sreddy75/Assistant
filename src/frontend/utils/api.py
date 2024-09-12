@@ -133,6 +133,9 @@ def update_user_info(user_id, user_data):
     """
     return put_data(f"/api/v1/users/{user_id}", user_data)
 
+def fetch_all_analytics():
+    return fetch_data("/api/v1/analytics/all-analytics")
+
 def fetch_analytics_data(start_date, end_date):
     """
     Fetch analytics data for a specific date range.

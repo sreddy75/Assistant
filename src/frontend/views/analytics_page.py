@@ -4,8 +4,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from wordcloud import WordCloud
-import io
-import base64
 import matplotlib.pyplot as plt
 from utils.api import fetch_data
 from utils.helpers import safe_get, format_metric
@@ -20,63 +18,49 @@ def render_analytics_page():
         st.error("You do not have permission to view this page.")
         return
 
-    # Fetch data from all relevant endpoints
-    sentiment_analysis = fetch_data("/api/v1/analytics/sentiment-analysis")
-    feedback_analysis = fetch_data("/api/v1/analytics/feedback-analysis")
-    user_engagement = fetch_data("/api/v1/analytics/user-engagement")
-    interaction_metrics = fetch_data("/api/v1/analytics/interaction-metrics")
-    quality_metrics = fetch_data("/api/v1/analytics/quality-metrics")
-    usage_patterns = fetch_data("/api/v1/analytics/usage-patterns")
-
-    if all(data is None for data in [sentiment_analysis, feedback_analysis, user_engagement, interaction_metrics, quality_metrics, usage_patterns]):
-        st.warning("Failed to fetch data from the API. Please check the server connection.")
-        return
-
     st.title("Analytics Dashboard")
 
-    # Key Insights and User Engagement at the top
+    # Fetch all analytics data at once
+    with st.spinner("Loading analytics data..."):
+        all_analytics = fetch_data("/api/v1/analytics/all-analytics")
+
+    if isinstance(all_analytics, dict) and 'error' in all_analytics:
+        st.error(f"Failed to fetch analytics data: {all_analytics['error']}")
+        return
+
     col1, col2 = st.columns(2)
 
     with col1:
-        render_key_insights(user_engagement, interaction_metrics, quality_metrics, usage_patterns)
+        render_key_insights(all_analytics)
 
     with col2:
-        render_active_users(user_engagement)
+        render_active_users(all_analytics['user_engagement'])
 
-    # User Growth and Interaction Metrics
     st.header("User Growth and Interaction")
     col1, col2 = st.columns(2)
 
     with col1:
-        render_user_growth(user_engagement)
+        render_user_growth(all_analytics['user_engagement'])
 
     with col2:
-        render_interaction_metrics(interaction_metrics)
+        render_interaction_metrics(all_analytics['interaction_metrics'])
 
-    # Query Volume Trend
-    render_query_volume_trend(interaction_metrics)
+    render_query_volume_trend(all_analytics['interaction_metrics'])
+    render_user_retention(all_analytics['user_engagement'])
+    render_quality_metrics(all_analytics['quality_metrics'], all_analytics['sentiment_analysis'])
+    render_sentiment_trend(all_analytics['quality_metrics'])
+    render_usage_patterns(all_analytics['usage_patterns'])
+    render_feature_adoption(all_analytics['usage_patterns'])
+    render_feedback_analysis(all_analytics['feedback_analysis'])
 
-    # User Retention Visualization
-    render_user_retention(user_engagement)
-
-    # Quality Metrics
-    render_quality_metrics(quality_metrics, sentiment_analysis)
-
-    # Sentiment Trend
-    render_sentiment_trend(quality_metrics)
-
-    # Usage Patterns
-    render_usage_patterns(usage_patterns)
-
-    # Feature Adoption
-    render_feature_adoption(usage_patterns)
-
-    # Feedback Analysis
-    render_feedback_analysis(feedback_analysis)
-
-def render_key_insights(user_engagement, interaction_metrics, quality_metrics, usage_patterns):
+def render_key_insights(all_analytics):
     st.subheader("Key Insights")
     insights = []
+
+    user_engagement = all_analytics['user_engagement']
+    interaction_metrics = all_analytics['interaction_metrics']
+    quality_metrics = all_analytics['quality_metrics']
+    usage_patterns = all_analytics['usage_patterns']
 
     if user_engagement:
         user_growth = safe_get(user_engagement, 'user_growth')

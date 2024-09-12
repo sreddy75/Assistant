@@ -1,6 +1,8 @@
 import logging
 from fastapi import FastAPI
 from src.backend.db.init_db import init_db
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -31,7 +33,10 @@ app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistan
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"]) 
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"]) 
 
-
+@app.on_event("startup")
+async def startup():
+    FastAPICache.init(InMemoryBackend())
+    
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
