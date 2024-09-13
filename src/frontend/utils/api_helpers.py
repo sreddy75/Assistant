@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 from PIL import Image
 from io import BytesIO
-from utils.api import BACKEND_URL
+from utils.api import BACKEND_URL, get_auth_header
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_org_public_config(org_name):

@@ -1,4 +1,5 @@
 from typing import Optional, List, Union
+from typing import Optional, List, Union
 from hashlib import md5
 
 try:
@@ -26,6 +27,7 @@ from src.backend.kr8.utils.log import logger
 
 
 class PgVector(VectorDb):
+class PgVector(VectorDb):
     def __init__(
         self,
         collection: str,
@@ -42,6 +44,9 @@ class PgVector(VectorDb):
 
         if _engine is None:
             raise ValueError("Must provide either db_url or db_engine")
+
+        # Collection attributes
+        self.collection: str = collection
 
         # Collection attributes
         self.collection: str = collection
@@ -72,6 +77,7 @@ class PgVector(VectorDb):
 
         # Database table for the collection
         self.table: Table = self.get_table()
+
 
     def get_table(self) -> Table:
         return Table(
@@ -129,6 +135,7 @@ class PgVector(VectorDb):
 
         Args:
             name (str): Name to validate
+            name (str): Name to validate
         """
         with self.Session() as sess:
             with sess.begin():
@@ -149,6 +156,8 @@ class PgVector(VectorDb):
                     embedding=document.embedding,
                     usage=document.usage,
                     content_hash=md5(cleaned_content.encode()).hexdigest(),
+                    usage=document.usage,
+                    content_hash=md5(cleaned_content.encode()).hexdigest(),
                 )
                 sess.execute(stmt)
                 counter += 1
@@ -158,13 +167,18 @@ class PgVector(VectorDb):
                 if counter >= batch_size:
                     sess.commit()
                     logger.debug(f"Committed {counter} documents")
+                    logger.debug(f"Committed {counter} documents")
                     counter = 0
 
             # Commit any remaining documents
             if counter > 0:
                 sess.commit()
                 logger.debug(f"Committed {counter} documents")
+                logger.debug(f"Committed {counter} documents")
 
+    def upsert(self, documents: List[Document]) -> None:
+        """
+        Upsert documents into the database.
     def upsert(self, documents: List[Document]) -> None:
         """
         Upsert documents into the database.
@@ -172,7 +186,12 @@ class PgVector(VectorDb):
         Args:
             documents (List[Document]): List of documents to upsert
         """
+        Args:
+            documents (List[Document]): List of documents to upsert
+        """
         with self.Session() as sess:
+            with sess.begin():
+                for document in documents:
             with sess.begin():
                 for document in documents:
                     document.embed(embedder=self.embedder)
@@ -184,10 +203,13 @@ class PgVector(VectorDb):
                         embedding=document.embedding,
                         usage=document.usage,
                         content_hash=md5(cleaned_content.encode()).hexdigest(),
+                        content_hash=md5(cleaned_content.encode()).hexdigest(),
                     )
                     stmt = stmt.on_conflict_do_update(
                         index_elements=["name", "content_hash"],
+                        index_elements=["name", "content_hash"],
                         set_=dict(
+                            meta_data=document.meta_data,
                             meta_data=document.meta_data,
                             content=stmt.excluded.content,
                             embedding=stmt.excluded.embedding,
@@ -195,6 +217,9 @@ class PgVector(VectorDb):
                         ),
                     )
                     sess.execute(stmt)
+                    logger.debug(f"Upserted document: {document.name} ({document.meta_data})")
+
+    def search(self, query: str, limit: int = 5) -> List[Document]:
                     logger.debug(f"Upserted document: {document.name} ({document.meta_data})")
 
     def search(self, query: str, limit: int = 5) -> List[Document]:
@@ -231,10 +256,27 @@ class PgVector(VectorDb):
                     elif isinstance(self.index, HNSW):
                         sess.execute(text(f"SET LOCAL hnsw.ef_search  = {self.index.ef_search}"))
                 neighbors = sess.execute(stmt).fetchall() or []
+        with self.Session() as sess:
+            with sess.begin():
+                if self.index is not None:
+                    if isinstance(self.index, Ivfflat):
+                        sess.execute(text(f"SET LOCAL ivfflat.probes = {self.index.probes}"))
+                    elif isinstance(self.index, HNSW):
+                        sess.execute(text(f"SET LOCAL hnsw.ef_search  = {self.index.ef_search}"))
+                neighbors = sess.execute(stmt).fetchall() or []
 
         # Build search results
         search_results: List[Document] = []
         for neighbor in neighbors:
+            search_results.append(
+                Document(
+                    name=neighbor.name,
+                    meta_data=neighbor.meta_data,
+                    content=neighbor.content,
+                    embedder=self.embedder,
+                    embedding=neighbor.embedding,
+                    usage=neighbor.usage,
+                )
             search_results.append(
                 Document(
                     name=neighbor.name,
@@ -327,6 +369,9 @@ class PgVector(VectorDb):
                         )
                     )
         logger.debug("==== Optimized Vector DB ====")
+
+    def clear(self) -> bool:
+        from sqlalchemy import delete
 
     def clear(self) -> bool:
         from sqlalchemy import delete

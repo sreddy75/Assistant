@@ -14,13 +14,10 @@ except ImportError:
 @lru_cache(maxsize=1000)
 def cached_encode(model: SentenceTransformer, text: str) -> List[float]:
     embedding = model.encode(text, convert_to_tensor=False)
-    # Pad the embedding to 1536 dimensions
-    padded_embedding = np.pad(embedding, (0, 1536 - len(embedding)), 'constant')
-    return padded_embedding.tolist()
-
+    return embedding.tolist()
 class SentenceTransformerEmbedder(Embedder, BaseModel):
     model: str = Field(default="all-mpnet-base-v2")
-    dimensions: int = Field(default=1536)
+    dimensions: int = Field(default=384)
     _sentence_transformer: Optional[SentenceTransformer] = None
 
     def __init__(self, **data):
