@@ -1,6 +1,6 @@
 import streamlit as st
-from components.chat import render_chat
-from utils.auth import is_authenticated
+from components.chat import render_chat, render_project_management_chat
+from utils.auth import is_authenticated, get_user_role
 from utils.helpers import setup_logging
 
 logger = setup_logging()
@@ -11,7 +11,18 @@ def render_chat_page():
         return    
 
     with st.container():
-        render_chat(user_id=st.session_state.get('user_id'), user_role=st.session_state.get('role'))
+        user_role = get_user_role()
+    
+        if user_role == "manager":
+            tab1, tab2 = st.tabs(["General Chat", "Project Management"])
+            
+            with tab1:
+                render_chat(user_id=st.session_state.get('user_id'), user_role=user_role)
+            
+            with tab2:
+                render_project_management_chat(user_id=st.session_state.get('user_id'), user_role=user_role)
+        else:
+            render_chat(user_id=st.session_state.get('user_id'), user_role=user_role)
 
 
 if __name__ == "__main__":

@@ -40,3 +40,5 @@ class OrganizationResponse(OrganizationInDB):
     chat_user_icon_path: Optional[str]
     config_toml_path: Optional[str]
     main_image_path: Optional[str]
+    azure_devops_integrated: bool
+    azure_devops_org_url: Optional[str]

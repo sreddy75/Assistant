@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from src.backend.db.session import get_db
-from src.backend.models.models import UserEvent
+from src.backend.schemas.user import UserEvent
 from src.backend.services.analytics_service import AnalyticsService
 from fastapi_cache import FastAPICache
 from fastapi_cache.decorator import cache

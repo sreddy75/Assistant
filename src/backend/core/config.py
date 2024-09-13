@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     FRONTEND_URL: Optional[str] = None
     TOKENIZERS_PARALLELISM: Optional[bool] = None
     REDIS_URL: str = 'redis://localhost:6379/0'
+    ENABLE_AZURE_DEVOPS: bool = False 
+    AZURE_DEVOPS_SYNC_INTERVAL: int = 3600
+    AZURE_DEVOPS_ORGANIZATION_URL:  Optional[str] = None
+    AZURE_DEVOPS_PERSONAL_ACCESS_TOKEN:  Optional[str] = None
 
     class Config:
         env_file = ".env"

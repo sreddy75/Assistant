@@ -8,6 +8,8 @@ from PIL import Image
 from io import BytesIO
 from utils.api import BACKEND_URL
 from config.settings import get_client_name
+from utils.api_helpers import send_chat_message, send_project_management_query
+
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +247,40 @@ def render_chat(user_id, user_role):
         st.session_state.feedback_submitted = {}
         st.session_state.feedback_timestamps = {}
         st.rerun()
+ 
+def render_project_management_chat(user_id, user_role):
+    st.header("Project Management Chat")
+    
+    projects = get_user_projects(user_id)
+    selected_project = st.selectbox("Select Project", projects)
+    
+    teams = get_project_teams(selected_project)
+    selected_team = st.selectbox("Select Team", teams)
+    
+    if "pm_messages" not in st.session_state:
+        st.session_state.pm_messages = []
+
+    for message in st.session_state.pm_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if prompt := st.chat_input("Ask about your project"):
+        st.session_state.pm_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+            for response in send_project_management_query(prompt, selected_project, selected_team):
+                full_response += response
+                message_placeholder.markdown(full_response + "▌")
+            message_placeholder.markdown(full_response)
+        st.session_state.pm_messages.append({"role": "assistant", "content": full_response})
+
+    if st.button("Clear Conversation"):
+        st.session_state.pm_messages = []
+        st.rerun()        
                         
 def submit_feedback(user_id, query, response, is_upvote, usefulness_rating, feedback_text):
     response = requests.post(

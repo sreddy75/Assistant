@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 class UserResponse(BaseModel):
     id: int
@@ -45,3 +45,28 @@ class UserInDB(BaseModel):
 
 class EmailSchema(BaseModel):
     email: EmailStr
+
+# User Analytics related schemas
+class UserAnalyticsBase(BaseModel):
+    event_type: str
+    event_data: Dict[str, Any]
+    duration: Optional[float] = None
+
+class UserAnalyticsCreate(UserAnalyticsBase):
+    user_id: int
+
+class UserAnalyticsInDB(UserAnalyticsBase):
+    id: int
+    user_id: int
+    timestamp: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True    
+
+class UserEvent(BaseModel):
+    user_id: int    
+    event_type: str
+    event_data: dict
+    duration: Optional[float] = None        

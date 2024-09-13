@@ -17,7 +17,8 @@ logger.debug("init_db() completed")
 # Now import the rest of your modules
 from src.backend.core.config import settings
 from src.backend.api.v1 import (auth, users, organizations, feedback, 
-                                knowledge_base, assistant, chat, analytics)
+                                knowledge_base, assistant, chat, analytics,
+                                project_management)
 
 logger.debug(f"DATABASE_URL: {settings.DB_URL}")
 
@@ -32,6 +33,7 @@ app.include_router(knowledge_base.router, prefix="/api/v1/knowledge-base", tags=
 app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"]) 
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"]) 
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"]) 
+app.include_router(project_management.router, prefix="/api/v1/project-management", tags=["Project Management"])
 
 @app.on_event("startup")
 async def startup():

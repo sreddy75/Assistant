@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 import jwt
 
 from src.backend.db.session import get_db
-from src.backend.models.models import User
+from src.backend.models.models import User, AzureDevOpsConfig
 from src.backend.core.config import settings
 
 # to get a string like this run:
@@ -68,4 +68,17 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
 async def get_current_active_user(current_user: User = Depends(get_current_user)):
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+async def get_current_user_with_devops_permissions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != "manager":
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    devops_config = db.query(AzureDevOpsConfig).filter(AzureDevOpsConfig.organization_id == current_user.organization_id).first()
+    if not devops_config:
+        raise HTTPException(status_code=403, detail="Azure DevOps not configured for this organization")
+    
     return current_user
