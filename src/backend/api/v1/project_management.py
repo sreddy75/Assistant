@@ -1,23 +1,20 @@
 # src/backend/api/project_management.py
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from src.backend.db.session import get_db
 from src.backend.helpers.auth import get_current_user_with_devops_permissions
 from src.backend.kr8.assistant.assistant_manager import get_assistant_manager, AssistantManager
 from src.backend.schemas.project_management import ProjectManagementQuery, ProjectResponse, TeamResponse
-from src.backend.models.models import User
+from src.backend.models.models import Organization, User
 from src.backend.services.azure_devops_service import AzureDevOpsService
+from src.backend.config.azure_devops_config import is_azure_devops_configured
 from typing import List
 
 router = APIRouter()
 
-def get_azure_devops_service(
-    current_user: User = Depends(get_current_user_with_devops_permissions),
-    assistant_manager: AssistantManager = Depends(get_assistant_manager)
-) -> AzureDevOpsService:
-    service = assistant_manager._get_azure_devops_service(current_user.organization_id)
-    if not service:
-        raise HTTPException(status_code=404, detail="Azure DevOps service not configured for this organization")
-    return service
+logger = logging.getLogger(__name__)
 
 @router.post("/chat")
 async def project_management_chat(
@@ -30,22 +27,27 @@ async def project_management_chat(
         raise HTTPException(status_code=404, detail="Project Management Assistant not found")
 
     response = assistant.run(query.query, project=query.project, team=query.team)
+    if isinstance(response, list):
+        response = "".join(response)
     return {"response": response}
 
-@router.get("/projects", response_model=List[ProjectResponse])
-async def get_user_projects(
-    current_user: User = Depends(get_current_user_with_devops_permissions),
-    azure_devops_service: AzureDevOpsService = Depends(get_azure_devops_service)
-):
+def get_azure_devops_service(org_id: int) -> AzureDevOpsService:
+    if not is_azure_devops_configured():
+        raise HTTPException(status_code=500, detail="Azure DevOps is not configured for this organization")
+    
+    try:
+        return AzureDevOpsService(org_id)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/projects")
+async def get_user_projects(org_id: int):
+    azure_devops_service = get_azure_devops_service(org_id)
     projects = azure_devops_service.get_projects()
-    return [ProjectResponse(id=p.id, name=p.name) for p in projects]
+    return [{"id": p.id, "name": p.name} for p in projects]
 
-@router.get("/teams", response_model=List[TeamResponse])
-async def get_project_teams(
-    project_id: str,
-    current_user: User = Depends(get_current_user_with_devops_permissions),
-    azure_devops_service: AzureDevOpsService = Depends(get_azure_devops_service)
-):
+@router.get("/teams")
+async def get_project_teams(org_id: int, project_id: str):
+    azure_devops_service = get_azure_devops_service(org_id)
     teams = azure_devops_service.get_teams(project_id)
-    return [TeamResponse(id=t.id, name=t.name) for t in teams]
-
+    return [{"id": t.id, "name": t.name} for t in teams]

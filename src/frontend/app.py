@@ -1,18 +1,45 @@
 import streamlit as st
+import toml
 from utils.auth import is_authenticated, login_form, logout
-from styles.custom_theme import apply_custom_theme, maximize_content_area, apply_expander_style
+from styles.custom_theme import load_theme_config, apply_custom_theme, maximize_content_area, apply_expander_style
 from views.home_page import render_home_page
 from views.chat_page import render_chat_page
 from views.knowledge_base_page import render_knowledge_base_page
 from views.analytics_page import render_analytics_page
 from views.settings_page import render_settings_page
 from components.sidebar_manager import render_sidebar
-from utils.helpers import setup_logging
+from utils.helpers import setup_logging, get_client_name
+from utils.api import BACKEND_URL
 import datetime
+import requests
 
+def load_org_config():
+    """
+    Load the organization configuration from the server.
+    Returns the org config as a dictionary if successful, an empty dict otherwise.
+    """
+    client_name = get_client_name()
+    try:
+        response = requests.get(f"{BACKEND_URL}/api/v1/organizations/public-config/{client_name}")
+        response.raise_for_status()
+        # Parse the TOML content
+        config = toml.loads(response.text)
+        return config
+    except requests.RequestException as e:
+        st.warning(f"Failed to load organization configuration: {str(e)}")
+        return {}
+    except toml.TomlDecodeError as e:
+        st.warning(f"Failed to parse organization configuration: {str(e)}")
+        return {}
+    
 def main():
     setup_logging()
-    apply_custom_theme()
+    
+    # Load theme configuration
+    theme_config = load_theme_config()
+    
+    # Apply theme (will use default values if theme_config is None)
+    apply_custom_theme(theme_config)
     maximize_content_area()
     apply_expander_style()
     
@@ -21,8 +48,10 @@ def main():
     if not is_authenticated():
         login_form()
     else:
-        render_main_app()
-
+        # Load organization config after authentication
+        org_config = load_org_config()
+        render_main_app(org_config)
+        
 def render_layout():
     current_year = datetime.datetime.now().year
     layout = f"""
@@ -76,7 +105,7 @@ def render_footer():
     """
     st.markdown(footer, unsafe_allow_html=True)
 
-def render_main_app():
+def render_main_app(org_config):
     # Initialize session state for navigation
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "Dashboard"
@@ -88,7 +117,7 @@ def render_main_app():
     
     with tabs[0]:
         st.session_state.current_page = "Dashboard"
-        render_home_page()
+        render_home_page(org_config)
     
     with tabs[1]:
         st.session_state.current_page = "Chat"
@@ -116,7 +145,7 @@ def render_main_app():
     if st.sidebar.button("Logout", key="logout_button"):        
         logout()
         st.rerun()
-
+        
 if __name__ == "__main__":
     main()
 

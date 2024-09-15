@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Union
+from typing import Any, Optional, List, Dict, Union
 from fastapi import UploadFile, File
 
 class OrganizationBase(BaseModel):
@@ -28,17 +28,30 @@ class OrganizationWithFiles(OrganizationBase):
     config_toml: Optional[UploadFile] = File(None)
     main_image: Optional[UploadFile] = File(None)
 
-class OrganizationResponse(OrganizationInDB):
+class OrganizationResponse(BaseModel):
     id: int
     name: str
-    roles: List[str]
-    assistants: Dict[str, List[str]]
+    roles: Dict[str, Any]
+    assistants: Dict[str, Any] 
     feature_flags: Dict[str, bool]
     config_id: int
     instructions_path: Optional[str]
     chat_system_icon_path: Optional[str]
     chat_user_icon_path: Optional[str]
-    config_toml_path: Optional[str]
+    config_toml: Optional[str]
     main_image_path: Optional[str]
-    azure_devops_integrated: bool
+    azure_devops_url: Optional[str]
+    azure_devops_integrated: bool = Field(default=False)
     azure_devops_org_url: Optional[str]
+
+    class Config:
+        from_attributes = True    
+class ThemeConfig(BaseModel):
+    primaryColor: str
+    backgroundColor: str
+    secondaryBackgroundColor: str
+    textColor: str
+    font: str
+
+class ConfigResponse(BaseModel):
+    theme: ThemeConfig    

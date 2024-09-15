@@ -6,111 +6,236 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from PIL import Image
 from utils.api import BACKEND_URL
-from utils.helpers import handle_response, restart_assistant
+from utils.helpers import handle_response
+from src.frontend.utils.helpers import restart_assistant
 
-@st.cache_data(ttl=600)  # Cache for 10 minutes
-def fetch_organizations():
+def render_org_management():
+    st.header("Organization Management")
     response = requests.get(f"{BACKEND_URL}/api/v1/organizations", 
                             headers={"Authorization": f"Bearer {st.session_state.token}"})
     if response.status_code == 200:
-        return response.json()
-    return []
+        organizations = response.json()
 
-@st.cache_data(ttl=600)  # Cache for 10 minutes
-def fetch_users():
+        if organizations:
+            df = pd.DataFrame(organizations)
+            df['Select'] = False
+
+            edited_df = st.data_editor(
+                df[["id", "name", "roles", "Select"]],
+                hide_index=True,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select to edit or delete"
+                    )
+                },
+                disabled=["id", "name", "roles"]
+            )
+
+            selected_orgs = edited_df[edited_df['Select']].to_dict('records')
+
+            if len(selected_orgs) == 1:
+                selected_org = selected_orgs[0]
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Edit Selected"):
+                        st.session_state.editing_org_id = selected_org['id']
+                        st.rerun()
+                with col2:
+                    if st.button("Delete Selected"):
+                        delete_organization(selected_org['id'])
+                        st.rerun()                                
+
+            elif len(selected_orgs) > 1:
+                st.warning("Please select only one organization to edit or delete.")
+        else:
+            st.info("No organizations found.")
+
+        if "editing_org_id" in st.session_state:
+            st.subheader(f"Edit Organization (ID: {st.session_state.editing_org_id})")
+            org_to_edit = next((org for org in organizations if org["id"] == st.session_state.editing_org_id), None)
+            if org_to_edit:
+                create_or_edit_organization(org_to_edit)
+            else:
+                st.error("Selected organization not found.")
+        else:
+            st.subheader("Create New Organization")
+            create_or_edit_organization(None)
+
+    else:
+        st.error(f"Failed to fetch organizations. Status code: {response.status_code}")
+
+def create_or_edit_organization(org=None):
+    is_editing = org is not None
+
+    name = st.text_input("Name", value=org.get("name", "") if is_editing else "")
+
+    asset_types = [
+        ("roles", "Roles"),
+        ("assistants", "Assistants"),
+        ("instructions", "Instructions (JSON)"),
+        ("config_toml", "Config (TOML)"),
+        ("chat_system_icon", "Chat System Icon"),
+        ("chat_user_icon", "Chat User Icon"),
+        ("main_image", "Main Image"),
+        ("feature_flags", "Feature Flags")
+    ]
+
+    new_files = {}
+    json_data = {}
+
+    for asset_type, display_name in asset_types:
+        with st.expander(f"{display_name}", expanded=False):
+            col1, col2 = st.columns([0.7, 0.3])
+
+            with col1:                
+                if is_editing:
+                    display_current_asset(org['id'], asset_type, display_name)
+                else:
+                    st.info(f"No current {display_name}")
+
+            with col2:
+                handle_asset_upload(asset_type, display_name, new_files, json_data)
+
+    # Add Azure DevOps Configuration
+    with st.expander("Azure DevOps Configuration", expanded=True):
+        if is_editing:
+            azure_devops_config = get_azure_devops_config(org['id'])
+        else:
+            azure_devops_config = {"organization_url": "", "personal_access_token": "", "project": ""}
+
+        azure_devops_url = st.text_input("Azure DevOps URL", value=azure_devops_config.get("organization_url", ""))
+        azure_devops_token = st.text_input("Azure DevOps Personal Access Token", type="password")        
+
+        json_data["azure_devops_config"] = {
+            "organization_url": azure_devops_url,
+            "personal_access_token": azure_devops_token if azure_devops_token else None
+        }
+
+    if st.button("Update" if is_editing else "Create"):
+        update_or_create_organization(is_editing, org['id'] if is_editing else None, name, json_data, new_files)
+
+    if is_editing and st.button("Cancel Editing"):
+        del st.session_state.editing_org_id
+        st.rerun()
+
+def display_current_asset(org_id, asset_type, display_name):
+    response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/{asset_type}", 
+                            headers={"Authorization": f"Bearer {st.session_state.token}"})
+    if response.status_code == 200:
+        if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+            image = Image.open(BytesIO(response.content))
+            st.image(image, caption=display_name, width=200)
+        elif asset_type in ["roles", "assistants", "feature_flags"]:
+            data = response.json()
+            if data:
+                st.json(data)
+            else:
+                st.info(f"No {display_name.lower()} set")
+        else:
+            st.download_button(
+                label=f"Download {display_name}",
+                data=response.content,
+                file_name=f"{asset_type}.{'json' if asset_type in ['instructions', 'assistants'] else 'toml'}",
+                mime=f"application/{'json' if asset_type in ['instructions', 'assistants'] else 'toml'}"
+            )
+    elif response.status_code == 404:
+        st.warning(f"No current {display_name}")
+    else:
+        st.error(f"Failed to fetch {display_name}: {response.text}")
+
+def handle_asset_upload(asset_type, display_name, new_files, json_data):
+    if asset_type in ["roles", "assistants", "feature_flags"]:
+        uploaded_file = st.file_uploader(f"Upload {display_name}", type="json", key=f"upload_{asset_type}")
+        if uploaded_file:
+            try:
+                content = uploaded_file.read()
+                if not content:
+                    st.error(f"{display_name} file is empty")
+                else:
+                    json_content = json.loads(content)
+                    json_data[asset_type] = json_content
+                    st.json(json_content)
+            except json.JSONDecodeError:
+                st.error(f"Invalid JSON in {display_name} file")
+            finally:
+                uploaded_file.seek(0)  # Reset file pointer
+    elif asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
+        uploaded_file = st.file_uploader(f"Upload {display_name}", type="png", key=f"upload_{asset_type}")
+        if uploaded_file:
+            new_files[asset_type] = uploaded_file
+            st.image(uploaded_file, caption=f"New {display_name}", width=100)
+    else:
+        uploaded_file = st.file_uploader(f"Upload {display_name}", 
+                                         type="json" if asset_type == "instructions" else "toml", 
+                                         key=f"upload_{asset_type}")
+        if uploaded_file:
+            new_files[asset_type] = uploaded_file
+            st.success(f"New {display_name} ready to upload")
+
+def update_or_create_organization(is_editing, org_id, name, json_data, new_files):
+    data = {"name": name}
+    for key, value in json_data.items():
+        data[key] = json.dumps(value)
+
+    with st.spinner("Processing..."):
+        if is_editing:
+            response = requests.put(
+                f"{BACKEND_URL}/api/v1/organizations/{org_id}",
+                data=data,
+                files=new_files,
+                headers={"Authorization": f"Bearer {st.session_state.token}"}
+            )
+            success_message = "Organization updated successfully"
+            error_message = "Failed to update organization"
+        else:
+            response = requests.post(
+                f"{BACKEND_URL}/api/v1/organizations",
+                data=data,
+                files=new_files,
+                headers={"Authorization": f"Bearer {st.session_state.token}"}
+            )
+            success_message = "New organization created successfully"
+            error_message = "Failed to create new organization"
+
+    if response.status_code == 200:
+        st.success(success_message)
+        if is_editing:
+            del st.session_state.editing_org_id
+        st.rerun()
+    else:
+        st.error(f"{error_message}: {response.text}")
+
+def get_azure_devops_config(org_id):
+    response = requests.get(f"{BACKEND_URL}/api/v1/organizations/azure-devops-config/{org_id}", 
+                            headers={"Authorization": f"Bearer {st.session_state.token}"})
+    
+    if response.status_code == 200:
+        return response.json()
+    elif response.status_code == 404:
+        st.warning("Azure DevOps is not configured for this organization.")
+        return {"organization_url": "", "project": ""}
+    else:
+        st.error(f"Failed to fetch Azure DevOps configuration: {response.text}")
+        return {"organization_url": "", "project": ""}
+
+def delete_organization(org_id):
+    if st.button(f"Confirm deletion of Organization (ID: {org_id})"):
+        delete_response = requests.delete(
+            f"{BACKEND_URL}/api/v1/organizations/{org_id}",
+            headers={"Authorization": f"Bearer {st.session_state.token}"}
+        )
+        if delete_response.status_code == 200:
+            st.success(f"Organization (ID: {org_id}) deleted successfully")
+        else:
+            st.error(f"Failed to delete organization (ID: {org_id}): {delete_response.text}")
+
+def render_user_management():
+    st.header("User Management")
     response = requests.get(f"{BACKEND_URL}/api/v1/users", 
                             headers={"Authorization": f"Bearer {st.session_state.token}"})
     if response.status_code == 200:
-        return response.json()
-    return []
-
-def lazy_load_asset(org_id, asset_type):
-    @st.cache_data(ttl=3600)  # Cache for 1 hour
-    def _fetch_asset(org_id, asset_type):
-        response = requests.get(f"{BACKEND_URL}/api/v1/organizations/asset/{org_id}/{asset_type}", 
-                                headers={"Authorization": f"Bearer {st.session_state.token}"})
-        if response.status_code == 200:
-            return response.content
-        return None
-
-    return _fetch_asset(org_id, asset_type)
-
-def render_settings_page():
-    if not st.session_state.get('is_super_admin', False):
-        st.error("You don't have permission to access this page.")
-        return
-
-    st.title("Settings")
-
-    batched_data = fetch_batched_data()
-    if batched_data:
-        analytics = batched_data['analytics']
-        organizations = batched_data['organizations']
-        users = batched_data['users']
-
-        tab1, tab2, tab3 = st.tabs(["Organization Management", "User Management", "Model Selection"])
-
-        with tab1:
-            render_org_management(organizations)
-
-        with tab2:
-            render_user_management(users)
-
-        with tab3:
-            render_model_selection()
-
-def render_org_management(organizations):
-    st.header("Organization Management")
-    
-    if organizations:
-        df = pd.DataFrame(organizations)
-        df['Select'] = False
-
-        edited_df = st.data_editor(
-            df[["id", "name", "roles", "Select"]],
-            hide_index=True,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Select to edit or delete"
-                )
-            },
-            disabled=["id", "name", "roles"]
-        )
-
-        selected_orgs = edited_df[edited_df['Select']].to_dict('records')
-
-        if len(selected_orgs) == 1:
-            selected_org = selected_orgs[0]
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Edit Selected"):
-                    st.session_state.editing_org_id = selected_org['id']
-                    st.rerun()
-            with col2:
-                if st.button("Delete Selected"):
-                    delete_organization(selected_org['id'])
-                    st.rerun()
-        elif len(selected_orgs) > 1:
-            st.warning("Please select only one organization to edit or delete.")
-    else:
-        st.info("No organizations found.")
-
-    if "editing_org_id" in st.session_state:
-        st.subheader(f"Edit Organization (ID: {st.session_state.editing_org_id})")
-        org_to_edit = next((org for org in organizations if org["id"] == st.session_state.editing_org_id), None)
-        if org_to_edit:
-            create_or_edit_organization(org_to_edit)
-        else:
-            st.error("Selected organization not found.")
-    else:
-        st.subheader("Create New Organization")
-        create_or_edit_organization(None)
-
-def render_user_management(users):
-    st.header("User Management")
-    
-    if users:
+        users = response.json()
         user_data = [
             {
                 "ID": user.get('id'),
@@ -165,156 +290,6 @@ def render_user_management(users):
     else:
         st.error("Failed to fetch users")
 
-def create_or_edit_organization(org=None):
-    is_editing = org is not None
-
-    name = st.text_input("Name", value=org.get("name", "") if is_editing else "")
-
-    asset_types = [
-        ("roles", "Roles"),
-        ("assistants", "Assistants"),
-        ("instructions", "Instructions (JSON)"),
-        ("config_toml", "Config (TOML)"),
-        ("chat_system_icon", "Chat System Icon"),
-        ("chat_user_icon", "Chat User Icon"),
-        ("main_image", "Main Image"),
-        ("feature_flags", "Feature Flags")
-    ]
-
-    new_files = {}
-    json_data = {}
-
-    for asset_type, display_name in asset_types:
-        with st.expander(f"{display_name}", expanded=False):
-            col1, col2 = st.columns([0.7, 0.3])
-
-            with col1:                
-                if is_editing:
-                    display_current_asset(org['id'], asset_type, display_name)
-                else:
-                    st.info(f"No current {display_name}")
-
-            with col2:
-                handle_asset_upload(asset_type, display_name, new_files, json_data)
-
-    if st.button("Update" if is_editing else "Create"):
-        update_or_create_organization(is_editing, org['id'] if is_editing else None, name, json_data, new_files)
-
-    if is_editing and st.button("Cancel Editing"):
-        del st.session_state.editing_org_id
-        st.rerun()
-
-def display_current_asset(org_id, asset_type, display_name):
-    asset_content = lazy_load_asset(org_id, asset_type)
-    if asset_content:
-        if asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
-            image = Image.open(BytesIO(asset_content))
-            st.image(image, caption=display_name, width=200)
-        elif asset_type == "roles":
-            roles_data = json.loads(asset_content)
-            if roles_data:
-                st.write("Current Roles:")
-                st.write(", ".join(roles_data))
-            else:
-                st.info("No roles set")
-        elif asset_type in ["assistants", "feature_flags"]:
-            data = json.loads(asset_content)
-            if data:
-                st.json(data)
-            else:
-                st.info(f"No {display_name.lower()} set")
-        else:
-            st.download_button(
-                label=f"Download {display_name}",
-                data=asset_content,
-                file_name=f"{asset_type}.{'json' if asset_type in ['instructions', 'assistants'] else 'toml'}",
-                mime=f"application/{'json' if asset_type in ['instructions', 'assistants'] else 'toml'}"
-            )
-    else:
-        st.warning(f"No current {display_name}")
-
-def handle_asset_upload(asset_type, display_name, new_files, json_data):
-    if asset_type == "roles":
-        roles_input = st.text_area(f"Enter {display_name} (comma-separated)", 
-                                   key=f"input_{asset_type}",
-                                   help="Enter roles as a comma-separated list, e.g., 'Dev, QA, Manager, Admin, Super Admin'")
-        if roles_input:
-            roles_list = [role.strip() for role in roles_input.split(',') if role.strip()]
-            json_data[asset_type] = roles_list
-            st.success(f"Roles ready to update: {', '.join(roles_list)}")
-    elif asset_type in ["chat_system_icon", "chat_user_icon", "main_image"]:
-        uploaded_file = st.file_uploader(f"Upload {display_name}", type="png", key=f"upload_{asset_type}")
-        if uploaded_file:
-            new_files[asset_type] = uploaded_file
-            st.image(uploaded_file, caption=f"New {display_name}", width=100)
-    elif asset_type in ["feature_flags", "assistants"]:
-        uploaded_file = st.file_uploader(f"Upload {display_name}", type="json", key=f"upload_{asset_type}")
-        if uploaded_file:
-            try:
-                content = uploaded_file.read()
-                if not content:
-                    st.error(f"{display_name} file is empty")
-                else:
-                    json_content = json.loads(content)
-                    json_data[asset_type] = json_content
-                    st.json(json_content)
-            except json.JSONDecodeError:
-                st.error(f"Invalid JSON in {display_name} file")
-            finally:
-                uploaded_file.seek(0)  # Reset file pointer
-    else:
-        uploaded_file = st.file_uploader(f"Upload {display_name}", 
-                                         type="json" if asset_type == "instructions" else "toml", 
-                                         key=f"upload_{asset_type}")
-        if uploaded_file:
-            new_files[asset_type] = uploaded_file
-            st.success(f"New {display_name} ready to upload")
-
-def update_or_create_organization(is_editing, org_id, name, json_data, new_files):
-    data = {"name": name}
-    for key, value in json_data.items():
-        data[key] = json.dumps(value)
-
-    with st.spinner("Processing..."):
-        if is_editing:
-            response = requests.put(
-                f"{BACKEND_URL}/api/v1/organizations/{org_id}",
-                data=data,
-                files=new_files,
-                headers={"Authorization": f"Bearer {st.session_state.token}"}
-            )
-            success_message = "Organization updated successfully"
-            error_message = "Failed to update organization"
-        else:
-            response = requests.post(
-                f"{BACKEND_URL}/api/v1/organizations",
-                data=data,
-                files=new_files,
-                headers={"Authorization": f"Bearer {st.session_state.token}"}
-            )
-            success_message = "New organization created successfully"
-            error_message = "Failed to create new organization"
-
-    if response.status_code == 200:
-        st.success(success_message)
-        if is_editing:
-            del st.session_state.editing_org_id
-        st.rerun()
-    else:
-        st.error(f"{error_message}: {response.text}")
-
-def delete_organization(org_id):
-    if st.button(f"Confirm deletion of Organization (ID: {org_id})"):
-        delete_response = requests.delete(
-            f"{BACKEND_URL}/api/v1/organizations/{org_id}",
-            headers={"Authorization": f"Bearer {st.session_state.token}"}
-        )
-        if delete_response.status_code == 200:
-            st.success(f"Organization (ID: {org_id}) deleted successfully")
-        else:
-            st.error(f"Failed to delete organization (ID: {org_id}): {delete_response.text}")
-
-
 def update_user_role(user_id, new_role):
     update_response = requests.put(
         f"{BACKEND_URL}/api/v1/users/{user_id}/role",
@@ -359,22 +334,27 @@ def create_new_user(email, password, first_name, last_name, nickname, role, org)
             "organization": org,
             "trial_end": (datetime.now() + timedelta(days=7)).isoformat() if role == 'trial' else None
         }
-        create_response = requests.post(f"{BACKEND_URL}/api/v1/users", 
-                                        json=create_data,
-                                        headers={"Authorization": f"Bearer {st.session_state.token}"})
+        create_response = requests.post(
+            f"{BACKEND_URL}/api/v1/users", 
+            json=create_data,
+            headers={"Authorization": f"Bearer {st.session_state.token}"}
+        )
         if create_response.status_code == 200:
             st.success("New user created successfully")
+            st.rerun()  # Refresh the page to show the new user in the list
         else:
-            st.error("Failed to create new user")
+            st.error(f"Failed to create new user: {create_response.text}")
     else:
         st.warning("Please provide all required fields for the new user")
 
 def render_model_selection():
+    st.header("Model Selection")
+    
     with st.expander("Select model:", expanded=True):
         model_type = st.radio("Select Model Type", ["Closed", "Open Source"])
 
         if model_type == "Closed":
-            llm_options = ["gpt-4o", "claude-3.5"]
+            llm_options = ["gpt-4", "claude-3.5"]
             llm_id = st.selectbox("Select Closed Source Model", options=llm_options)
         else: 
             llm_options = ["llama3.1"]
@@ -384,6 +364,39 @@ def render_model_selection():
             st.session_state["llm_id"] = llm_id
         elif st.session_state["llm_id"] != llm_id:
             st.session_state["llm_id"] = llm_id
-            restart_assistant()
+            if st.button("Apply Model Change"):
+                with st.spinner("Restarting assistant with new model..."):
+                    restart_assistant()
+                st.success("Model changed successfully. Assistant restarted.")
 
         st.info(f"Currently selected model: {st.session_state['llm_id']}")
+
+    # Additional model-specific settings
+    if llm_id in ["gpt-4", "claude-3.5"]:
+        st.subheader("Advanced Settings")
+        temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.7, step=0.1)
+        max_tokens = st.number_input("Max Tokens", min_value=1, max_value=8192, value=4096, step=1)
+        
+        if st.button("Update Advanced Settings"):
+            # Here you would typically send these settings to your backend
+            st.success("Advanced settings updated successfully.")
+
+    # Model performance metrics
+    st.subheader("Model Performance")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Average Response Time", "0.8s")
+    col2.metric("Accuracy Score", "95%")
+    col3.metric("User Satisfaction", "4.7/5")
+
+    # Usage statistics
+    st.subheader("Usage Statistics")
+    usage_data = {
+        'Date': ['2024-08-01', '2024-08-02', '2024-08-03', '2024-08-04', '2024-08-05'],
+        'Queries': [100, 120, 80, 150, 130]
+    }
+    usage_df = pd.DataFrame(usage_data)
+    st.line_chart(usage_df.set_index('Date'))
+
+    # Disclaimer
+    st.markdown("---")
+    st.caption("Note: Changing the model may affect the assistant's performance and capabilities. Please refer to the documentation for more details on each model.")

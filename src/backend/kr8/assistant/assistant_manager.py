@@ -36,7 +36,7 @@ class AssistantManager:
         if user_id not in self.assistants:
             org_config = load_org_config(org_id)
             
-            if user_role == "manager" and org_config.get("feature_flags", {}).get("enable_project_management_assistant", False):
+            if user_role == "super admin" and org_config.get("feature_flags", {}).get("enable_project_management_assistant", False):
                 azure_devops_service = self._get_azure_devops_service(org_id)
                 if azure_devops_service:
                     self.assistants[user_id] = self._create_project_management_assistant(

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import logging
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -10,6 +11,8 @@ import jwt
 from src.backend.db.session import get_db
 from src.backend.models.models import User, AzureDevOpsConfig
 from src.backend.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # to get a string like this run:
 # openssl rand -hex 32
@@ -74,11 +77,20 @@ async def get_current_user_with_devops_permissions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if current_user.role != "manager":
+    logger.info(f"Checking DevOps permissions for user: {current_user.id}, role: {current_user.role}, is_admin: {current_user.is_admin}")
+    
+    # Check if the user is a manager or an admin
+    if current_user.role != "manager" and not current_user.is_admin:
+        logger.warning(f"User {current_user.id} does not have sufficient permissions. Role: {current_user.role}, Is Admin: {current_user.is_admin}")
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
     devops_config = db.query(AzureDevOpsConfig).filter(AzureDevOpsConfig.organization_id == current_user.organization_id).first()
     if not devops_config:
-        raise HTTPException(status_code=403, detail="Azure DevOps not configured for this organization")
+        logger.warning(f"Azure DevOps not configured for organization: {current_user.organization_id}")
+        # Instead of raising an exception, we'll return the user with a flag indicating no DevOps config
+        current_user.has_devops_config = False
+        return current_user
     
+    logger.info(f"User {current_user.id} has sufficient permissions for DevOps access")
+    current_user.has_devops_config = True
     return current_user

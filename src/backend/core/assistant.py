@@ -40,6 +40,7 @@ from src.backend.kr8.assistant.team.code_assistant import CodeAssistant
 from src.backend.kr8.assistant.team.product_owner import EnhancedProductOwner
 from src.backend.kr8.assistant.team.business_analyst import EnhancedBusinessAnalyst
 from src.backend.kr8.assistant.team.call_center_assistant import CallCenterAssistant
+from src.backend.kr8.assistant.team.project_management_assistant import ProjectManagementAssistant
 from src.backend.models.models import Organization
 
 
@@ -204,6 +205,7 @@ def get_llm_os(
         "Product Owner": EnhancedProductOwner,
         "Web Search": ExaTools,
         "Code Assistant": CodeAssistant,
+        "PM Assistant": ProjectManagementAssistant
     }
 
     for assistant in available_assistants:

@@ -19,6 +19,17 @@ class Organization(Base):
     config = relationship("OrganizationConfig", back_populates="organization")
     azure_devops_config = relationship("AzureDevOpsConfig", back_populates="organization", uselist=False)
 
+class AzureDevOpsConfig(Base):
+    __tablename__ = "azure_devops_configs"
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), unique=True)
+    organization_url = Column(String, nullable=False)
+    personal_access_token = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    organization = relationship("Organization", back_populates="azure_devops_config")
+
 class OrganizationConfig(Base):
     __tablename__ = "organization_configs"
     id = Column(Integer, primary_key=True, index=True)
@@ -28,7 +39,7 @@ class OrganizationConfig(Base):
     instructions = Column(String)  # File path to instructions.json
     chat_system_icon = Column(String)  # File path to chat_system_icon.png
     chat_user_icon = Column(String)  # File path to chat_user_icon.png
-    config_toml = Column(String)  # File path to config.toml
+    config_toml = Column(Text)  # TOML content as text
     main_image = Column(String)  # File path to main_image.png
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -86,17 +97,6 @@ class UserAnalytics(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="analytics")
-
-class AzureDevOpsConfig(Base):
-    __tablename__ = "azure_devops_configs"
-    id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), unique=True)
-    organization_url = Column(String, nullable=False)
-    personal_access_token = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    organization = relationship("Organization", back_populates="azure_devops_config")
 
 class DevOpsProject(Base):
     __tablename__ = "devops_projects"

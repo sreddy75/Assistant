@@ -8,6 +8,7 @@ from io import BytesIO
 import toml
 from utils.api import BACKEND_URL, get_auth_header
 from utils.helpers import get_client_name, validate_email, validate_password
+from utils.api_helpers import get_user_info
 
 client_name = get_client_name()
 
@@ -32,6 +33,12 @@ def get_org_public_config(org_name):
     except requests.RequestException as e:
         st.warning(f"Failed to fetch organization config: {str(e)}")
         return None
+    
+def get_user_role():
+    if is_authenticated():
+        user_info = get_user_info(st.session_state.user_id)
+        return user_info.get("role", "user")
+    return "user"
     
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_main_image(org_name):
@@ -183,18 +190,13 @@ def logout():
         st.rerun()
 
 def login_form():
+    org_config = get_org_public_config(client_name)
+    main_image = get_main_image(client_name)    
+            
     col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        org_config = get_org_public_config(client_name)
-        main_image = get_main_image(client_name)
-
+    with col2:                
         if main_image:            
-            st.image(main_image, width=200)
-        elif org_config and 'name' in org_config:
-            st.title(org_config['name'])
-        else:
-            st.title("Welcome")
-
+            st.image(main_image, width=200)                
         tab1, tab2, tab3 = st.tabs(["Login", "Register", "Reset Password"])
 
         with tab1:

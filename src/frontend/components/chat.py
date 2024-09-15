@@ -8,7 +8,7 @@ from PIL import Image
 from io import BytesIO
 from utils.api import BACKEND_URL
 from config.settings import get_client_name
-from utils.api_helpers import send_chat_message, send_project_management_query
+from utils.api_helpers import get_project_teams, get_user_projects, send_chat_message, send_project_management_query
 
 
 logger = logging.getLogger(__name__)
@@ -248,39 +248,104 @@ def render_chat(user_id, user_role):
         st.session_state.feedback_timestamps = {}
         st.rerun()
  
-def render_project_management_chat(user_id, user_role):
-    st.header("Project Management Chat")
-    
-    projects = get_user_projects(user_id)
-    selected_project = st.selectbox("Select Project", projects)
-    
-    teams = get_project_teams(selected_project)
-    selected_team = st.selectbox("Select Team", teams)
+def render_project_management_chat(org_id, user_role):    
+    try:
+        projects = get_user_projects(org_id)
+        if projects is None:
+            st.warning("Azure DevOps is not configured for your organization. Please contact an administrator to set it up.")
+            return
+        if not projects:
+            st.warning("No projects available. Please check your permissions or contact an administrator.")
+            return
+        
+        # Create a container for the selection boxes
+        selection_container = st.container()
+        
+        # Use columns to create a more compact layout
+        with selection_container:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                project_names = [project['name'] for project in projects]
+                selected_project_name = st.selectbox("Select Project", project_names, key="project_select")
+                selected_project = next(project for project in projects if project['name'] == selected_project_name)
+            
+            with col2:
+                teams = get_project_teams(org_id, selected_project['id'])
+                if not teams:
+                    st.warning("No teams available for the selected project. Please check your permissions or contact an administrator.")
+                    return
+                team_names = [team['name'] for team in teams]
+                selected_team_name = st.selectbox("Select Team", team_names, key="team_select")
+                selected_team = next(team for team in teams if team['name'] == selected_team_name)
+        
+        # Add a separator
+        st.markdown("---")
+        
+    except requests.exceptions.RequestException as e:
+        handle_project_management_error(e)
+        return
     
     if "pm_messages" not in st.session_state:
         st.session_state.pm_messages = []
 
-    for message in st.session_state.pm_messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Create a container for chat messages
+    chat_container = st.container()
 
+    with chat_container:
+        for message in st.session_state.pm_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+    # Place the chat input below the chat messages
     if prompt := st.chat_input("Ask about your project"):
         st.session_state.pm_messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
-            for response in send_project_management_query(prompt, selected_project, selected_team):
-                full_response += response
-                message_placeholder.markdown(full_response + "▌")
-            message_placeholder.markdown(full_response)
-        st.session_state.pm_messages.append({"role": "assistant", "content": full_response})
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
+                try:
+                    for response in send_project_management_query(prompt, selected_project['id'], selected_team['id']):
+                        try:
+                            response_json = json.loads(response)
+                            if isinstance(response_json, dict) and "response" in response_json:
+                                response_text = "".join(response_json["response"])
+                            else:
+                                response_text = response
+                        except json.JSONDecodeError:
+                            response_text = response
+                        
+                        full_response += response_text
+                        message_placeholder.markdown(full_response + "▌")
+                    
+                    message_placeholder.markdown(full_response)
+                    st.session_state.pm_messages.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    logger.error(f"Error in project management query: {str(e)}")
+                    st.error("An error occurred while processing your query. Please try again later or contact an administrator.")
 
-    if st.button("Clear Conversation"):
+    # Place the clear conversation button at the bottom
+    if st.button("Clear Conversation", key="clear_pm_chat"):
         st.session_state.pm_messages = []
-        st.rerun()        
+        st.rerun()
+
+def handle_project_management_error(e):
+    if hasattr(e, 'response') and e.response is not None:
+        if e.response.status_code == 404:
+            st.warning("Azure DevOps is not configured for your organization. Please contact an administrator to set it up.")
+        elif e.response.status_code == 422:
+            st.error("Invalid input. Please check your project and team selection.")
+            logger.error(f"Invalid input error: {str(e)}")
+        else:
+            logger.error(f"Error fetching projects or teams: {str(e)}")
+            st.error(f"An error occurred while fetching projects and teams. Status code: {e.response.status_code}. Please try again later or contact an administrator.")
+    else:
+        logger.error(f"Error fetching projects or teams: {str(e)}")
+        st.error("An unexpected error occurred. Please try again later or contact an administrator.")
+
                         
 def submit_feedback(user_id, query, response, is_upvote, usefulness_rating, feedback_text):
     response = requests.post(

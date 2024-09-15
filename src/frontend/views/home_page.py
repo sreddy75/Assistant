@@ -9,10 +9,14 @@ import json
 
 logger = setup_logging()
 
-def render_home_page():
+def render_home_page(org_config):
     if not is_authenticated():
         st.warning("Please log in to view the dashboard.")
         return        
+
+    # Display org name if available
+    org_name = org_config.get('name', 'Your Organization')
+    st.title(f"Welcome to {org_name}")
 
     # Quick stats
     with st.expander(label="Quick stats", expanded=True):
@@ -27,7 +31,6 @@ def render_home_page():
     st.divider()
     
     with st.expander(label="Analytics", expanded=False):
-        # Render analytics dashboard
         st.header("Analytics Overview")
         col1, col2, col3 = st.columns(3)
         analytics_data = get_analytics_data()
@@ -36,33 +39,36 @@ def render_home_page():
             try:
                 analytics_data = json.loads(analytics_data)
             except json.JSONDecodeError:
-                st.error("Failed to parse analytics data. Please check the API response.")
-                return
+                st.warning("Analytics data is not available at the moment. Please try again later.")
+                analytics_data = {}
 
-        sentiment_analysis = analytics_data.get('sentiment_analysis', {})
-        feedback_analysis = analytics_data.get('feedback_analysis', {})
-        user_engagement = analytics_data.get('user_engagement', {})
-        interaction_metrics = analytics_data.get('interaction_metrics', {})
-        quality_metrics = analytics_data.get('quality_metrics', {})
-        usage_patterns = analytics_data.get('usage_patterns', {})
+        if not analytics_data:
+            st.warning("No analytics data available. This might be due to a configuration issue or lack of data.")
+        else:
+            sentiment_analysis = analytics_data.get('sentiment_analysis', {})
+            feedback_analysis = analytics_data.get('feedback_analysis', {})
+            user_engagement = analytics_data.get('user_engagement', {})
+            interaction_metrics = analytics_data.get('interaction_metrics', {})
+            quality_metrics = analytics_data.get('quality_metrics', {})
+            usage_patterns = analytics_data.get('usage_patterns', {})
 
-        with col1:
-            render_active_users(user_engagement)
-        with col2:
-            combined_data = {
-                'user_engagement': user_engagement,
-                'interaction_metrics': interaction_metrics,
-                'quality_metrics': quality_metrics,
-                'usage_patterns': usage_patterns
-            }
-            render_key_insights(combined_data)
-        with col3:
-            render_interaction_metrics(interaction_metrics)
-        
-        render_quality_metrics(analytics_data)
-    
+            with col1:
+                render_active_users(user_engagement)
+            with col2:
+                combined_data = {
+                    'user_engagement': user_engagement,
+                    'interaction_metrics': interaction_metrics,
+                    'quality_metrics': quality_metrics,
+                    'usage_patterns': usage_patterns
+                }
+                render_key_insights(combined_data)
+            with col3:
+                render_interaction_metrics(interaction_metrics)
+            
+            render_quality_metrics(analytics_data)
+
     st.divider()
-    
+        
     with st.expander(label="System Status", expanded=False):
         st.subheader("System Status")
         system_status = {

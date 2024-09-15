@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ENABLE_BUSINESS_ANALYST: bool = False
     ENABLE_RESEARCH_ASSISTANT: bool = False
     ENABLE_CALL_CENTER_ASSISTANT: bool = False
+    ENABLE_PROJECT_MANAGEMENT_ASSISTANT: bool = False
     ENABLE_CODE_ASSISTANT: bool = False
     ENABLE_COMPANY_ANALYST: bool = False
     ENABLE_FEEDBACK_SENTIMENT_ANALYSIS: bool = False

@@ -5,6 +5,19 @@ import requests
 from typing import Iterator
 from utils.api import BACKEND_URL, get_auth_header
 
+
+def get_user_info(user_id: int) -> dict:
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/api/v1/users/{user_id}",
+            headers=get_auth_header()
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Failed to fetch user info: {str(e)}")
+        return {}
+    
 def send_chat_message(message: str, assistant_id: int) -> Iterator[str]:
     try:
         response = requests.post(
@@ -21,47 +34,43 @@ def send_chat_message(message: str, assistant_id: int) -> Iterator[str]:
         st.error(f"An error occurred while sending the message: {str(e)}")
         yield "I'm sorry, but I encountered an error while processing your query. Please try again later."
 
-def send_project_management_query(query: str, project: str, team: str) -> Iterator[str]:
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/api/v1/project-management/chat",
-            json={"query": query, "project": project, "team": team},
-            headers=get_auth_header(),
-            stream=True
-        )
-        response.raise_for_status()
-        for chunk in response.iter_content(chunk_size=1024):
-            if chunk:
-                yield chunk.decode('utf-8')
-    except requests.exceptions.RequestException as e:
-        st.error(f"An error occurred while sending the project management query: {str(e)}")
-        yield "I'm sorry, but I encountered an error while processing your query. Please try again later."
-
-def get_user_projects(user_id: int) -> list:
+def get_user_projects(org_id):
     try:
         response = requests.get(
             f"{BACKEND_URL}/api/v1/project-management/projects",
-            params={"user_id": user_id},
-            headers=get_auth_header()
+            params={"org_id": org_id},
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
         )
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"Failed to fetch user projects: {str(e)}")
-        return []
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return None  # Indicate that Azure DevOps is not configured
+        raise  # Re-raise other HTTP errors
 
-def get_project_teams(project_id: str) -> list:
+def get_project_teams(org_id, project_id):
     try:
         response = requests.get(
             f"{BACKEND_URL}/api/v1/project-management/teams",
-            params={"project_id": project_id},
-            headers=get_auth_header()
+            params={"org_id": org_id, "project_id": project_id},
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
         )
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"Failed to fetch project teams: {str(e)}")
-        return []
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return []  # Return an empty list if no teams are found
+        raise 
+    
+def send_project_management_query(query, project, team):
+    response = requests.post(
+        f"{BACKEND_URL}/api/v1/project-management/chat",
+        json={"query": query, "project": project, "team": team},
+        headers={"Authorization": f"Bearer {st.session_state.get('token')}"},
+        stream=True
+    )
+    response.raise_for_status()
+    return response.iter_lines(decode_unicode=True)
 
 def get_chat_history(assistant_id: int) -> list:
     try:

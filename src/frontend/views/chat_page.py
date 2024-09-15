@@ -13,14 +13,14 @@ def render_chat_page():
     with st.container():
         user_role = get_user_role()
     
-        if user_role == "manager":
+        if user_role == "Super Admin" or user_role == "Manager":
             tab1, tab2 = st.tabs(["General Chat", "Project Management"])
             
             with tab1:
                 render_chat(user_id=st.session_state.get('user_id'), user_role=user_role)
             
             with tab2:
-                render_project_management_chat(user_id=st.session_state.get('user_id'), user_role=user_role)
+                render_project_management_chat(org_id=st.session_state.get('org_id'), user_role=user_role)
         else:
             render_chat(user_id=st.session_state.get('user_id'), user_role=user_role)
 
