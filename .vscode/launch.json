@@ -6,7 +6,7 @@
     "configurations": [
 
         {
-            "name": "FastAPI: Assistant",
+            "name": "FastAPI",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
@@ -38,7 +38,8 @@
             "program": "${workspaceFolder}/.venv/bin/streamlit", 
             "args": [
                 "run",
-                "${workspaceFolder}/src/frontend/app.py" 
+                "${workspaceFolder}/src/frontend/app.py", 
+                // "--server.runOnSave=true"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,

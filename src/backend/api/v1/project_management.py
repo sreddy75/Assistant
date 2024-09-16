@@ -1,35 +1,61 @@
-# src/backend/api/project_management.py
+# src/backend/api/v1/project_management.py
 
-import logging
-from fastapi import APIRouter, Depends, HTTPException
+import json
+import asyncio
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from src.backend.db.session import get_db
-from src.backend.helpers.auth import get_current_user_with_devops_permissions
-from src.backend.kr8.assistant.assistant_manager import get_assistant_manager, AssistantManager
-from src.backend.schemas.project_management import ProjectManagementQuery, ProjectResponse, TeamResponse
-from src.backend.models.models import Organization, User
-from src.backend.services.azure_devops_service import AzureDevOpsService
 from src.backend.config.azure_devops_config import is_azure_devops_configured
-from typing import List
+from src.backend.services.azure_devops_service import AzureDevOpsService
+from src.backend.db.session import get_db
+from src.backend.helpers.auth import get_current_active_user
+from src.backend.kr8.assistant.assistant_manager import get_assistant_manager, AssistantManager
+from src.backend.models.models import User
+from typing import Optional
 
 router = APIRouter()
 
-logger = logging.getLogger(__name__)
-
 @router.post("/chat")
-async def project_management_chat(
-    query: ProjectManagementQuery,
-    current_user: User = Depends(get_current_user_with_devops_permissions),
-    assistant_manager: AssistantManager = Depends(get_assistant_manager)
+async def chat(
+    message: str = Body(...),
+    project: Optional[str] = Body(None),
+    team: Optional[str] = Body(None),
+    is_pm_chat: bool = Body(True),
+    assistant_id: Optional[int] = Query(None),
+    assistant_manager: AssistantManager = Depends(get_assistant_manager),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
-    assistant = assistant_manager.get_assistant(current_user.id, current_user.organization_id, "manager", current_user.nickname)
-    if not assistant:
-        raise HTTPException(status_code=404, detail="Project Management Assistant not found")
+    try:
+        assistant = assistant_manager.get_assistant(
+            db=db,
+            user_id=current_user.id,
+            org_id=current_user.organization_id,
+            user_role=current_user.role,
+            user_nickname=current_user.nickname,
+            is_pm_chat=is_pm_chat
+        )
 
-    response = assistant.run(query.query, project=query.project, team=query.team)
-    if isinstance(response, list):
-        response = "".join(response)
-    return {"response": response}
+        if not project or not team:
+            raise HTTPException(status_code=400, detail="Project and team must be provided for PM chat")
+
+        async def stream_response():
+            try:
+                previous_response = ""
+                for chunk in assistant.run(message, project=project, team=team, stream=True):
+                    if chunk:  # Only process non-empty chunks
+                        current_response = previous_response + chunk
+                        yield (json.dumps({"response": current_response, "delta": chunk}) + "\n").encode('utf-8')
+                        previous_response = current_response
+                    await asyncio.sleep(0)
+            except Exception as e:
+                yield (json.dumps({"error": str(e)}) + "\n").encode('utf-8')
+
+        return StreamingResponse(stream_response(), media_type="application/json")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 def get_azure_devops_service(org_id: int) -> AzureDevOpsService:
     if not is_azure_devops_configured():

@@ -1,5 +1,6 @@
 # src/frontend/utils/api_helpers.py
 
+from fastapi import logger
 import streamlit as st
 import requests
 from typing import Iterator
@@ -62,15 +63,29 @@ def get_project_teams(org_id, project_id):
             return []  # Return an empty list if no teams are found
         raise 
     
-def send_project_management_query(query, project, team):
-    response = requests.post(
-        f"{BACKEND_URL}/api/v1/project-management/chat",
-        json={"query": query, "project": project, "team": team},
-        headers={"Authorization": f"Bearer {st.session_state.get('token')}"},
-        stream=True
-    )
-    response.raise_for_status()
-    return response.iter_lines(decode_unicode=True)
+def send_project_management_query(prompt, project_id, team_id):
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/project-management/chat",
+            json={
+                "message": prompt,
+                "project": project_id,
+                "team": team_id,
+                "is_pm_chat": True
+            },
+            headers={"Authorization": f"Bearer {st.session_state.get('token')}"},
+            stream=True
+        )
+        response.raise_for_status()
+        return response.iter_lines()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error in project management query: {str(e)}")
+        if e.response is not None:
+            if e.response.status_code == 400:
+                raise ValueError(f"Invalid input: {e.response.json().get('detail', 'Unknown error')}")
+            elif e.response.status_code == 404:
+                raise ValueError("Project Management chat is not available. Please contact an administrator.")
+        raise ValueError("An error occurred while processing your query. Please try again later.")
 
 def get_chat_history(assistant_id: int) -> list:
     try:

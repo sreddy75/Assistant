@@ -200,10 +200,19 @@ class OpenAIChat(LLM):
                 _dict["tool_choice"] = self.tool_choice
         return _dict
 
-    def invoke(self, messages: List[Message]) -> ChatCompletion:
+    def invoke(self, messages: List[Union[Dict[str, str], Message]]) -> ChatCompletion:
+        formatted_messages = []
+        for m in messages:
+            if isinstance(m, dict):
+                formatted_messages.append(m)
+            elif isinstance(m, Message):
+                formatted_messages.append(m.to_dict())
+            else:
+                raise ValueError(f"Unsupported message type: {type(m)}")
+
         return self.get_client().chat.completions.create(
             model=self.model,
-            messages=[m.to_dict() for m in messages],  # type: ignore
+            messages=formatted_messages,
             **self.api_kwargs,
         )
 
@@ -278,12 +287,15 @@ class OpenAIChat(LLM):
             return _function_call_message, _function_call
         return Message(role="function", content="Function name is None."), None
 
-    def response(self, messages: List[Message]) -> str:
+    def response(self, messages: List[Union[Dict[str, str], Message]]) -> str:
         logger.debug("---------- OpenAI Response Start ----------")
         # -*- Log messages for debugging
         for m in messages:
-            m.log()
-
+            if isinstance(m, Message):
+                m.log()
+            elif isinstance(m, dict):
+                logger.debug(f"{m['role']}: {m['content']}")
+                
         response_timer = Timer()
         response_timer.start()
         response: ChatCompletion = self.invoke(messages=messages)
@@ -539,8 +551,8 @@ class OpenAIChat(LLM):
         response: ChatCompletion = self.invoke(messages=messages)
         response_timer.stop()
         logger.debug(f"Time to generate response: {response_timer.elapsed:.4f}s")
-        # logger.debug(f"OpenAI response type: {type(response)}")
-        # logger.debug(f"OpenAI response: {response}")
+        logger.debug(f"OpenAI response type: {type(response)}")
+        logger.debug(f"OpenAI response: {response}")
 
         # -*- Parse response
         response_message: ChatCompletionMessage = response.choices[0].message

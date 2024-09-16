@@ -289,7 +289,6 @@ def render_project_management_chat(org_id, user_role):
     if "pm_messages" not in st.session_state:
         st.session_state.pm_messages = []
 
-    # Create a container for chat messages
     chat_container = st.container()
 
     with chat_container:
@@ -297,7 +296,6 @@ def render_project_management_chat(org_id, user_role):
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # Place the chat input below the chat messages
     if prompt := st.chat_input("Ask about your project"):
         st.session_state.pm_messages.append({"role": "user", "content": prompt})
         with chat_container:
@@ -311,21 +309,22 @@ def render_project_management_chat(org_id, user_role):
                     for response in send_project_management_query(prompt, selected_project['id'], selected_team['id']):
                         try:
                             response_json = json.loads(response)
-                            if isinstance(response_json, dict) and "response" in response_json:
-                                response_text = "".join(response_json["response"])
-                            else:
-                                response_text = response
+                            if "delta" in response_json:
+                                full_response += response_json["delta"]
+                                message_placeholder.markdown(full_response + "▌")
+                            elif "error" in response_json:
+                                raise ValueError(response_json["error"])
                         except json.JSONDecodeError:
-                            response_text = response
-                        
-                        full_response += response_text
-                        message_placeholder.markdown(full_response + "▌")
-                    
+                            full_response += response
+                            message_placeholder.markdown(full_response + "▌")
+
                     message_placeholder.markdown(full_response)
                     st.session_state.pm_messages.append({"role": "assistant", "content": full_response})
+                except ValueError as e:
+                    st.error(str(e))
                 except Exception as e:
                     logger.error(f"Error in project management query: {str(e)}")
-                    st.error("An error occurred while processing your query. Please try again later or contact an administrator.")
+                    st.error("An unexpected error occurred. Please try again later or contact an administrator.")
 
     # Place the clear conversation button at the bottom
     if st.button("Clear Conversation", key="clear_pm_chat"):

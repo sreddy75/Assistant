@@ -1,5 +1,6 @@
 import re
 from src.backend.kr8.llm.base import LLM
+from src.backend.kr8.llm.message import Message
 
 class QueryInterpreter:
     def __init__(self, llm: LLM):
@@ -7,8 +8,9 @@ class QueryInterpreter:
 
     def categorize_query(self, query: str):
         prompt = f"Categorize the following project management query:\n\n{query}\n\nCategory:"
-        category = self.llm.generate(prompt)
-        return category.strip()
+        messages = [Message(role="user", content=prompt)]
+        response = self.llm.response(messages)
+        return response.strip()
 
     def extract_entities(self, query: str):
         prompt = f"Extract project and team names from the following query:\n\n{query}\n\nEntities:"

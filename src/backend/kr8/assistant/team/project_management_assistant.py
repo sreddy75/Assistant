@@ -1,27 +1,21 @@
+# src/backend/kr8/assistant/team/project_management_assistant.py
+
+from pydantic import BaseModel, Field
+from typing import Any
 from src.backend.kr8.assistant.assistant import Assistant
 from src.backend.services.query_interpreter import QueryInterpreter
 from src.backend.services.query_executor import QueryExecutor
 from src.backend.services.token_optimizer import TokenOptimizer
+from src.backend.services.azure_devops_service import AzureDevOpsService
 
-class ProjectManagementAssistant(Assistant):
-    def __init__(self, base_assistant: Assistant, azure_devops_service):
-        super().__init__(
-            name=base_assistant.name,
-            run_id=base_assistant.run_id,
-            user_id=base_assistant.user_id,
-            knowledge_base=base_assistant.knowledge_base,
-            llm=base_assistant.llm,
-            tools=base_assistant.tools,
-            description="I am a Project Management Assistant specialized in Azure DevOps queries.",
-            instructions=base_assistant.instructions + [
-                "You are an expert in Azure DevOps and project management.",
-                "Use the provided Azure DevOps data to answer questions accurately.",
-                "If you're unsure about any information, ask for clarification or state that you don't have enough information."
-            ],
-            markdown=True
-        )
-        self.query_interpreter = QueryInterpreter(self.llm)
-        self.query_executor = QueryExecutor(azure_devops_service)
+class ProjectManagementAssistant(BaseModel):
+    base_assistant: Assistant
+    azure_devops_service: AzureDevOpsService
+    query_interpreter: QueryInterpreter
+    query_executor: QueryExecutor
+
+    class Config:
+        arbitrary_types_allowed = True
 
     def run(self, query: str, project: str, team: str, **kwargs):
         category = self.query_interpreter.categorize_query(query)
@@ -39,5 +33,5 @@ class ProjectManagementAssistant(Assistant):
 
         Response:
         """
-        response = super().run(response_prompt, **kwargs)
+        response = self.base_assistant.run(response_prompt, **kwargs)
         return response

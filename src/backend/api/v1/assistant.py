@@ -3,9 +3,11 @@ import json
 from typing import Dict
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 from src.backend.schemas.code_tool_schemas import ProjectLoadRequest
 from src.backend.kr8.tools.code_tools import CodeTools
 from src.backend.kr8.assistant.assistant_manager import get_assistant_manager, AssistantManager
+from src.backend.db.session import get_db
 
 router = APIRouter()
 
@@ -15,9 +17,10 @@ async def get_assistant(
     org_id: int,
     user_role: str,
     user_nickname: str,
-    assistant_manager: AssistantManager = Depends(get_assistant_manager)
+    assistant_manager: AssistantManager = Depends(get_assistant_manager),
+    db: Session = Depends(get_db)
 ):
-    assistant = assistant_manager.get_assistant(user_id, org_id, user_role, user_nickname)
+    assistant = assistant_manager.get_assistant(db, user_id, org_id, user_role, user_nickname)
     return {"assistant_id": id(assistant)}
 
 @router.get("/assistant-info/{assistant_id}")
