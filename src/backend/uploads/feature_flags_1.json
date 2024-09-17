@@ -1,8 +1,0 @@
-{    
-    "enable_product_owner": true,
-    "enable_business_analyst": true,
-    "enable_quality_analyst": true,
-    "enable_react_assistant": true,
-    "enable_web_search": true,      
-    "enable_project_management_assistant": true
-  }

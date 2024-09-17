@@ -10,6 +10,7 @@ from src.backend.utils.org_utils import load_org_config
 from src.backend.services.azure_devops_service import AzureDevOpsService
 from src.backend.models.models import AzureDevOpsConfig, Organization
 from src.backend.config.azure_devops_config import is_azure_devops_configured
+from src.backend.services.dora_metrics_calculator import DORAMetricsCalculator
 
 from typing import Dict, Any, Optional
 
@@ -73,12 +74,14 @@ class AssistantManager:
         base_assistant = self._create_regular_assistant(user_id, org_id, user_role, user_nickname, org_config)
         query_interpreter = QueryInterpreter(base_assistant.llm)
         query_executor = QueryExecutor(azure_devops_service)
+        dora_calculator = DORAMetricsCalculator(azure_devops_service)
         
         return ProjectManagementAssistant(
             base_assistant=base_assistant,
             azure_devops_service=azure_devops_service,
             query_interpreter=query_interpreter,
-            query_executor=query_executor
+            query_executor=query_executor,
+            dora_calculator=dora_calculator
         )
 
     def _get_azure_devops_service(self, db: Session, org_id: int) -> Optional[AzureDevOpsService]:

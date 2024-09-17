@@ -98,6 +98,8 @@ class UserAnalytics(Base):
 
     user = relationship("User", back_populates="analytics")
 
+
+
 class DevOpsProject(Base):
     __tablename__ = "devops_projects"
     id = Column(Integer, primary_key=True, index=True)
@@ -108,15 +110,8 @@ class DevOpsProject(Base):
 
     organization = relationship("Organization")
     teams = relationship("DevOpsTeam", back_populates="project")
-
-class DevOpsTeam(Base):
-    __tablename__ = "devops_teams"
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("devops_projects.id"))
-    team_id = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-
-    project = relationship("DevOpsProject", back_populates="teams")
+    dora_metrics = relationship("DORAMetric", back_populates="project")
+    dora_snapshots = relationship("DORAMetricSnapshot", back_populates="project")
 
 class WorkItemType(Base):
     __tablename__ = "work_item_types"
@@ -136,3 +131,39 @@ class DevOpsCache(Base):
     expires_at = Column(DateTime(timezone=True))
 
     organization = relationship("Organization")
+    
+class DORAMetric(Base):
+    __tablename__ = "dora_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("devops_projects.id"))
+    team_id = Column(Integer, ForeignKey("devops_teams.id"))
+    metric_type = Column(String, index=True)  # 'deployment_frequency', 'lead_time', 'time_to_restore', 'change_failure_rate'
+    metric_value = Column(Float)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("DevOpsProject", back_populates="dora_metrics")
+    team = relationship("DevOpsTeam", back_populates="dora_metrics")
+
+class DORAMetricSnapshot(Base):
+    __tablename__ = "dora_metric_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("devops_projects.id"))
+    team_id = Column(Integer, ForeignKey("devops_teams.id"))
+    snapshot_data = Column(JSON)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("DevOpsProject", back_populates="dora_snapshots")
+    team = relationship("DevOpsTeam", back_populates="dora_snapshots")    
+
+class DevOpsTeam(Base):
+    __tablename__ = "devops_teams"
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("devops_projects.id"))
+    team_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+
+    project = relationship("DevOpsProject", back_populates="teams")
+    dora_metrics = relationship("DORAMetric", back_populates="team")
+    dora_snapshots = relationship("DORAMetricSnapshot", back_populates="team")    

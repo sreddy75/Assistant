@@ -296,7 +296,7 @@ def render_project_management_chat(org_id, user_role):
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    if prompt := st.chat_input("Ask about your project"):
+    if prompt := st.chat_input("Ask about your project or DORA metrics"):
         st.session_state.pm_messages.append({"role": "user", "content": prompt})
         with chat_container:
             with st.chat_message("user"):
@@ -320,6 +320,28 @@ def render_project_management_chat(org_id, user_role):
 
                     message_placeholder.markdown(full_response)
                     st.session_state.pm_messages.append({"role": "assistant", "content": full_response})
+
+                    # If the query is about DORA metrics, display them in a more structured way
+                    if "DORA" in prompt.upper():
+                        try:
+                            dora_metrics = json.loads(full_response)
+                            if isinstance(dora_metrics, dict) and "DORA Metrics Query Result" in dora_metrics:
+                                st.write("DORA Metrics:")
+                                metric_data = dora_metrics["DORA Metrics Query Result"]
+                                if "trend" in metric_data:
+                                    # Display trend data as a line chart
+                                    trend_data = metric_data["trend"]
+                                    fig = go.Figure(data=go.Scatter(x=[d[0] for d in trend_data], 
+                                                                    y=[d[1] for d in trend_data], 
+                                                                    mode='lines+markers'))
+                                    fig.update_layout(title=f"Trend of {prompt.split()[0]} {prompt.split()[1]}")
+                                    st.plotly_chart(fig)
+                                else:
+                                    st.json(metric_data)
+                        except json.JSONDecodeError:
+                            st.warning("Failed to parse DORA metrics data. Displaying raw response.")
+                            st.write(full_response)
+
                 except ValueError as e:
                     st.error(str(e))
                 except Exception as e:

@@ -1,5 +1,6 @@
 # src/frontend/utils/api_helpers.py
 
+import json
 from fastapi import logger
 import streamlit as st
 import requests
@@ -63,21 +64,30 @@ def get_project_teams(org_id, project_id):
             return []  # Return an empty list if no teams are found
         raise 
     
-def send_project_management_query(prompt, project_id, team_id):
+def send_project_management_query(query: str, project_id: str, team_id: str):
     try:
-        response = requests.post(
-            f"{BACKEND_URL}/api/v1/project-management/chat",
-            json={
-                "message": prompt,
-                "project": project_id,
-                "team": team_id,
-                "is_pm_chat": True
-            },
-            headers={"Authorization": f"Bearer {st.session_state.get('token')}"},
-            stream=True
-        )
-        response.raise_for_status()
-        return response.iter_lines()
+        if "DORA" in query.upper():
+            response = requests.get(
+                f"{BACKEND_URL}/api/v1/project-management/dora-metrics/{project_id}/{team_id}",
+                params={"query": query},
+                headers={"Authorization": f"Bearer {st.session_state.token}"}
+            )
+            response.raise_for_status()
+            yield json.dumps({"delta": json.dumps(response.json())})
+        else:
+            response = requests.post(
+                f"{BACKEND_URL}/api/v1/project-management/chat",
+                json={
+                    "message": query,
+                    "project": project_id,
+                    "team": team_id,
+                    "is_pm_chat": True
+                },
+                headers={"Authorization": f"Bearer {st.session_state.get('token')}"},
+                stream=True
+            )
+            response.raise_for_status()
+            return response.iter_lines()
     except requests.exceptions.RequestException as e:
         logger.error(f"Error in project management query: {str(e)}")
         if e.response is not None:

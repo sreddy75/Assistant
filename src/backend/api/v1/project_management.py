@@ -1,9 +1,9 @@
-# src/backend/api/v1/project_management.py
 import json
 import asyncio
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from src.backend.kr8.assistant.team.project_management_assistant import ProjectManagementAssistant
 from src.backend.config.azure_devops_config import is_azure_devops_configured
 from src.backend.services.azure_devops_service import AzureDevOpsService
 from src.backend.db.session import get_db
@@ -76,3 +76,33 @@ async def get_project_teams(org_id: int, project_id: str):
     azure_devops_service = get_azure_devops_service(org_id)
     teams = azure_devops_service.get_teams(project_id)
     return [{"id": t.id, "name": t.name} for t in teams]
+
+@router.get("/dora-metrics/{project_id}/{team_id}")
+async def get_dora_metrics(
+    project_id: str,
+    team_id: str,
+    query: str,
+    org_id: int,
+    assistant_manager: AssistantManager = Depends(get_assistant_manager),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    try:
+        assistant = assistant_manager.get_assistant(
+            db=db,
+            user_id=current_user.id,
+            org_id=current_user.organization_id,
+            user_role=current_user.role,
+            user_nickname=current_user.nickname,
+            is_pm_chat=True
+        )
+
+        if not isinstance(assistant, ProjectManagementAssistant):
+            raise HTTPException(status_code=400, detail="Invalid assistant type for DORA metrics query")
+
+        result = assistant.get_dora_metrics(project_id, team_id, query)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
