@@ -57,7 +57,7 @@ if not scratch_dir.exists():
     scratch_dir.mkdir(exist_ok=True, parents=True)
 
 def load_assistant_instructions(client_name: str, user_nickname: str) -> dict:
-    instructions_path = Path(f"src/backend/config/themes/{client_name}/assistant_instructions.json")
+    instructions_path = Path(f"src/backend/config/themes/{client_name}/instructions.json")
     if not instructions_path.exists():
         raise FileNotFoundError(f"Instructions file not found at {instructions_path}")
     

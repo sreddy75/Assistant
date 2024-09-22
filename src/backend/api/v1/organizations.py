@@ -106,11 +106,14 @@ async def create_organization(
     db.flush()
 
     # Handle Azure DevOps configuration
-    azure_devops_config = json.loads(org_data.azure_devops_config)
+    azure_devops_config = {}
+    if org_data.azure_devops_config:
+        azure_devops_config = json.loads(org_data.azure_devops_config)
+
     azure_devops = AzureDevOpsConfig(
-        url=azure_devops_config['url'],
-        token=azure_devops_config['token'],
-        project=azure_devops_config['project']
+        url=azure_devops_config.get('organization_url'),
+        token=azure_devops_config.get('personal_access_token'),
+        project=azure_devops_config.get('project')
     )
     db.add(azure_devops)
     db.flush()

@@ -1,26 +1,46 @@
-import re
+# query_interpreter.py
+
+import json
+from src.backend.services.azure_devops_schema_manager import AzureDevOpsSchemaManager
 from src.backend.kr8.llm.base import LLM
 from src.backend.kr8.llm.message import Message
 
 class QueryInterpreter:
-    def __init__(self, llm: LLM):
-        self.llm = llm
+    def __init__(self, schema_manager: AzureDevOpsSchemaManager):        
+        self.schema_manager = schema_manager
 
-    def categorize_query(self, query: str):
-        prompt = f"Categorize the following project management query:\n\n{query}\n\nCategory:"
+    def interpret_query(self, query: str):
+        schema = self.schema_manager.get_schema()
+        prompt = f"""
+        Given the following Azure DevOps API schema and user query, determine:
+        1. The most relevant API endpoint(s) to call
+        2. Any parameters needed for the API call(s)
+        3. Any post-processing steps needed on the API response
+
+        Schema:
+        {json.dumps(schema, indent=2)}
+
+        Query:
+        {query}
+
+        Response (in JSON format):
+        {{
+            "endpoints": [
+                {{
+                    "path": "<api_path>",
+                    "method": "<HTTP_METHOD>",
+                    "parameters": {{
+                        "<param_name>": "<param_value>"
+                    }}
+                }}
+            ],
+            "post_processing": [
+                "Step 1: ...",
+                "Step 2: ...",
+                ...
+            ]
+        }}
+        """
         messages = [Message(role="user", content=prompt)]
         response = self.llm.response(messages)
-        return response.strip()
-
-    def extract_entities(self, query: str):
-        prompt = f"Extract project and team names from the following query:\n\n{query}\n\nEntities:"
-        entities = self.llm.generate(prompt)
-        return self._parse_entities(entities)
-
-    def _parse_entities(self, entities: str):
-        project = re.search(r"Project: (.+)", entities)
-        team = re.search(r"Team: (.+)", entities)
-        return {
-            "project": project.group(1) if project else None,
-            "team": team.group(1) if team else None
-        }
+        return json.loads(response)

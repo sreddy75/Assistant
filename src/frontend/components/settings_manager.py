@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 from io import BytesIO
 from PIL import Image
+from src.frontend.utils.api_helpers import update_azure_devops_schema
 from utils.api import BACKEND_URL
 from utils.helpers import handle_response
 from src.frontend.utils.helpers import restart_assistant
@@ -41,10 +42,16 @@ def render_org_management():
                     if st.button("Edit Selected"):
                         st.session_state.editing_org_id = selected_org['id']
                         st.rerun()
+                    if st.button("Update Azure DevOps Schema"):
+                        try:
+                            result = update_azure_devops_schema()
+                            st.success("Azure DevOps schema updated successfully")
+                        except Exception as e:
+                            st.error(f"Failed to update Azure DevOps schema: {str(e)}")
                 with col2:
                     if st.button("Delete Selected"):
                         delete_organization(selected_org['id'])
-                        st.rerun()                                
+                        st.rerun()
 
             elif len(selected_orgs) > 1:
                 st.warning("Please select only one organization to edit or delete.")

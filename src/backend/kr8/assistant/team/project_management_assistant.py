@@ -1,84 +1,73 @@
-from pydantic import BaseModel
-from typing import Any, Dict
+# File: project_management_assistant.py
+
 import json
+import logging
+from typing import List, Any, Dict, Optional, Union
+from pydantic import Field
 from src.backend.kr8.assistant.assistant import Assistant
-from src.backend.services.query_interpreter import QueryInterpreter
-from src.backend.services.query_executor import QueryExecutor
 from src.backend.services.azure_devops_service import AzureDevOpsService
 from src.backend.services.dora_metrics_calculator import DORAMetricsCalculator
 
-class ProjectManagementAssistant(BaseModel):
-    base_assistant: Assistant
-    azure_devops_service: AzureDevOpsService
-    query_interpreter: QueryInterpreter
-    query_executor: QueryExecutor
-    dora_calculator: DORAMetricsCalculator
+logger = logging.getLogger(__name__)
 
-    class Config:
-        arbitrary_types_allowed = True
+class ProjectManagementAssistant(Assistant):
+    azure_devops_service: Optional[AzureDevOpsService] = None
+    dora_metrics_calculator: Optional[DORAMetricsCalculator] = None
+    current_project: Optional[str] = Field(default=None, description="Current project name")
+    current_project_type: Optional[str] = Field(default=None, description="Current project type")
 
-    def interpret_dora_query(self, query: str) -> Dict[str, str]:
-        query = query.lower()
-        result = {}
-        if "deployment frequency" in query:
-            result["metric"] = "deployment_frequency"
-        elif "lead time" in query:
-            result["metric"] = "lead_time_for_changes"
-        elif "time to restore" in query:
-            result["metric"] = "time_to_restore_service"
-        elif "change failure rate" in query:
-            result["metric"] = "change_failure_rate"
-        
-        if "trend" in query or "over time" in query:
-            result["aspect"] = "trend"
-        elif "average" in query or "mean" in query:
-            result["aspect"] = "average"
-        elif "median" in query:
-            result["aspect"] = "median"
-        elif "minimum" in query or "min" in query:
-            result["aspect"] = "min"
-        elif "maximum" in query or "max" in query:
-            result["aspect"] = "max"
-        
-        if "last month" in query:
-            result["days"] = 30
-        elif "last quarter" in query:
-            result["days"] = 90
-        elif "last year" in query:
-            result["days"] = 365
-        
-        return result
+    def __init__(self, azure_devops_service: AzureDevOpsService, dora_metrics_calculator: DORAMetricsCalculator, **kwargs):
+        super().__init__(**kwargs)
+        self.azure_devops_service = azure_devops_service
+        self.dora_metrics_calculator = dora_metrics_calculator
+        logger.info("ProjectManagementAssistant initialized")
 
-    def get_dora_metrics(self, project: str, team: str, query: str):
-        interpretation = self.interpret_dora_query(query)
-        if not interpretation:
-            return self.dora_calculator.calculate_all_metrics(project, team)
-        
-        return self.dora_calculator.query_specific_metric(
-            project, team, 
-            interpretation.get("metric", ""),
-            interpretation.get("aspect", ""),
-            interpretation.get("days", 30)
-        )
+    def set_project_context(self, project_name: str, project_type: str):
+        self.current_project = project_name
+        self.current_project_type = project_type
 
-    def run(self, query: str, project: str, team: str, **kwargs):
-        category = self.query_interpreter.categorize_query(query)
-        entities = {"project": project, "team": team}
+    def run(self, message: str, project_id: str, team_id: str, stream: bool = True, **kwargs) -> Union[str, Any]:
+        if self.dora_metrics_calculator is None or self.azure_devops_service is None:
+            raise ValueError("DORA metrics calculator or Azure DevOps service is not initialized")
+
+        relevant_metrics = self.dora_metrics_calculator.determine_relevant_metrics(message)
+        metrics = self.dora_metrics_calculator.calculate_specific_metrics(project_id, team_id, relevant_metrics)
         
-        if "DORA" in category:
-            dora_metrics = self.get_dora_metrics(project, team, query)
-            result = f"DORA Metrics Query Result:\n{json.dumps(dora_metrics, indent=2)}"
+        prompt = self.format_dora_metrics_prompt(message, metrics)
+        
+        if self.current_project and self.current_project_type:
+            prompt = f"In the context of the {self.current_project_type} project '{self.current_project}': {prompt}"
+            if 'messages' in kwargs:
+                kwargs['messages'] = self.add_context_reminder(kwargs['messages'])
+        
+        response = super().run(message=prompt, stream=stream, **kwargs)
+        
+        if isinstance(response, str):
+            return response
         else:
-            result = self.query_executor.execute_query(category, entities, query)
+            return "".join(response)  # Join the response if it's an iterable
 
-        context = f"Category: {category}\nProject: {project}\nTeam: {team}\nResult: {result}"
-        response_prompt = f"""
-        Given the following query and Azure DevOps data (including DORA metrics if relevant), generate a natural language response:
+    def format_dora_metrics_prompt(self, user_query: str, metrics: Dict[str, Any]) -> str:
+        formatted_metrics = json.dumps(metrics, indent=2)
+        
+        return f"""
+        Analyze the following DORA metrics and provide a detailed response to the user's query:
 
-        Query: {query}
-        {context}
+        User Query: {user_query}
 
-        Response:
+        DORA Metrics:
+        {formatted_metrics}
+
+        Please provide a comprehensive analysis of these metrics, addressing the user's query directly.
+        If there's no data for a particular metric, explain what that might mean and suggest next steps.
+        Include insights, explanations, and any relevant recommendations based on the available DORA metrics.
+        If the user asked about a specific metric, focus your response on that metric.
+        
+        Format your response in Markdown, using headers, bullet points, and emphasis where appropriate.
         """
-        response = self.base_assistant.run(response_prompt, **kwargs)
-        return response
+
+    def add_context_reminder(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        if self.current_project and self.current_project_type:
+            reminder = f"Remember, we are discussing the {self.current_project_type} project named '{self.current_project}'. Only use information relevant to this project."
+            messages.append({"role": "system", "content": reminder})
+        return messages

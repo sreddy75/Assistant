@@ -126,8 +126,33 @@ class Assistant(BaseModel):
 
     # Offline mode
     offline_mode: bool = False
+    
+    # Add a new attribute to store custom fields
+    custom_attributes: Dict[str, Any] = Field(default_factory=dict)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra='allow'  # This allows extra attributes to be set
+    )
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Move any extra attributes to custom_attributes
+        for key, value in data.items():
+            if key not in self.__fields__:
+                self.custom_attributes[key] = value
+
+    def __getattr__(self, name):
+        # Check custom_attributes for attributes not found in the standard fields
+        if name in self.custom_attributes:
+            return self.custom_attributes[name]
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name in self.__fields__:
+            super().__setattr__(name, value)
+        else:
+            self.custom_attributes[name] = value
 
     @field_validator("debug_mode", mode="before")
     def set_log_level(cls, v: bool) -> bool:

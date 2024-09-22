@@ -32,9 +32,9 @@ def init_db():
                     "Delivery": ["Web Search", "Business Analyst", "Enhanced Data Analyst"],
                     "Manager": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"],
                     "Admin": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"],
-                    "Super Admin": ["Web Search", "Code Assistant", "Product Owner", "Enhanced Financial Analyst", "Business Analyst", "Enhanced Data Analyst"]
+                    "Super Admin": ["Web Search", "Code Assistant", "Product Owner", "Business Analyst", "Project Management Assistant"]
                 }),
-                assistants=json.dumps({"default_assistant": True}),
+                assistants=json.dumps({"default_assistant": True, "project_management_assistant": True}),
                 feature_flags=json.dumps({"enable_feedback_sentiment_analysis": True}),
                 config_toml=toml.dumps({
                     "theme": {

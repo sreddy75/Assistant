@@ -4,6 +4,8 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, T
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.dialects.postgresql import JSONB
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
@@ -18,6 +20,8 @@ class Organization(Base):
     users = relationship("User", back_populates="organization")
     config = relationship("OrganizationConfig", back_populates="organization")
     azure_devops_config = relationship("AzureDevOpsConfig", back_populates="organization", uselist=False)
+    azure_devops_endpoints = relationship("AzureDevOpsEndpoint", back_populates="organization")
+
 
 class AzureDevOpsConfig(Base):
     __tablename__ = "azure_devops_configs"
@@ -167,3 +171,29 @@ class DevOpsTeam(Base):
     project = relationship("DevOpsProject", back_populates="teams")
     dora_metrics = relationship("DORAMetric", back_populates="team")
     dora_snapshots = relationship("DORAMetricSnapshot", back_populates="team")    
+    
+class AzureDevOpsEndpoint(Base):
+    __tablename__ = "azure_devops_endpoints"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # Add this line
+    name = Column(String, nullable=False)
+    path = Column(String, nullable=False)
+    method = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    parameters = Column(JSONB, nullable=True)
+    response_schema = Column(JSONB, nullable=True)
+    meta_data = Column(JSONB, nullable=True)
+    content = Column(Text, nullable=True)
+    embedding = Column(Vector(384), nullable=True)
+    usage = Column(JSONB, nullable=True)
+    content_hash = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    organization = relationship("Organization", back_populates="azure_devops_endpoints")
+    user = relationship("User")
+    def __repr__(self):
+        return f"<AzureDevOpsEndpoint(id={self.id}, org_id={self.organization_id}, path='{self.path}', method='{self.method}')>"
+    

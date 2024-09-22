@@ -27,6 +27,7 @@ class OrganizationWithFiles(OrganizationBase):
     chat_user_icon: Optional[UploadFile] = File(None)
     config_toml: Optional[UploadFile] = File(None)
     main_image: Optional[UploadFile] = File(None)
+    azure_devops_config: Optional[str] = None
 
 class OrganizationResponse(BaseModel):
     id: int
