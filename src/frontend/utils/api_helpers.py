@@ -12,6 +12,20 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+def handle_streaming_response(response: requests.Response) -> Iterator[str]:
+    for line in response.iter_lines():
+        if line:
+            try:
+                json_response = json.loads(line)
+                if "response" in json_response:
+                    yield json_response["response"]
+                elif "error" in json_response:
+                    logger.error(f"Error in response: {json_response['error']}")
+                    yield f"Error: {json_response['error']}"
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse JSON, yielding raw line: {line.decode('utf-8')}")
+                yield line.decode('utf-8')
+                
 def get_user_info(user_id: int) -> dict:
     try:
         response = requests.get(
@@ -23,37 +37,6 @@ def get_user_info(user_id: int) -> dict:
     except requests.exceptions.RequestException as e:
         st.error(f"Failed to fetch user info: {str(e)}")
         return {}
-    
-def send_chat_message(message: str, assistant_id: int) -> Iterator[str]:
-    logger.info(f"Sending chat message: message={message}, assistant_id={assistant_id}")
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/api/v1/chat/",
-            json={"message": message, "assistant_id": assistant_id},
-            headers=get_auth_header(),
-            stream=True
-        )
-        response.raise_for_status()
-        logger.info("Chat message sent successfully")
-        
-        for chunk in response.iter_lines():
-            if chunk:
-                logger.debug(f"Received chunk: {chunk}")
-                try:
-                    json_response = json.loads(chunk)
-                    if "response" in json_response:
-                        yield json_response["response"]
-                    elif "error" in json_response:
-                        logger.error(f"Error in response: {json_response['error']}")
-                        yield f"Error: {json_response['error']}"
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse JSON, yielding raw chunk: {chunk.decode('utf-8')}")
-                    yield chunk.decode('utf-8')
-        
-        logger.info("Chat response completed")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error in chat message: {str(e)}", exc_info=True)
-        yield f"An error occurred while sending the message: {str(e)}"
 
 def get_user_projects(org_id):
     try:
@@ -85,22 +68,20 @@ def get_project_teams(org_id, project_id):
     
 import time
 
-def send_project_management_query(prompt: str, project_id: str, team_id: str) -> Iterator[str]:
-    logger.info(f"Entering send_project_management_query function. prompt={prompt}, project_id={project_id}, team_id={team_id}")
+def send_chat_message(message: str, assistant_id: int) -> Iterator[str]:
+    logger.info(f"Sending chat message: message={message}, assistant_id={assistant_id}")
     try:
-        logger.info(f"Sending POST request to {BACKEND_URL}/api/v1/project-management/chat")
         response = requests.post(
-            f"{BACKEND_URL}/api/v1/project-management/chat",
-            json={"message": prompt, "project": project_id, "team": team_id},
+            f"{BACKEND_URL}/api/v1/chat/",
+            json={"message": message, "assistant_id": assistant_id},
             headers=get_auth_header(),
             stream=True
         )
         response.raise_for_status()
-        logger.info("Project management query sent successfully")
+        logger.info("Chat message sent successfully")
         
         for line in response.iter_lines():
             if line:
-                logger.debug(f"Raw response line: {line}")
                 try:
                     json_response = json.loads(line)
                     if "response" in json_response:
@@ -112,11 +93,41 @@ def send_project_management_query(prompt: str, project_id: str, team_id: str) ->
                     logger.warning(f"Failed to parse JSON, yielding raw line: {line.decode('utf-8')}")
                     yield line.decode('utf-8')
         
-        logger.info("Response generator completed")
+        logger.info("Chat response completed")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error in chat message: {str(e)}", exc_info=True)
+        yield f"An error occurred while sending the message: {str(e)}"
+
+def send_project_management_query(prompt: str, project_id: str, team_id: str, org_id: int) -> Iterator[str]:
+    logger.info(f"Sending project management query: prompt={prompt}, project_id={project_id}, team_id={team_id}, org_id={org_id}")
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/project-management/chat",
+            json={"message": prompt, "project": project_id, "team": team_id, "org_id": org_id},
+            headers=get_auth_header(),
+            stream=True
+        )
+        response.raise_for_status()
+        logger.info("Project management query sent successfully")
+        
+        for line in response.iter_lines():
+            if line:
+                try:
+                    json_response = json.loads(line)
+                    if "response" in json_response:
+                        yield json_response["response"]
+                    elif "error" in json_response:
+                        logger.error(f"Error in response: {json_response['error']}")
+                        yield f"Error: {json_response['error']}"
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse JSON, yielding raw line: {line.decode('utf-8')}")
+                    yield line.decode('utf-8')
+        
+        logger.info("Project management response completed")
     except requests.exceptions.RequestException as e:
         logger.error(f"Error in project management query: {str(e)}", exc_info=True)
         yield f"An error occurred: {str(e)}"
-        
+                
 def get_chat_history(assistant_id: int) -> list:
     try:
         response = requests.get(
@@ -163,3 +174,19 @@ def update_azure_devops_schema():
     except requests.exceptions.RequestException as e:
         logger.error(f"Error updating Azure DevOps schema: {str(e)}")
         raise        
+    
+def get_assistant_id(user_id, org_id, user_role, user_nickname):
+    response = requests.get(
+        f"{BACKEND_URL}/api/v1/assistant/get-assistant",
+        params={
+            "user_id": user_id,
+            "org_id": org_id,
+            "user_role": user_role,
+            "user_nickname": user_nickname
+        },
+        headers={"Authorization": f"Bearer {st.session_state.get('token')}"}
+    )
+    if response.status_code == 200:
+        return response.json()["assistant_id"]
+    else:
+        raise Exception(f"Failed to get assistant ID. Status code: {response.status_code}")    

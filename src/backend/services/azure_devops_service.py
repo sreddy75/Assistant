@@ -129,8 +129,8 @@ class AzureDevOpsService:
             AND [System.AreaPath] UNDER '{area_path}'
             AND [System.WorkItemType] = 'Bug'
             AND [System.State] = 'Resolved'
-            AND [System.ChangedDate] >= '{start_date.isoformat()}'
-            AND [System.ChangedDate] <= '{end_date.isoformat()}'
+            AND [System.ChangedDate] >= '{start_date.date()}'
+            AND [System.ChangedDate] <= '{end_date.date()}'
             """
         }
         
@@ -162,8 +162,8 @@ class AzureDevOpsService:
             WHERE [System.TeamProject] = '{project_name}'
             AND [System.AreaPath] UNDER '{area_path}'
             AND [System.WorkItemType] = 'Bug'
-            AND [System.CreatedDate] >= '{start_date}'
-            AND [System.CreatedDate] <= '{end_date}'
+            AND [System.CreatedDate] >= '{start_date.date()}'
+            AND [System.CreatedDate] <= '{end_date.date()}'
             """
         }
         

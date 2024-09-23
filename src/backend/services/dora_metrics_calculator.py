@@ -137,7 +137,7 @@ class DORAMetricsCalculator:
     def calculate_change_failure_rate(self, project_id: str, team_id: str, days: int = 30) -> Dict[str, Any]:
         logger.info(f"Calculating change failure rate for project={project_id}, team={team_id}, days={days}")
         try:
-            end_date = datetime.now().date()
+            end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
             
             deployments = self.azure_devops_service.get_releases(project_id, team_id, start_date, end_date)
