@@ -94,7 +94,7 @@ class AzureDevOpsService:
             FROM WorkItems
             WHERE [System.TeamProject] = '{project_name}'
             AND [System.AreaPath] UNDER '{area_path}'
-            AND [System.State] = 'Closed'
+            AND [System.State] IN ('Closed', 'Done', 'Completed')
             AND [System.ChangedDate] >= '{start_date.date()}'
             AND [System.ChangedDate] <= '{end_date.date()}'
             """

@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from statistics import mean, median
 from src.backend.services.azure_devops_service import AzureDevOpsService
 
@@ -87,25 +87,65 @@ class DORAMetricsCalculator:
                             "Please try a different time range or check with your team."
                 }
             
-            else:
-                lead_times = []
-                for item in completed_work_items:
-                    created_date = datetime.fromisoformat(item.fields['System.CreatedDate'])
-                    completed_date = datetime.fromisoformat(item.fields['System.CompletedDate'])
-                    lead_time = (completed_date - created_date).total_seconds() / 3600  # Convert to hours
-                    lead_times.append(lead_time)
-                
+            lead_times = self.calculate_lead_times(completed_work_items)
+            
+            if not lead_times:
                 return {
-                    "average_lead_time": f"{mean(lead_times):.2f} hours",
-                    "median_lead_time": f"{median(lead_times):.2f} hours",
-                    "min_lead_time": f"{min(lead_times):.2f} hours",
-                    "max_lead_time": f"{max(lead_times):.2f} hours"
-                }                
+                    'message': "Could not calculate lead times for any work items. "
+                            "This might be due to missing date fields. "
+                            "Please check your work item configuration."
+                }
+            
+            return {
+                "average_lead_time": f"{mean(lead_times):.2f} hours",
+                "median_lead_time": f"{median(lead_times):.2f} hours",
+                "min_lead_time": f"{min(lead_times):.2f} hours",
+                "max_lead_time": f"{max(lead_times):.2f} hours"
+            }
                         
         except Exception as e:
             logger.error(f"Error calculating lead time for changes: {str(e)}")
             return {"error": f"Failed to calculate lead time for changes: {str(e)}"}
 
+    def calculate_lead_times(self, work_items: List[Any]) -> List[float]:
+        lead_times = []
+        for item in work_items:
+            lead_time = self.calculate_single_lead_time(item)
+            if lead_time is not None:
+                lead_times.append(lead_time)
+        return lead_times
+
+    def calculate_single_lead_time(self, item: Any) -> Optional[float]:
+        try:
+            created_date = datetime.fromisoformat(item.fields['System.CreatedDate'])
+            completed_date = self.get_completion_date(item)
+            
+            if completed_date is None:
+                logger.warning(f"Could not determine completion date for item {item.id}")
+                return None
+            
+            lead_time = (completed_date - created_date).total_seconds() / 3600  # Convert to hours
+            return lead_time
+        except KeyError as e:
+            logger.warning(f"Missing required field for item {item.id}: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error calculating lead time for item {item.id}: {str(e)}")
+            return None
+
+    def get_completion_date(self, item: Any) -> Optional[datetime]:
+        date_fields = [
+            'System.CompletedDate',
+            'Microsoft.VSTS.Common.ClosedDate',
+            'Microsoft.VSTS.Common.StateChangeDate',
+            'System.ChangedDate'
+        ]
+        
+        for field in date_fields:
+            if field in item.fields:
+                return datetime.fromisoformat(item.fields[field])
+        
+        return None
     def calculate_time_to_restore_service(self, project_id: str, team_id: str, days: int = 30) -> Dict[str, Any]:
         logger.info(f"Calculating time to restore service for project={project_id}, team={team_id}, days={days}")
         try:
