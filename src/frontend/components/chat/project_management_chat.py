@@ -68,6 +68,7 @@ class ProjectManagementChat:
 
         if st.button("Clear Conversation", key="clear_pm_chat"):
             self.clear_chat_history()
+            st.experimental_rerun() 
 
     def handle_input(self):
         user_input = st.session_state[self.chat_input_key]
@@ -143,3 +144,6 @@ class ProjectManagementChat:
     def clear_chat_history(self):
         st.session_state[self.message_key] = []
         st.session_state.pm_processing = False
+        st.session_state.pm_current_input = ""  
+        if hasattr(self, 'response_container'):
+            self.response_container.empty()  
