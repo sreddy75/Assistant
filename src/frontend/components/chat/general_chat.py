@@ -33,14 +33,36 @@ class GeneralChat:
 
         with input_container:
             if not st.session_state.general_processing:
-                user_input = st.text_input(
-                    "What would you like to know?",
-                    key=self.chat_input_key,
-                    value=""  # Always start with an empty input
-                )
-                if user_input:
-                    self.handle_input(user_input)
-                    st.session_state[self.chat_input_key] = ""  # Clear input after submission
+                col1, col2 = st.columns([20, 1])
+                with col1:
+                    user_input = st.text_input(
+                        "What would you like to know?",
+                        key=self.chat_input_key,
+                        value=""  # Always start with an empty input
+                    )
+                with col2:
+                    st.markdown(
+                        """
+                        <style>
+                        .stButton > button {
+                            position: relative;
+                            top: 14px;
+                            left: 5px;
+                            height: 38px;
+                            padding: 0 10px;                            
+                            color: white;
+                            border: none;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            transition: background-color 0.3s;
+                        }
+                        </style>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    if st.button("↑", key="send_general_chat"):
+                        self.handle_input(user_input)
+                        st.session_state[self.chat_input_key] = ""  # Clear input after submission
 
                 st.button("Clear Conversation", key="clear_general_chat", on_click=self.clear_chat_history)
             else:
