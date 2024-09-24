@@ -46,6 +46,7 @@ class GeneralChat:
 
         if st.button("Clear Conversation", key="clear_general_chat"):
             self.clear_chat_history()
+            st.experimental_rerun() 
 
     def handle_input(self):
         user_input = st.session_state[self.chat_input_key]
@@ -114,5 +115,11 @@ class GeneralChat:
         return send_chat_message(message, self.assistant_id)
 
     def clear_chat_history(self):
+        for key in list(st.session_state.keys()):
+            if key.startswith("general_"):
+                del st.session_state[key]
         st.session_state[self.message_key] = []
         st.session_state.general_processing = False
+        st.session_state.general_current_input = ""
+        if hasattr(self, 'response_container'):
+            self.response_container.empty()
