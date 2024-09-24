@@ -41,46 +41,71 @@ class ProjectManagementChat:
             st.session_state[self.message_key] = []
         if "pm_processing" not in st.session_state:
             st.session_state.pm_processing = False
-        if "pm_current_input" not in st.session_state:
-            st.session_state.pm_current_input = ""
+        if self.chat_input_key not in st.session_state:
+            st.session_state[self.chat_input_key] = ""
 
         chat_container = st.container()
         input_container = st.container()
 
         with chat_container:
             self.render_messages()
+            if st.session_state.pm_processing:
+                self.show_thinking_animation()
             self.response_container = st.empty()
 
         with input_container:
-            user_input = st.text_input(
-                "What would you like to know about your project?",
-                key=self.chat_input_key,
-                disabled=st.session_state.pm_processing,
-                on_change=self.handle_input,
-                value=st.session_state.pm_current_input
-            )
+            if not st.session_state.pm_processing:
+                user_input = st.text_input(
+                    "What would you like to know about your project?",
+                    key=self.chat_input_key,
+                    value=""  # Always start with an empty input
+                )
+                if user_input:
+                    self.handle_input(user_input)
+                    st.session_state[self.chat_input_key] = ""  # Clear input after submission
 
-        # Add 3 line gap
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
+                st.button("Clear Conversation", key="clear_pm_chat", on_click=self.clear_chat_history)
+            else:
+                # Create empty placeholders when processing
+                st.empty()
+                st.empty()
 
         if st.session_state.pm_processing:
             self.process_message()
 
-        if st.button("Clear Conversation", key="clear_pm_chat"):
-            self.clear_chat_history()
-            st.experimental_rerun() 
+    def show_thinking_animation(self, color="#f71905", size="20px"):
+        css = f"""
+        <style>
+        @keyframes ellipsis {{
+            0% {{ content: '..'; }}
+            33% {{ content: '....'; }}
+            66% {{ content: '.....'; }}
+        }}
+        .thinking::after {{
+            content: '.';
+            animation: ellipsis 1s infinite;
+            color: {color};
+            font-size: {size};
+            line-height: 0;
+            vertical-align: middle;
+        }}
+        .thinking-text {{
+            color: {color};
+            font-size: {size};
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 5px;
+        }}
+        </style>
+        """
+        html = f"{css}<div><span class='thinking-text'>Thinking</span><span class='thinking'></span></div>"
+        st.markdown(html, unsafe_allow_html=True)
 
-    def handle_input(self):
-        user_input = st.session_state[self.chat_input_key]
+    def handle_input(self, user_input):
         if user_input and not st.session_state.pm_processing:
             st.session_state.pm_processing = True
             st.session_state[self.message_key].append({"role": "user", "content": user_input})
-            st.session_state.pm_current_input = ""  # Clear the input after submission
-
-    def render_messages(self):
-        for message in st.session_state[self.message_key]:
-            with st.chat_message(message["role"], avatar=self.system_chat_icon if message["role"] == "assistant" else self.user_chat_icon):
-                st.markdown(message["content"], unsafe_allow_html=True)
+            st.experimental_rerun()
 
     def process_message(self):
         if not self.selected_project or not self.selected_team:
@@ -90,53 +115,26 @@ class ProjectManagementChat:
         
         try:
             user_input = st.session_state[self.message_key][-1]["content"]
-            
-            # Create a container for the "thinking" animation
-            thinking_container = st.empty()
-            
-            # CSS for the animated ellipsis
-            css = """
-            <style>
-            @keyframes ellipsis {
-                0% { content: '.'; }
-                33% { content: '..'; }
-                66% { content: '...'; }
-            }
-            .thinking::after {
-                content: '.';
-                animation: ellipsis 1s infinite;
-            }
-            </style>
-            """
-            
-            # HTML for the "thinking" message with animated ellipsis
-            html = f"{css}<div>Thinking<span class='thinking'></span></div>"
-            
-            # Display the "thinking" message
-            thinking_container.markdown(html, unsafe_allow_html=True)
-
-            # Send message and get response
             response = self.send_message(user_input)
 
-            # Remove the "thinking" message
-            thinking_container.empty()
-
-            # Process and display the response
-            placeholder = self.response_container.empty()
             full_response = ""
             for chunk in response:
                 if chunk:
                     full_response += chunk
-                    placeholder.markdown(full_response)
-                    time.sleep(0.02)  # Add a small delay for smooth streaming effect
+                    self.response_container.markdown(full_response)
+                    time.sleep(0.02)
 
             st.session_state[self.message_key].append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.error(f"An error occurred while processing your request: {str(e)}")
         finally:
             st.session_state.pm_processing = False
-            # Force a rerun to update the UI and re-enable the input
             st.experimental_rerun()
+
+    def render_messages(self):
+        for message in st.session_state[self.message_key]:
+            with st.chat_message(message["role"], avatar=self.system_chat_icon if message["role"] == "assistant" else self.user_chat_icon):
+                st.markdown(message["content"])
 
     def send_message(self, message):
         return send_project_management_query(message, self.selected_project['id'], self.selected_team['id'], self.org_id)
@@ -144,6 +142,7 @@ class ProjectManagementChat:
     def clear_chat_history(self):
         st.session_state[self.message_key] = []
         st.session_state.pm_processing = False
-        st.session_state.pm_current_input = ""  
+        st.session_state[self.chat_input_key] = ""  # Ensure input is cleared
         if hasattr(self, 'response_container'):
-            self.response_container.empty()  
+            self.response_container.empty()
+        st.experimental_rerun()
