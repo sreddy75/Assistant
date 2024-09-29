@@ -110,6 +110,23 @@ class AssistantKnowledge(BaseModel):
     def load_text(self, text: str, upsert: bool = False, skip_existing: bool = True) -> None:
         self.load_documents(documents=[Document(content=text)], upsert=upsert, skip_existing=skip_existing)
 
+    def load_confluence_page(self, page: Dict[str, Any]) -> None:
+        document = Document(
+            id=page['id'],
+            name=page['title'],
+            content=page['content'],
+            meta_data={
+                "type": "confluence_page",
+                "space_key": page['space']['key'],
+                "url": page['_links']['webui']
+            }
+        )
+        self.load_document(document)
+
+    def load_confluence_space(self, space_key: str, pages: List[Dict[str, Any]]) -> None:
+        for page in pages:
+            self.load_confluence_page(page)
+            
     def get_dataframe(self, df_name: str) -> Optional[pd.DataFrame]:
         documents = self.search(df_name, num_documents=1)
         if documents:
