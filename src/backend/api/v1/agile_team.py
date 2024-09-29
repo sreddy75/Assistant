@@ -98,6 +98,7 @@ async def generate_development_artifacts(
                 raise ValueError("Invalid assistant type for business analysis")
 
             documents = confluence_service.get_documents()
+            logger.info(f"Retrieved {len(documents)} documents from Confluence")
             combined_content = "\n\n".join([doc.content for doc in documents])
 
             initial_state = BusinessAnalysisState(
@@ -109,30 +110,16 @@ async def generate_development_artifacts(
             logger.info(f"Initial state created with {len(documents)} documents")
             
             async for result in run_business_analysis_graph(initial_state):
-                if not result["is_final"]:
-                    yield json.dumps(result) + "\n"
-                else:
+                logger.info(f"Received result from business_analysis_graph: {result}")
+                yield json.dumps(result) + "\n"
+
+                if result.get("is_final", False):
                     final_state = result["graph_state"]
+                    logger.info(f"Final state received: {final_state}")
                     
-                    # Process the final state
-                    if "user_stories" not in final_state or not final_state["user_stories"]:
-                        logger.error("User stories not found in final state")
-                        yield json.dumps({"error": "User stories not generated"}) + "\n"
-                        return
-
-                    if "acceptance_criteria" not in final_state or not final_state["acceptance_criteria"]:
-                        logger.error("Acceptance criteria not found in final state")
-                        yield json.dumps({"error": "Acceptance criteria not generated"}) + "\n"
-                        return
-
-                    if "test_cases" not in final_state or not final_state["test_cases"]:
-                        logger.error("Test cases not found in final state")
-                        yield json.dumps({"error": "Test cases not generated"}) + "\n"
-                        return
-
-                    user_stories = parse_user_stories(final_state["user_stories"])
-                    acceptance_criteria = parse_acceptance_criteria(final_state["acceptance_criteria"])
-                    test_cases = parse_test_cases(final_state["test_cases"])
+                    user_stories = parse_user_stories(final_state.get("user_stories", ""))
+                    acceptance_criteria = parse_acceptance_criteria(final_state.get("acceptance_criteria", ""))
+                    test_cases = parse_test_cases(final_state.get("test_cases", ""))
                     
                     final_response = BusinessAnalysisResponse(
                         user_stories=[UserStory(**story) if isinstance(story, dict) else UserStory(story=str(story)) for story in user_stories],

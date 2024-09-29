@@ -14,12 +14,11 @@ from src.backend.core.config import settings
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
+CONFLUENCE_URL = settings.CONFLUENCE_URL
+CONFLUENCE_USERNAME = settings.CONFLUENCE_USERNAME
+CONFLUENCE_API_TOKEN = settings.CONFLUENCE_API_TOKEN
+DATABASE_URL = settings.DB_URL
 
-CONFLUENCE_URL=settings.CONFLUENCE_URL
-CONFLUENCE_USERNAME=settings.CONFLUENCE_USERNAME
-CONFLUENCE_API_TOKEN=settings.CONFLUENCE_API_TOKEN
-DATABASE_URL=settings.DB_URL
-        
 class ConfluenceService:
     def __init__(self, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
         self.logger = logging.getLogger(__name__)
@@ -47,6 +46,7 @@ class ConfluenceService:
     def get_documents(self) -> List[DocumentResponse]:
         self.ensure_table_exists()
         document_info = self.vector_db.list_document_names()
+        self.logger.info(f"Retrieved {len(document_info)} document infos from vector DB")
 
         # Group chunks by base document name
         document_groups = defaultdict(lambda: {'chunks': 0, 'pages': set(), 'content': []})
@@ -66,6 +66,8 @@ class ConfluenceService:
             content = self.vector_db.get_document_content(name)
             if content:
                 document_groups[base_name if match else name]['content'].append(content)
+            else:
+                self.logger.warning(f"No content found for document: {name}")
 
         documents = []
         for base_name, info in document_groups.items():
@@ -73,11 +75,12 @@ class ConfluenceService:
                 "total_chunks": info['chunks'],
                 "total_pages": len(info['pages']) if info['pages'] else 1
             }
+            combined_content = "\n\n".join(info['content'])
             documents.append(
                 DocumentResponse(
                     id=base_name,
                     name=base_name,
-                    content="\n\n".join(info['content']),  # Join all content parts
+                    content=combined_content,
                     meta_data=meta_data,
                     user_id=self.user.id,
                     org_id=self.user.organization_id,
@@ -86,8 +89,9 @@ class ConfluenceService:
                     chunks=info['chunks']
                 )
             )
+            self.logger.info(f"Document: {base_name}, Chunks: {info['chunks']}, Content length: {len(combined_content)}")
 
-        logging.debug(f"Returning {len(documents)} documents")
+        self.logger.info(f"Returning {len(documents)} documents")
         return documents
         
     def get_spaces(self) -> List[Dict[str, Any]]:
@@ -101,12 +105,16 @@ class ConfluenceService:
             else:
                 raise ValueError(f"Unexpected response format from Confluence API: {spaces}")
         except Exception as e:
-            print(f"Error in get_spaces: {str(e)}")
+            self.logger.error(f"Error in get_spaces: {str(e)}", exc_info=True)
             return []  # Return an empty list in case of error
 
     def get_pages_in_space(self, space_key: str) -> List[Dict[str, Any]]:
-        pages = self.confluence.get_all_pages_from_space(space_key, start=0, limit=None, status=None, expand='ancestors')
-        return [self._format_page(page) for page in pages]
+        try:
+            pages = self.confluence.get_all_pages_from_space(space_key, start=0, limit=None, status=None, expand='ancestors')
+            return [self._format_page(page) for page in pages]
+        except Exception as e:
+            self.logger.error(f"Error in get_pages_in_space for space_key {space_key}: {str(e)}", exc_info=True)
+            return []
 
     def _format_page(self, page: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -121,6 +129,7 @@ class ConfluenceService:
         synced_pages = []
         for page_id in page_ids:
             try:
+                self.logger.info(f"Fetching page with ID: {page_id}")
                 page = self.confluence.get_page_by_id(page_id, expand='body.storage')
                 
                 content = page.get('body', {}).get('storage', {}).get('value', '')
@@ -128,6 +137,8 @@ class ConfluenceService:
                 if not content:
                     self.logger.warning(f"No content found for page {page_id}")
                     continue
+
+                self.logger.info(f"Content found for page {page_id}. Length: {len(content)}")
 
                 document = Document(
                     id=page['id'],
@@ -141,12 +152,14 @@ class ConfluenceService:
                         "org_id": self.user.organization_id
                     }
                 )
+                self.logger.info(f"Loading document into knowledge base: {page['title']} (ID: {page['id']})")
                 self.knowledge_base.load_document(document)
                 synced_pages.append(document)
                 self.logger.info(f"Synced page: {page['title']} (ID: {page['id']})")
             except Exception as e:
-                self.logger.error(f"Error syncing page {page_id}: {str(e)}")
+                self.logger.error(f"Error syncing page {page_id}: {str(e)}", exc_info=True)
         
+        self.logger.info(f"Synced {len(synced_pages)} pages")
         return {"pages_synced": len(synced_pages)}
 
 def get_confluence_service(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> ConfluenceService:

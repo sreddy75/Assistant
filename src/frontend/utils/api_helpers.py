@@ -269,9 +269,21 @@ def generate_development_artifacts(org_id: int) -> Iterator[str]:
         )
         response.raise_for_status()
         logger.info("Development artifacts generation request sent successfully")
-        return handle_streaming_response(response)
+        
+        for line in response.iter_lines():
+            if line:
+                logger.info(f"Received line from backend: {line}")
+                try:
+                    yield line.decode('utf-8')
+                except UnicodeDecodeError:
+                    logger.error(f"Failed to decode line: {line}")
+            else:
+                logger.warning("Received empty line from backend")
+        
+        logger.info("Finished processing backend response")
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching Confluence pages: {str(e)}")
+        logger.error(f"Error in generate_development_artifacts: {str(e)}", exc_info=True)
+        yield json.dumps({"error": str(e)})
             
 def send_business_analysis_query(message: str, context: Dict[str, Any], org_id: int) -> Iterator[str]:
     try:

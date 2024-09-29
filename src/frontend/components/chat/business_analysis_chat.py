@@ -9,7 +9,6 @@ import time
 import graphviz
 import json
 import logging
-import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +18,17 @@ class BusinessAnalysisChat:
         self.system_chat_icon = system_chat_icon
         self.user_chat_icon = user_chat_icon
         self.org_id = None
+
+        self.nodes = ["AnalyzeBusinessDocuments", "ExtractKeyRequirements", "GenerateUserStories", "CreateAcceptanceCriteria", "GenerateTestCases"]
+        self.node_to_attr = {
+            "AnalyzeBusinessDocuments": "business_analysis",
+            "ExtractKeyRequirements": "key_requirements",
+            "GenerateUserStories": "user_stories",
+            "CreateAcceptanceCriteria": "acceptance_criteria",
+            "GenerateTestCases": "test_cases"
+        }
+        self.attr_to_node = {v: k for k, v in self.node_to_attr.items()}
+
         if 'graph' not in st.session_state:
             st.session_state.graph = self.initialize_graph()
         if 'analysis_results' not in st.session_state:
@@ -33,41 +43,52 @@ class BusinessAnalysisChat:
         self.step_placeholders = {}
         self.final_results_placeholder = None
 
+        self.nodes = ["AnalyzeBusinessDocuments", "ExtractKeyRequirements", "GenerateUserStories", "CreateAcceptanceCriteria", "GenerateTestCases"]
+        self.node_to_attr = {
+            "AnalyzeBusinessDocuments": "business_analysis",
+            "ExtractKeyRequirements": "key_requirements",
+            "GenerateUserStories": "user_stories",
+            "CreateAcceptanceCriteria": "acceptance_criteria",
+            "GenerateTestCases": "test_cases"
+        }
+        self.attr_to_node = {v: k for k, v in self.node_to_attr.items()}
+
     def render_chat_interface(self, org_id):
         self.org_id = org_id        
 
         # Sidebar for Confluence Loader
         with st.sidebar:
             st.header("Confluence Data Loader")
-            self.render_confluence_loader()
-
-        # Create placeholders for each component
-        self.progress_placeholder = st.empty()
-        self.status_placeholder = st.empty()
-        self.graph_placeholder = st.empty()
-        
-        self.step_placeholders = {
-            "AnalyzeBusinessDocuments": st.empty(),
-            "ExtractKeyRequirements": st.empty(),
-            "GenerateUserStories": st.empty(),
-            "CreateAcceptanceCriteria": st.empty(),
-            "GenerateTestCases": st.empty()
-        }
-        self.final_results_placeholder = st.empty()
+            self.render_confluence_loader()        
 
         # Main area split into two columns
-        col1, col2 = st.columns([3, 2])
+        col1, col2 = st.columns([4, 1])
 
         with col1:            
-            st.header("Business Analysis Results")
+            st.header("Business Analysis Results")            
+        
+            # Create placeholders for each component
+            self.progress_placeholder = st.empty()
+            self.status_placeholder = st.empty()            
+            
+            self.step_placeholders = {
+                "AnalyzeBusinessDocuments": st.empty(),
+                "ExtractKeyRequirements": st.empty(),
+                "GenerateUserStories": st.empty(),
+                "CreateAcceptanceCriteria": st.empty(),
+                "GenerateTestCases": st.empty()
+            }
+            self.final_results_placeholder = st.empty()
+            
             if st.button("Perform Business Analysis"):
                 st.session_state.analysis_complete = False
                 st.session_state.analysis_results = {}
                 st.session_state.graph = self.initialize_graph()
-                self.perform_business_analysis()
+                self.perform_business_analysis()                                                    
 
         with col2:
             st.header("Analysis Progress")
+            self.graph_placeholder = st.empty()
             self.display_graph()
 
     def render_confluence_loader(self):
@@ -122,18 +143,21 @@ class BusinessAnalysisChat:
             if "graph_state" in response_obj:
                 self.update_graph(response_obj["graph_state"])
                 st.session_state.analysis_results.update(response_obj["graph_state"])
-                current_node = list(response_obj["graph_state"].keys())[0]
+                current_attr = list(response_obj["graph_state"].keys())[0]
+                current_node = self.attr_to_node.get(current_attr, current_attr)
                 
                 # Update progress and status
-                steps = ["AnalyzeBusinessDocuments", "ExtractKeyRequirements", "GenerateUserStories", "CreateAcceptanceCriteria", "GenerateTestCases"]
-                completed_steps = steps.index(current_node) + 1
-                progress = completed_steps / len(steps)
+                completed_steps = self.nodes.index(current_node) + 1 if current_node in self.nodes else 0
+                progress = completed_steps / len(self.nodes)
                 self.progress_placeholder.progress(progress)
-                self.status_placeholder.text(f"Completed: {completed_steps}/{len(steps)} steps")
+                self.status_placeholder.text(f"Completed: {completed_steps}/{len(self.nodes)} steps")
 
                 # Display interim results
-                with self.step_placeholders[current_node].expander(f"Interim Result: {current_node}", expanded=True):
-                    st.write(response_obj["response"])
+                if current_node in self.step_placeholders:
+                    with self.step_placeholders[current_node].expander(f"Interim Result: {current_node}", expanded=True):
+                        st.write(response_obj["graph_state"][current_attr])
+                else:
+                    logger.warning(f"No placeholder found for node: {current_node}")
             
             if response_obj.get("is_final", False):
                 st.session_state.analysis_results["final_results"] = response_obj["graph_state"]
@@ -146,29 +170,33 @@ class BusinessAnalysisChat:
     def initialize_graph(self):
         graph = graphviz.Digraph()
         graph.attr(rankdir='TB')
-        nodes = ["AnalyzeBusinessDocuments", "ExtractKeyRequirements", "GenerateUserStories", "CreateAcceptanceCriteria", "GenerateTestCases"]
-        for node in nodes:
+        for node in self.nodes:
             graph.node(node, node, shape='box')
-        for i in range(len(nodes) - 1):
-            graph.edge(nodes[i], nodes[i+1])
+        for i in range(len(self.nodes) - 1):
+            graph.edge(self.nodes[i], self.nodes[i+1])
         return graph
 
     def update_graph(self, graph_state):
-        nodes = ["AnalyzeBusinessDocuments", "ExtractKeyRequirements", "GenerateUserStories", "CreateAcceptanceCriteria", "GenerateTestCases"]
-        completed_node = list(graph_state.keys())[0]
-        for i, node in enumerate(nodes):
-            if node == completed_node:
+        completed_attr = list(graph_state.keys())[0]
+        completed_node = self.attr_to_node.get(completed_attr)
+        
+        if completed_node is None:
+            logger.warning(f"Unknown attribute in graph_state: {completed_attr}")
+            return
+
+        completed_index = self.nodes.index(completed_node) if completed_node in self.nodes else -1
+
+        for i, node in enumerate(self.nodes):
+            if i <= completed_index:
                 st.session_state.graph.node(node, node, style='filled', color='lightgreen', shape='box')
                 if i > 0:
-                    st.session_state.graph.edge(nodes[i-1], node, color='green')
-            elif i > nodes.index(completed_node):
-                st.session_state.graph.node(node, node, shape='box')
+                    st.session_state.graph.edge(self.nodes[i-1], node, color='green')
             else:
-                st.session_state.graph.node(node, node, style='filled', color='lightgreen', shape='box')
+                st.session_state.graph.node(node, node, shape='box')
         self.display_graph()
 
     def display_graph(self):
-        if self.graph_placeholder is not None and st.session_state.graph is not None:
+        if self.graph_placeholder is not None:
             try:
                 self.graph_placeholder.graphviz_chart(st.session_state.graph)
             except Exception as e:
@@ -176,27 +204,25 @@ class BusinessAnalysisChat:
                 self.graph_placeholder.error("Unable to display graph. Please check the console for more information.")
 
     def display_final_results(self):
-        final_results = st.session_state.analysis_results["final_results"]
+        final_results = st.session_state.analysis_results.get("final_results", {})
         
         with self.final_results_placeholder.container():
             st.markdown("## Final Business Analysis Results")
             
-            if "business_analysis" in final_results:
-                with st.expander("Business Analysis", expanded=False):
-                    st.write(final_results["business_analysis"])
-            
-            if "key_requirements" in final_results:
-                with st.expander("Key Requirements", expanded=True):
-                    st.write(final_results["key_requirements"])
+            for key, value in final_results.items():
+                with st.expander(key.replace("_", " ").title(), expanded=True):
+                    st.write(value)
 
-            if "user_stories" in final_results:
-                with st.expander("User Stories", expanded=True):
-                    st.write(final_results["user_stories"])
+        logger.info("Final results displayed")
 
-            if "acceptance_criteria" in final_results:
-                with st.expander("Acceptance Criteria", expanded=True):
-                    st.write(final_results["acceptance_criteria"])
+def main():
+    st.set_page_config(page_title="Business Analysis Chat", layout="wide")
+    
+    # Assuming you have the org_id stored in session state or retrieved from elsewhere
+    org_id = st.session_state.get('org_id')
+    
+    chat = BusinessAnalysisChat(system_chat_icon="🤖", user_chat_icon="👤")
+    chat.render_chat_interface(org_id)
 
-            if "test_cases" in final_results:
-                with st.expander("Test Cases", expanded=True):
-                    st.write(final_results["test_cases"])
+if __name__ == "__main__":
+    main()
