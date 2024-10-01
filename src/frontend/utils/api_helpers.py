@@ -12,18 +12,34 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+def send_business_analysis_query(message: str, analysis_results: Dict[str, Any], org_id: int) -> Iterator[str]:
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/api/v1/agile-team/business-analysis/chat",
+            json={
+                "query": message,
+                "context": analysis_results,
+                "org_id": org_id
+            },
+            headers=get_auth_header(),
+            stream=True
+        )
+        response.raise_for_status()
+        return handle_streaming_response(response)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error in business analysis query: {str(e)}")
+        yield f"An error occurred: {str(e)}"
+
 def handle_streaming_response(response: requests.Response) -> Iterator[str]:
     for line in response.iter_lines():
         if line:
             try:
                 json_response = json.loads(line)
                 if "response" in json_response:
-                    yield json.dumps(json_response)
-                elif "graph_state" in json_response:
-                    yield json.dumps(json_response)
+                    yield json_response["response"]
                 elif "error" in json_response:
                     logger.error(f"Error in response: {json_response['error']}")
-                    yield json.dumps({"error": json_response['error']})
+                    yield f"Error: {json_response['error']}"
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse JSON, yielding raw line: {line.decode('utf-8')}")
                 yield line.decode('utf-8')
@@ -288,9 +304,9 @@ def generate_development_artifacts(org_id: int) -> Iterator[str]:
 def send_business_analysis_query(message: str, context: Dict[str, Any], org_id: int) -> Iterator[str]:
     try:
         response = requests.post(
-            f"{BACKEND_URL}/api/v1/agile-team/business-analysis/query",
+            f"{BACKEND_URL}/api/v1/agile-team/business-analysis/chat",
             json={
-                "message": message,
+                "query": message,
                 "context": context,
                 "org_id": org_id
             },
@@ -298,7 +314,18 @@ def send_business_analysis_query(message: str, context: Dict[str, Any], org_id: 
             stream=True
         )
         response.raise_for_status()
-        return handle_streaming_response(response)
+        for line in response.iter_lines():
+            if line:
+                try:
+                    json_response = json.loads(line)
+                    if "response" in json_response:
+                        yield json_response["response"]
+                    elif "error" in json_response:
+                        logger.error(f"Error in response: {json_response['error']}")
+                        yield f"Error: {json_response['error']}"
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse JSON, yielding raw line: {line.decode('utf-8')}")
+                    yield line.decode('utf-8')
     except requests.exceptions.RequestException as e:
         logger.error(f"Error in business analysis query: {str(e)}")
         yield f"An error occurred: {str(e)}"
