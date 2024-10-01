@@ -5,11 +5,11 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from langchain.chat_models import ChatOpenAI
 from langgraph.graph import StateGraph, END
-from src.backend.services.langgraphs.business_analysis_graph import run_business_analysis_graph
+from src.backend.services.langgraphs.business_analysis_graph import BusinessAnalysisGraph  
 from src.backend.models.models import User
 from src.backend.kr8.knowledge.base import AssistantKnowledge
 from src.backend.kr8.vectordb.pgvector.pgvector2 import PgVector2
-from src.backend.schemas.agile_entity_schemas import AcceptanceCriteria, BusinessAnalysisRequest, BusinessAnalysisResponse, BusinessAnalysisState, ConfluenceSyncRequest, PageSync, QueryResponse, QueryResult, TestCase, UserStory
+from src.backend.schemas.agile_entity_schemas import AcceptanceCriteria, BusinessAnalysisChatRequest, BusinessAnalysisRequest, BusinessAnalysisResponse, BusinessAnalysisState, ConfluenceSyncRequest, PageSync, QueryResponse, QueryResult, TestCase, UserStory
 from src.backend.services.confluence_service import ConfluenceService
 from src.backend.helpers.auth import get_current_user
 from src.backend.kr8.assistant.assistant_manager import get_assistant_manager, AssistantManager
@@ -97,19 +97,11 @@ async def generate_development_artifacts(
             if not isinstance(assistant, EnhancedBusinessAnalyst):
                 raise ValueError("Invalid assistant type for business analysis")
 
-            documents = confluence_service.get_documents()
-            logger.info(f"Retrieved {len(documents)} documents from Confluence")
-            combined_content = "\n\n".join([doc.content for doc in documents])
-
-            initial_state = BusinessAnalysisState(
-                business_analysis=combined_content,
-                db=db,
-                user=current_user,
-                assistant=assistant
-            )
-            logger.info(f"Initial state created with {len(documents)} documents")
+            # Create an instance of BusinessAnalysisGraph
+            graph = BusinessAnalysisGraph(db, current_user, assistant)
             
-            async for result in run_business_analysis_graph(initial_state):
+            # Run the business analysis graph
+            async for result in graph.run_business_analysis_graph():
                 logger.info(f"Received result from business_analysis_graph: {result}")
                 yield json.dumps(result) + "\n"
 
@@ -137,6 +129,55 @@ async def generate_development_artifacts(
 
     logger.info("Returning StreamingResponse")
     return StreamingResponse(generate(), media_type="application/json")
+
+@router.post("/business-analysis/chat")
+async def chat_with_analysis_results(
+    request: BusinessAnalysisChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    assistant_manager: AssistantManager = Depends(get_assistant_manager),
+    knowledge_base: AssistantKnowledge = Depends(get_knowledge_base)
+):
+    logger.info(f"Starting chat_with_analysis_results for user {current_user.id}")
+    
+    async def generate_response():
+        try:
+            assistant = assistant_manager.get_assistant(
+                db=db,
+                user_id=current_user.id,
+                org_id=request.org_id,
+                user_role=current_user.role,
+                user_nickname=current_user.nickname,
+                assistant_type="ba"
+            )
+            logger.info(f"Assistant created: {type(assistant)}")
+            
+            if not isinstance(assistant, EnhancedBusinessAnalyst):
+                raise ValueError("Invalid assistant type for business analysis chat")
+
+            # Retrieve relevant documents from the vector database
+            documents = knowledge_base.search(request.query)
+            logger.info(f"Retrieved {len(documents)} relevant documents")
+
+            # Prepare context for the assistant
+            context = "\n\n".join([doc.content for doc in documents])
+            
+            # Add the analysis results to the context
+            for key, value in request.context.items():
+                context += f"\n\n{key.replace('_', ' ').title()}:\n{value}"
+
+            # Generate response using the assistant
+            response = assistant.generate_response(request.query, context)
+            logger.info("Response generated successfully")
+
+            yield json.dumps({"response": response}) + "\n"
+
+        except Exception as e:
+            logger.error(f"Error in chat_with_analysis_results: {str(e)}", exc_info=True)
+            yield json.dumps({"error": str(e)}) + "\n"
+
+    logger.info("Returning StreamingResponse")
+    return StreamingResponse(generate_response(), media_type="application/json")
 
 @router.get("/confluence/query", response_model=QueryResponse)
 async def query_knowledge_base(

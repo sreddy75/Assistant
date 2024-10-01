@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, TypedDict
+import uuid
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -38,10 +39,17 @@ class BusinessAnalysisState(BaseModel):
     db: Optional[Session] = None
     user: Optional[User] = None
     assistant: Optional[EnhancedBusinessAnalyst] = None
+    analysis_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+
+
 
     class Config:
         arbitrary_types_allowed = True
-    
+
+class BusinessAnalysisChatRequest(BaseModel):
+    query: str
+    context: Dict[str, Any]
+    org_id: int 
 class QueryResult(BaseModel):
     id: str
     name: str
