@@ -35,12 +35,12 @@ jobs:
         docker-compose build
         docker-compose push
 
-    - name: Deploy to EC2
+        - name: Deploy to EC2
       env:
         PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
         USER_NAME: ec2-user
-        GITHUB_REPO: sreddy75/Assistant
+        GITHUB_REPO: sreddy75/Assistant # Full GitHub repo path
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Make sure this secret is set in GitHub settings
       run: |
         echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
@@ -54,7 +54,7 @@ jobs:
 
           # Clone or pull the latest code from the GitHub repository
           if [ ! -d "/home/ec2-user/Assistant" ]; then
-            git clone https://github.com/$GITHUB_REPO.git /home/ec2-user/Assistant
+            git clone https://github.com/sreddy75/Assistant.git /home/ec2-user/Assistant
           else
             cd /home/ec2-user/Assistant
             git pull origin main
