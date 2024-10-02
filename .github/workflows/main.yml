@@ -5,7 +5,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -21,44 +21,44 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
 
-    - name: Install Docker Compose
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y docker-compose
-
     - name: Build, tag, and push image to Amazon ECR
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: myapp
         IMAGE_TAG: ${{ github.sha }}
-        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }} # Ensure this secret is set in GitHub
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
         docker-compose build
         docker-compose push
 
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
     - name: Deploy to EC2
       env:
-        PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
+        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
         USER_NAME: ec2-user
-        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }} # Make sure this is the key without a passphrase
+        AWS_REGION: ${{ secrets.AWS_REGION }}
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
-        echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
-        ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOST_DNS} '
-          # Install git if not installed
-          if ! command -v git &> /dev/null
-          then
-            sudo yum update -y
-            sudo yum install git -y
-          fi
+        echo "$SSH_DEPLOY_KEY" > deploy_key && chmod 600 deploy_key
+        ssh -o StrictHostKeyChecking=no -i deploy_key ${USER_NAME}@${HOST_DNS} '
+          # Set up SSH key for GitHub access
+          mkdir -p ~/.ssh
+          echo "$SSH_DEPLOY_KEY" > ~/.ssh/github_deploy_key && chmod 600 ~/.ssh/github_deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
 
-          # Set up SSH key for GitHub access and disable host key checking
-          echo "$SSH_DEPLOY_KEY" > /home/ec2-user/.ssh/github_key && chmod 600 /home/ec2-user/.ssh/github_key
-          ssh-keyscan -H github.com >> /home/ec2-user/.ssh/known_hosts
-          ssh-agent bash -c "ssh-add /home/ec2-user/.ssh/github_key; git clone git@github.com:sreddy75/Assistant.git /home/ec2-user/Assistant"
+          # Use the deploy key for GitHub operations
+          eval $(ssh-agent -s)
+          ssh-add ~/.ssh/github_deploy_key
 
-          # Pull latest changes if the repository already exists
-          if [ -d "/home/ec2-user/Assistant" ]; then
+          # Clone or pull the repository
+          if [ ! -d "/home/ec2-user/Assistant" ]; then
+            git clone git@github.com:sreddy75/Assistant.git /home/ec2-user/Assistant
+          else
             cd /home/ec2-user/Assistant
             git pull origin main
           fi
@@ -66,16 +66,18 @@ jobs:
           # Navigate to the directory containing docker-compose.yml
           cd /home/ec2-user/Assistant
 
-          # Check if Docker is installed and install it if missing
+          # Check if Docker is installed and install it if missing (this should only run once)
           if ! command -v docker &> /dev/null
           then
             sudo yum update -y
             sudo amazon-linux-extras install docker -y
             sudo service docker start
             sudo usermod -a -G docker ec2-user
+            # Log out and log back in so that your user becomes effective in the docker group
+            # For the purposes of this script, we'll just run the next commands with sudo
           fi
 
-          # Check if docker-compose is installed and install it if missing
+          # Check if docker-compose is installed and install it if missing (this should only run once)
           if ! command -v docker-compose &> /dev/null
           then
             sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
@@ -83,13 +85,24 @@ jobs:
             sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
           fi
 
-          # Log in to ECR and deploy the application
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          # Log in to ECR
+          sudo aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
 
           # Pull the latest Docker image and start the application
-          /usr/local/bin/docker-compose pull
-          /usr/local/bin/docker-compose up -d
+          sudo docker-compose pull
+          sudo docker-compose up -d
+
+          # Clean up old images
+          sudo docker image prune -af
         '
+
+  record-deployment:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get current time
+      uses: josStorer/get-current-time@v2
+      id: current-time
 
     - name: Record Deployment in Azure DevOps
       env:
