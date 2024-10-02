@@ -21,6 +21,12 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
 
+    - name: Install Docker Compose
+      run: |
+        sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
+        docker-compose --version
+
     - name: Build, tag, and push image to Amazon ECR
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -74,7 +80,7 @@ jobs:
             sudo service docker start
             sudo usermod -a -G docker ec2-user
             # Log out and log back in so that your user becomes effective in the docker group
-            # For the purposes of this script, we'll just run the next commands with sudo
+            # For the purposes of this script, we'"'"'ll just run the next commands with sudo
           fi
 
           # Check if docker-compose is installed and install it if missing (this should only run once)
@@ -86,7 +92,7 @@ jobs:
           fi
 
           # Log in to ECR
-          sudo aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          sudo aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
           # Pull the latest Docker image and start the application
           sudo docker-compose pull
@@ -119,24 +125,3 @@ jobs:
             "path": "/fields/System.Title",
             "value": "Deployment ${{ github.sha }}"
           },
-          {
-            "op": "add",
-            "path": "/fields/System.State",
-            "value": "Completed"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentID",
-            "value": "${{ github.sha }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentStatus",
-            "value": "Success"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentTimestamp",
-            "value": "${{ steps.current-time.outputs.time }}"
-          }
-        ]'
