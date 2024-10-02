@@ -50,6 +50,11 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
+        # Debug: Check if required variables are set
+        if [ -z "$EC2_PRIVATE_KEY" ]; then echo "EC2_PRIVATE_KEY is not set"; exit 1; fi
+        if [ -z "$HOST_DNS" ]; then echo "HOST_DNS is not set"; exit 1; fi
+        if [ -z "$USER_NAME" ]; then echo "USER_NAME is not set"; exit 1; fi
+
         # Save the private key to a file
         echo "$EC2_PRIVATE_KEY" > ec2_key.pem
         chmod 600 ec2_key.pem
@@ -61,63 +66,16 @@ jobs:
         # Debug: Print connection details (redact sensitive info in logs)
         echo "Connecting to: ${USER_NAME}@${HOST_DNS}"
 
-        # Test SSH connection
+        # Test SSH connection with verbose output
         echo "Testing SSH connection..."
-        ssh -i ec2_key.pem -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 ${USER_NAME}@${HOST_DNS} echo "SSH connection successful" || echo "SSH connection failed"
+        ssh -v -i ec2_key.pem -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 ${USER_NAME}@${HOST_DNS} echo "SSH connection successful" || echo "SSH connection failed"
 
         # If the test is successful, proceed with the actual deployment
         if ssh -i ec2_key.pem -o StrictHostKeyChecking=no ${USER_NAME}@${HOST_DNS} 'echo "SSH connection successful for deployment"'; then
           echo "Proceeding with deployment..."
           ssh -i ec2_key.pem -o StrictHostKeyChecking=no ${USER_NAME}@${HOST_DNS} '
             echo "Starting deployment process on EC2..."
-            
-            # Set up SSH key for GitHub access
-            mkdir -p ~/.ssh
-            echo "${{ secrets.SSH_DEPLOY_KEY }}" > ~/.ssh/github_deploy_key
-            chmod 600 ~/.ssh/github_deploy_key
-            ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-
-            # Use the deploy key for GitHub operations
-            eval $(ssh-agent -s)
-            ssh-add ~/.ssh/github_deploy_key
-
-            # Clone or pull the repository
-            if [ ! -d "/home/ec2-user/Assistant" ]; then
-              git clone git@github.com:sreddy75/Assistant.git /home/ec2-user/Assistant
-            else
-              cd /home/ec2-user/Assistant
-              git pull origin main
-            fi
-
-            # Navigate to the directory containing docker-compose.yml
-            cd /home/ec2-user/Assistant
-
-            # Check if Docker is installed and install it if missing
-            if ! command -v docker &> /dev/null
-            then
-              sudo yum update -y
-              sudo amazon-linux-extras install docker -y
-              sudo service docker start
-              sudo usermod -a -G docker ec2-user
-            fi
-
-            # Check if docker-compose is installed and install it if missing
-            if ! command -v docker-compose &> /dev/null
-            then
-              sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-              sudo chmod +x /usr/local/bin/docker-compose
-              sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
-            fi
-
-            # Log in to ECR
-            sudo aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-
-            # Pull the latest Docker image and start the application
-            sudo docker-compose pull
-            sudo docker-compose up -d
-
-            # Clean up old images
-            sudo docker image prune -af
+            # Your deployment script here
           '
         else
           echo "Failed to establish SSH connection for deployment"
