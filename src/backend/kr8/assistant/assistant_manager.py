@@ -2,6 +2,7 @@
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
+from src.backend.kr8.assistant.team.business_analyst import EnhancedBusinessAnalyst
 from src.frontend.config import settings
 from src.backend.kr8.assistant.team.project_management_assistant import ProjectManagementAssistant
 from src.backend.db.session import get_db
@@ -19,11 +20,14 @@ class AssistantManager:
     def __init__(self):
         self.general_assistants: Dict[int, Any] = {}
         self.pm_assistants: Dict[int, Any] = {}
+        self.ba_assistants: Dict[int, Any] = {}
         self.azure_devops_services: Dict[int, AzureDevOpsService] = {}
 
-    def get_assistant(self, db: Session, user_id: int, org_id: int, user_role: str, user_nickname: str, is_pm_chat: bool = False):
-        if is_pm_chat:
-            return self._get_pm_assistant(db, user_id, org_id, user_role, user_nickname)
+    def get_assistant(self, db: Session, user_id: int, org_id: int, user_role: str, user_nickname: str, assistant_type: str = ""):
+        if assistant_type == 'ba':
+            return self._get_ba_assistant(db, user_id, org_id, user_role, user_nickname)        
+        elif assistant_type == 'pm':
+            return self._get_pm_assistant(db, user_id, org_id, user_role, user_nickname)        
         else:
             return self._get_general_assistant(db, user_id, org_id, user_role, user_nickname)
 
@@ -89,6 +93,51 @@ class AssistantManager:
             else:
                 raise ValueError("User does not have permission to access the Project Management Assistant.")
         return self.pm_assistants[user_id]
+    
+    def _get_ba_assistant(self, db: Session, user_id: int, org_id: int, user_role: str, user_nickname: str):
+        if user_id not in self.ba_assistants:
+            org_config = load_org_config(org_id)
+            if user_role == "Super Admin" and org_config.get("feature_flags", {}).get("enable_business_analyst", False):
+                general_assistant = self._get_general_assistant(db, user_id, org_id, user_role, user_nickname)
+                ba_assistant = EnhancedBusinessAnalyst(
+                    llm=general_assistant.llm,
+                    tools=general_assistant.tools,
+                    knowledge_base=general_assistant.knowledge_base,
+                    debug_mode=settings.DEBUG
+                )
+                
+                # Set additional attributes
+                ba_assistant.name = "Agile Business Analyst"
+                ba_assistant.role = "Analyze and refine business requirements in an agile software development context"
+                ba_assistant.description = "You are an experienced Business Analyst specializing in agile software development projects. Your role is to analyze, refine, and communicate business requirements, ensuring they align with agile principles and practices."
+                ba_assistant.instructions = [
+                    "1. Begin by thoroughly analyzing the given business requirements or user stories.",
+                    "2. Ensure requirements are clear, concise, and follow the INVEST criteria (Independent, Negotiable, Valuable, Estimable, Small, Testable).",
+                    "3. Break down large requirements into smaller, manageable user stories when necessary.",
+                    "4. Identify and clarify any ambiguities or inconsistencies in the requirements.",
+                    "5. Suggest acceptance criteria for each requirement or user story to define 'done'.",
+                    "6. Prioritize requirements based on business value and technical feasibility.",
+                    "7. Facilitate communication between stakeholders and the development team to ensure shared understanding.",
+                    "8. Assist in creating and maintaining product backlogs.",
+                    "9. Provide insights on how requirements align with overall product vision and strategy.",
+                    "10. Suggest techniques for gathering and validating requirements (e.g., user interviews, surveys, prototyping).",
+                    "11. When relevant, search the knowledge base for additional context or historical data.",
+                    "12. If any information is unclear or missing, identify what additional details are needed.",
+                    "13. Offer recommendations for requirement refinement and backlog grooming processes.",
+                    "14. When using information from the knowledge base, always cite the source.",
+                    "15. If asked about a specific agile practice or requirement technique, focus on that in your response."
+                ]
+                ba_assistant.markdown = True
+                ba_assistant.add_datetime_to_instructions = True
+                
+                # If the general assistant is a ContextAwareAssistant, set the project context
+                if hasattr(general_assistant, 'set_project_context'):
+                    ba_assistant.set_project_context = general_assistant.set_project_context
+                
+                self.ba_assistants[user_id] = ba_assistant
+            else:
+                raise ValueError("User does not have permission to access the Business Analyst Assistant.")
+        return self.ba_assistants[user_id]
 
     def get_assistant_by_id(self, assistant_id: int):
         for assistant in list(self.general_assistants.values()) + list(self.pm_assistants.values()):

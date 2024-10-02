@@ -1,5 +1,6 @@
 import streamlit as st
 from components.chat_functions import render_chat, render_project_management_chat
+from components.chat.business_analysis_chat import BusinessAnalysisChat
 from utils.auth import is_authenticated, get_user_role
 from utils.helpers import setup_logging
 
@@ -16,13 +17,20 @@ def render_chat_page():
         user_role = get_user_role()
     
         if user_role in ["Super Admin", "Manager"]:
-            tab1, tab2 = st.tabs(["General Chat", "Project Management"])
+            tab1, tab2, tab3 = st.tabs(["General Chat", "Project Management", "Business Analysis"])
             
             with tab1:
                 render_chat(user_id=user_id, user_role=user_role)
             
             with tab2:
                 render_project_management_chat(org_id=org_id, user_role=user_role)
+            
+            with tab3:
+                business_analysis_chat = BusinessAnalysisChat(
+                    system_chat_icon="🧠",
+                    user_chat_icon="👤"
+                )
+                business_analysis_chat.render_chat_interface(org_id=org_id)
         else:
             render_chat(user_id=user_id, user_role=user_role)
 

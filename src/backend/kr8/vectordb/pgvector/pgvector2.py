@@ -118,6 +118,11 @@ class PgVector2(VectorDb):
         except Exception as e:
             self.logger.error(e)
             return False
+        
+    def ensure_table_exists(self):
+        if not self.table_exists():
+            self.create()
+
      
     def create(self) -> None:
         if not self.table_exists():
@@ -134,25 +139,28 @@ class PgVector2(VectorDb):
                         raise
 
     def upsert(self, documents: List[Document], batch_size: int = 20) -> None:
+        self.ensure_table_exists() 
         with self.Session() as sess:
             counter = 0
             for document in documents:
                 try:
                     document.embed(embedder=self.embedder)
                     cleaned_content = document.content.replace("\x00", "\ufffd")
-                    content_dict = json.loads(cleaned_content)
                     content_hash = md5(cleaned_content.encode()).hexdigest()
                     _id = document.id or content_hash
+
+                    # Ensure meta_data is a dictionary
+                    meta_data = document.meta_data if isinstance(document.meta_data, dict) else {}
+
+                    # For Confluence pages, add space_key and url to meta_data if they exist
+                    if meta_data.get("type") == "confluence_page":
+                        meta_data["space_key"] = meta_data.get("space_key")
+                        meta_data["url"] = meta_data.get("url")
 
                     values = {
                         "id": _id,
                         "name": document.name,
-                        "path": content_dict.get('path'),
-                        "method": content_dict.get('method'),
-                        "description": content_dict.get('description'),
-                        "parameters": content_dict.get('parameters'),
-                        "response_schema": content_dict.get('response_schema'),
-                        "meta_data": document.meta_data,
+                        "meta_data": meta_data,
                         "content": cleaned_content,
                         "embedding": document.embedding,
                         "usage": document.usage,
@@ -203,6 +211,9 @@ class PgVector2(VectorDb):
             for key, value in filters.items():
                 if hasattr(self.table.c, key):
                     stmt = stmt.where(getattr(self.table.c, key) == value)
+                else:
+                    # For metadata fields, including Confluence-specific ones
+                    stmt = stmt.where(self.table.c.meta_data[key].astext == str(value))
 
         if self.user_id and hasattr(self.table.c, 'user_id'):
             stmt = stmt.where(self.table.c.user_id == self.user_id)
@@ -357,6 +368,14 @@ class PgVector2(VectorDb):
                 
                 return document_info
 
+    def get_document_content(self, document_name: str) -> str:
+        with self.Session() as sess:
+            stmt = select(self.table.c.content).where(self.table.c.name == document_name)
+            if self.user_id and hasattr(self.table.c, 'user_id'):
+                stmt = stmt.where(self.table.c.user_id == self.user_id)
+            result = sess.execute(stmt).first()
+            return result[0] if result else ""
+        
     async def upsert_async(self, documents: List[Document], batch_size: int = 20) -> None:
         if not self.async_session:
             raise ValueError("Async session not available.")

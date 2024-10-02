@@ -1,0 +1,39 @@
+Based on the implementation in the DORAMetricsCalculator class, you can ask various questions to assess the health of the team's performance. The calculator focuses on four key DORA (DevOps Research and Assessment) metrics. Here are some questions you can ask:
+
+Deployment Frequency:
+
+"How often is the team deploying to production?"
+"What's our deployment frequency over the last 30 days?"
+"Are we releasing frequently enough?"
+
+
+Lead Time for Changes:
+
+"How long does it take for a commit to get into production?"
+"What's our average lead time for changes in the past month?"
+"How quickly are we delivering new features?"
+
+
+Time to Restore Service:
+
+"How quickly can we recover from incidents?"
+"What's our average time to restore service after an outage?"
+"How long did it take to resolve our recent incidents?"
+
+
+Change Failure Rate:
+
+"What percentage of our changes result in failures?"
+"How often do our deployments cause incidents?"
+"What's our change failure rate for the last 30 days?"
+
+
+
+You can also ask more general questions that might involve multiple metrics:
+
+"How is our overall DevOps performance based on DORA metrics?"
+"Can you give me a summary of our team's performance over the last month?"
+"Which areas of our delivery process need improvement?"
+"How does our performance compare to industry standards for high-performing teams?"
+"Are there any concerning trends in our DevOps metrics?"
+"What's the health of our deployment pipeline?"

@@ -43,34 +43,30 @@ class DORAMetricsCalculator:
                 results[metric] = self.calculate_change_failure_rate(project_id, team_id, days)
         return results
 
-    def calculate_deployment_frequency(self, project_id: str, team_id: str, days: int = 30) -> Dict[str, Any]:
-        logger.info(f"Calculating deployment frequency for project={project_id}, team={team_id}, days={days}")
-        try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
-            
-            releases = self.azure_devops_service.get_releases(project_id, team_id, start_date, end_date)
-            
-            total_deployments = len(releases)
-            logger.info(f"Found {total_deployments} deployments in the specified time range")
-
-            if total_deployments == 0:
-                return {
-                    "total_deployments": 0,
-                    "days": days,
-                    "frequency": "No deployments in the specified time range"
-                }
-            
-            deployment_frequency = total_deployments / days
-            
-            return {
-                "total_deployments": total_deployments,
-                "days": days,
-                "frequency": f"{deployment_frequency:.2f} per day"
-            }
-        except Exception as e:
-            logger.error(f"Error calculating deployment frequency: {str(e)}")
-            return {"error": f"Failed to calculate deployment frequency: {str(e)}"}
+    def calculate_deployment_frequency(self, days=30):
+        wit_client = self.connection.clients.get_work_item_tracking_client()
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        wiql = f"""
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.WorkItemType] = 'Deployment'
+        AND [System.CreatedDate] >= '{start_date.isoformat()}'
+        AND [System.CreatedDate] <= '{end_date.isoformat()}'
+        """
+        
+        query_results = wit_client.query_by_wiql(wiql).work_items
+        
+        deployment_count = len(query_results)
+        frequency = deployment_count / days
+        
+        return {
+            "total_deployments": deployment_count,
+            "days": days,
+            "frequency": f"{frequency:.2f} per day"
+        }
 
     def calculate_lead_time_for_changes(self, project_id: str, team_id: str, days: int = 30) -> Dict[str, Any]:
         logger.info(f"Calculating lead time for changes for project={project_id}, team={team_id}, days={days}")

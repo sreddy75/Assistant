@@ -18,7 +18,7 @@ logger.debug("init_db() completed")
 from src.backend.core.config import settings
 from src.backend.api.v1 import (auth, users, organizations, feedback, 
                                 knowledge_base, assistant, chat, analytics,
-                                project_management)
+                                project_management, agile_team)
 
 logger.debug(f"DATABASE_URL: {settings.DB_URL}")
 
@@ -31,6 +31,7 @@ app.include_router(organizations.router, prefix="/api/v1/organizations", tags=["
 app.include_router(feedback.router, prefix="/api/v1/feedback", tags=["feedback"])
 app.include_router(knowledge_base.router, prefix="/api/v1/knowledge-base", tags=["knowledge-base"]) 
 app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"]) 
+app.include_router(agile_team.router, prefix="/api/v1/agile-team", tags=["agile-team"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"]) 
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"]) 
 app.include_router(project_management.router, prefix="/api/v1/project-management", tags=["Project Management"])

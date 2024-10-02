@@ -13,6 +13,7 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 class Settings(BaseSettings):
+    
     PROJECT_NAME: str = "LLM Assistant API"
     PROJECT_VERSION: str = "1.0.0"
     SECRET_KEY: str
@@ -54,7 +55,10 @@ class Settings(BaseSettings):
     AZURE_DEVOPS_SCHEMA_URL: Optional[str] = None
     AZURE_DEVOPS_ORGANIZATION_URL:  Optional[str] = None
     AZURE_DEVOPS_PERSONAL_ACCESS_TOKEN:  Optional[str] = None
-
+    
+    CONFLUENCE_URL:  Optional[str] = None
+    CONFLUENCE_USERNAME:  Optional[str] = None
+    CONFLUENCE_API_TOKEN:  Optional[str] = None
     class Config:
         env_file = ".env"
         case_sensitive = False

@@ -25,6 +25,19 @@ class AssistantKnowledge(BaseModel):
     def get_collection_name(self):
         return f"user_{self.user_id}_documents" if self.user_id is not None else "llm_os_documents"
 
+    def get_document(self, document_id: str) -> Optional[Document]:
+        if self.vector_db is None:
+            logger.warning("No vector db provided")
+            return None
+
+        try:
+            results = self.vector_db.search(query=f"id:{document_id}", limit=1, collection=self.get_collection_name())
+            if results:
+                return results[0]
+        except Exception as e:
+            logger.error(f"Error retrieving document by ID: {e}")
+        return None
+    
     def search(self, query: str, num_documents: Optional[int] = None) -> List[Document]:
         logger.info(f"Searching for query: {query}")
         try:
@@ -110,6 +123,23 @@ class AssistantKnowledge(BaseModel):
     def load_text(self, text: str, upsert: bool = False, skip_existing: bool = True) -> None:
         self.load_documents(documents=[Document(content=text)], upsert=upsert, skip_existing=skip_existing)
 
+    def load_confluence_page(self, page: Dict[str, Any]) -> None:
+        document = Document(
+            id=page['id'],
+            name=page['title'],
+            content=page['content'],
+            meta_data={
+                "type": "confluence_page",
+                "space_key": page['space']['key'],
+                "url": page['_links']['webui']
+            }
+        )
+        self.load_document(document)
+
+    def load_confluence_space(self, space_key: str, pages: List[Dict[str, Any]]) -> None:
+        for page in pages:
+            self.load_confluence_page(page)
+            
     def get_dataframe(self, df_name: str) -> Optional[pd.DataFrame]:
         documents = self.search(df_name, num_documents=1)
         if documents:

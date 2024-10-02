@@ -70,3 +70,8 @@ class EnhancedBusinessAnalyst(Assistant, BaseModel):
 
     def process_references(self, references: List[Dict[str, str]]) -> str:
         return "\n".join([f"- {ref['name']}" for ref in references])
+    
+    def generate_response(self, query: str, context: str) -> str:
+        prompt = f"Given the following context and query, provide a detailed response:\n\nContext: {context}\n\nQuery: {query}"
+        response = self.run(prompt)
+        return response

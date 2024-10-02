@@ -1,0 +1,81 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: myapp
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker-compose build
+        docker-compose push
+
+    - name: Deploy to EC2
+      env:
+        PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
+        HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
+        USER_NAME: ec2-user
+      run: |
+        echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
+        ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOST_DNS} '
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          docker-compose pull
+          docker-compose up -d
+        '
+
+    - name: Record Deployment in Azure DevOps
+      env:
+        AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
+        AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
+        AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
+      run: |
+        curl -X POST "https://dev.azure.com/$AZURE_DEVOPS_ORG/$AZURE_DEVOPS_PROJECT/_apis/wit/workitems/\$Deployment?api-version=6.0" \
+        -H "Content-Type: application/json-patch+json" \
+        -H "Authorization: Basic $(echo -n :$AZURE_DEVOPS_PAT | base64)" \
+        -d '[
+          {
+            "op": "add",
+            "path": "/fields/System.Title",
+            "value": "Deployment ${{ github.sha }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/System.State",
+            "value": "Completed"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentID",
+            "value": "${{ github.sha }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentStatus",
+            "value": "Success"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentTimestamp",
+            "value": "${{ steps.current-time.outputs.time }}"
+          }
+        ]'
