@@ -41,7 +41,7 @@ jobs:
         PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
         USER_NAME: ec2-user
-        GITHUB_SSH_KEY: ${{ secrets.GITHUB_SSH_KEY }} # Ensure you add this SSH key as a secret in GitHub
+        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }} # Updated secret name
       run: |
         echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
         ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOST_DNS} '
@@ -52,8 +52,9 @@ jobs:
             sudo yum install git -y
           fi
 
-          # Set up SSH key for GitHub access
-          echo "$GITHUB_SSH_KEY" > /home/ec2-user/.ssh/github_key && chmod 600 /home/ec2-user/.ssh/github_key
+          # Set up SSH key for GitHub access and disable host key checking
+          echo "$SSH_DEPLOY_KEY" > /home/ec2-user/.ssh/github_key && chmod 600 /home/ec2-user/.ssh/github_key
+          ssh-keyscan -H github.com >> /home/ec2-user/.ssh/known_hosts
           ssh-agent bash -c "ssh-add /home/ec2-user/.ssh/github_key; git clone git@github.com:sreddy75/Assistant.git /home/ec2-user/Assistant"
 
           # Pull latest changes if the repository already exists
