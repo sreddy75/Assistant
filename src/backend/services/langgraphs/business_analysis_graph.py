@@ -1,5 +1,3 @@
-# src/backend/services/langgraphs/business_analysis_graph.py
-
 import logging
 import uuid
 from typing import Any, AsyncGenerator, Dict, List
@@ -15,7 +13,7 @@ from src.backend.kr8.knowledge.base import AssistantKnowledge
 logger = logging.getLogger(__name__)
 
 class BusinessAnalysisGraph:
-    def __init__(self, db, user, assistant):
+    def __init__(self, db, user, assistant, analysis_id=None):
         self.db = db
         self.user = user
         self.assistant = assistant
@@ -27,48 +25,77 @@ class BusinessAnalysisGraph:
         )
         self.knowledge_base = AssistantKnowledge(vector_db=self.vector_db)
         self.confluence_service = ConfluenceService(db, user)
-        self.analysis_id = str(uuid.uuid4())
+        self.analysis_id = analysis_id or str(uuid.uuid4())
+        self.current_state = BusinessAnalysisState(
+            db=self.db,
+            user=self.user,
+            assistant=self.assistant,
+            analysis_id=self.analysis_id
+        )
+
+    def update_state(self, key: str, value: str):
+        setattr(self.current_state, key, value)
+        logger.info(f"Updated state: {key} = {value[:100]}...")
 
     def analyze_business_documents(self, state: BusinessAnalysisState) -> BusinessAnalysisState:
         logger.info("Starting analyze_business_documents")
         documents = self.confluence_service.get_documents()
         logger.info(f"Retrieved {len(documents)} documents")
         combined_content = "\n\n".join([doc.content for doc in documents])
-        state.business_analysis = combined_content
-        logger.info(f"Combined content length: {len(combined_content)}")
-        return state
+        self.update_state("business_analysis", combined_content)
+        return self.current_state
 
     def extract_key_requirements(self, state: BusinessAnalysisState) -> BusinessAnalysisState:
         logger.info("Starting extract_key_requirements")
-        result = self.assistant.run(f"Based on the following business analysis, extract the key requirements:\n\n{state.business_analysis}")
-        state.key_requirements = result
-        logger.info(f"Extracted key requirements: {result[:100]}...")
-        return state
+        try:
+            result = self.assistant.run(f"Based on the following business analysis, extract the key requirements:\n\n{self.current_state.business_analysis}")
+            if not result.strip():
+                raise ValueError("Received empty response from assistant")
+            self.update_state("key_requirements", result)
+        except Exception as e:
+            logger.error(f"Error in extract_key_requirements: {str(e)}")
+            self.update_state("key_requirements", f"Error extracting key requirements: {str(e)}")
+        return self.current_state
 
     def generate_user_stories(self, state: BusinessAnalysisState) -> BusinessAnalysisState:
         logger.info("Starting generate_user_stories")
-        result = self.assistant.run(f"Create user stories based on these key requirements:\n\n{state.key_requirements}")
-        state.user_stories = result
-        logger.info(f"Generated user stories: {result[:100]}...")
-        return state
+        try:
+            result = self.assistant.run(f"Create user stories based on these key requirements:\n\n{self.current_state.key_requirements}")
+            if not result.strip():
+                raise ValueError("Received empty response from assistant")
+            self.update_state("user_stories", result)
+        except Exception as e:
+            logger.error(f"Error in generate_user_stories: {str(e)}")
+            self.update_state("user_stories", f"Error generating user stories: {str(e)}")
+        return self.current_state
 
     def create_acceptance_criteria(self, state: BusinessAnalysisState) -> BusinessAnalysisState:
         logger.info("Starting create_acceptance_criteria")
-        result = self.assistant.run(f"Create acceptance criteria for each of these user stories:\n\n{state.user_stories}")
-        state.acceptance_criteria = result
-        logger.info(f"Created acceptance criteria: {result[:100]}...")
-        return state
+        try:
+            result = self.assistant.run(f"Create acceptance criteria for each of these user stories:\n\n{self.current_state.user_stories}")
+            if not result.strip():
+                raise ValueError("Received empty response from assistant")
+            self.update_state("acceptance_criteria", result)
+        except Exception as e:
+            logger.error(f"Error in create_acceptance_criteria: {str(e)}")
+            self.update_state("acceptance_criteria", f"Error creating acceptance criteria: {str(e)}")
+        return self.current_state
 
     def generate_test_cases(self, state: BusinessAnalysisState) -> BusinessAnalysisState:
         logger.info("Starting generate_test_cases")
-        result = self.assistant.run(f"Generate test cases based on these user stories and acceptance criteria:\n\nUser Stories:\n{state.user_stories}\n\nAcceptance Criteria:\n{state.acceptance_criteria}")
-        state.test_cases = result
-        logger.info(f"Generated test cases: {result[:100]}...")
-        return state
+        try:
+            result = self.assistant.run(f"Generate test cases based on these user stories and acceptance criteria:\n\nUser Stories:\n{self.current_state.user_stories}\n\nAcceptance Criteria:\n{self.current_state.acceptance_criteria}")
+            if not result.strip():
+                raise ValueError("Received empty response from assistant")
+            self.update_state("test_cases", result)
+        except Exception as e:
+            logger.error(f"Error in generate_test_cases: {str(e)}")
+            self.update_state("test_cases", f"Error generating test cases: {str(e)}")
+        return self.current_state
 
     def store_interim_results(self, state: BusinessAnalysisState) -> BusinessAnalysisState:
         logger.info("Storing interim results in pgvector")
-        for key, value in state.dict().items():
+        for key, value in self.current_state.dict().items():
             if key not in ['db', 'user', 'assistant'] and value:
                 unique_id = f"ba_result_{key}_{self.analysis_id}"
                 try:
@@ -85,13 +112,12 @@ class BusinessAnalysisGraph:
                             "url": f"/business-analysis/{self.analysis_id}/{key}"
                         }
                     )
-                    logger.debug(f"Created document: {document}")
                     self.knowledge_base.load_document(document)
-                    logger.info(f"Successfully stored interim result for {key}")
+                    logger.info(f"Stored document for {key}")
                 except Exception as e:
-                    logger.error(f"Error creating or storing document for {key}: {str(e)}", exc_info=True)
-        logger.info("Interim results storage attempt completed")
-        return state
+                    logger.error(f"Error storing document for {key}: {str(e)}", exc_info=True)
+        logger.info("Interim results storage completed")
+        return self.current_state
 
     def create_graph(self):
         workflow = StateGraph(state_schema=BusinessAnalysisState)
@@ -124,12 +150,6 @@ class BusinessAnalysisGraph:
 
     async def run_business_analysis_graph(self) -> AsyncGenerator[Dict[str, Any], None]:
         graph = self.create_graph()
-        initial_state = BusinessAnalysisState(
-            db=self.db,
-            user=self.user,
-            assistant=self.assistant,
-            analysis_id=self.analysis_id
-        )
         
         node_to_attr = {
             "AnalyzeBusinessDocuments": "business_analysis",
@@ -140,7 +160,7 @@ class BusinessAnalysisGraph:
         }
         
         try:
-            async for event in graph.astream(initial_state):
+            async for event in graph.astream(self.current_state):
                 if isinstance(event, dict):
                     for node, state in event.items():
                         if isinstance(state, BusinessAnalysisState):
@@ -175,7 +195,7 @@ class BusinessAnalysisGraph:
                     logger.warning(f"Unexpected event type: {type(event)}")
             
             # Yield the final state
-            final_state = initial_state.dict(exclude={'db', 'user', 'assistant'})
+            final_state = {k: v for k, v in self.current_state.dict(exclude={'db', 'user', 'assistant'}).items() if v is not None}
             logger.info(f"Final state: {final_state}")
             yield {
                 "graph_state": final_state,
@@ -185,7 +205,7 @@ class BusinessAnalysisGraph:
         except Exception as e:
             logger.error(f"Error during graph execution: {str(e)}", exc_info=True)
             yield {
-                "graph_state": initial_state.dict(exclude={'db', 'user', 'assistant'}),
+                "graph_state": self.current_state.dict(exclude={'db', 'user', 'assistant'}),
                 "response": f"Error during business analysis: {str(e)}",
                 "is_final": True,
                 "error": str(e)

@@ -30,18 +30,13 @@ class BusinessAnalysisResponse(BaseModel):
     graph_state: Dict[str, str] 
 
     
-class BusinessAnalysisState(BaseModel):
-    business_analysis: Optional[str] = None
-    key_requirements: Optional[str] = None
-    user_stories: Optional[str] = None
-    acceptance_criteria: Optional[str] = None
-    test_cases: Optional[str] = None
-    db: Optional[Session] = None
-    user: Optional[User] = None
-    assistant: Optional[EnhancedBusinessAnalyst] = None
-    analysis_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-
-
+class BusinessAnalysisState(BaseModel):    
+    business_analysis: str = ""
+    key_requirements: str = ""
+    user_stories: str = ""
+    acceptance_criteria: str = ""
+    test_cases: str = ""
+    analysis_id: str = ""
 
     class Config:
         arbitrary_types_allowed = True

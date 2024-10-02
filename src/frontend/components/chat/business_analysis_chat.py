@@ -21,6 +21,7 @@ class BusinessAnalysisChat:
         self.org_id = None
         self.message_key = "ba_chat_messages"
         self.chat_input_key = "ba_chat_input"
+        
 
         self.nodes = ["Analyze Business Documents", "Extract Key Requirements", "Generate User Stories", "Create Acceptance Criteria", "Generate Test Cases"]
         self.node_to_attr = {
