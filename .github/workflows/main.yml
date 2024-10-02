@@ -41,7 +41,7 @@ jobs:
         PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
         USER_NAME: ec2-user
-        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }} # Updated secret name
+        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }} # Make sure this is the key without a passphrase
       run: |
         echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
         ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOST_DNS} '
