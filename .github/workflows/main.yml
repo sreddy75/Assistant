@@ -43,18 +43,27 @@ jobs:
     steps:
     - name: Deploy to EC2
       env:
-        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
+        EC2_PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
-        USER_NAME: ec2-user
+        USER_NAME: ${{ secrets.EC2_USERNAME }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
-        echo "$SSH_DEPLOY_KEY" > deploy_key && chmod 600 deploy_key
-        ssh -o StrictHostKeyChecking=no -i deploy_key ${USER_NAME}@${HOST_DNS} '
+        echo "$EC2_PRIVATE_KEY" > ec2_key.pem
+        chmod 600 ec2_key.pem
+        
+        # Debug: Print SSH key info (DO NOT INCLUDE THIS IN PRODUCTION)
+        ssh-keygen -l -f ec2_key.pem
+        
+        # Attempt SSH connection with verbose output
+        ssh -v -o StrictHostKeyChecking=no -i ec2_key.pem ${USER_NAME}@${HOST_DNS} '
+          echo "Successfully connected to EC2 instance"
+          
           # Set up SSH key for GitHub access
           mkdir -p ~/.ssh
-          echo "$SSH_DEPLOY_KEY" > ~/.ssh/github_deploy_key && chmod 600 ~/.ssh/github_deploy_key
+          echo "${{ secrets.SSH_DEPLOY_KEY }}" > ~/.ssh/github_deploy_key
+          chmod 600 ~/.ssh/github_deploy_key
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts
 
           # Use the deploy key for GitHub operations
@@ -72,18 +81,16 @@ jobs:
           # Navigate to the directory containing docker-compose.yml
           cd /home/ec2-user/Assistant
 
-          # Check if Docker is installed and install it if missing (this should only run once)
+          # Check if Docker is installed and install it if missing
           if ! command -v docker &> /dev/null
           then
             sudo yum update -y
             sudo amazon-linux-extras install docker -y
             sudo service docker start
             sudo usermod -a -G docker ec2-user
-            # Log out and log back in so that your user becomes effective in the docker group
-            # For the purposes of this script, we'"'"'ll just run the next commands with sudo
           fi
 
-          # Check if docker-compose is installed and install it if missing (this should only run once)
+          # Check if docker-compose is installed and install it if missing
           if ! command -v docker-compose &> /dev/null
           then
             sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
@@ -125,3 +132,24 @@ jobs:
             "path": "/fields/System.Title",
             "value": "Deployment ${{ github.sha }}"
           },
+          {
+            "op": "add",
+            "path": "/fields/System.State",
+            "value": "Completed"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentID",
+            "value": "${{ github.sha }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentStatus",
+            "value": "Success"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentTimestamp",
+            "value": "${{ steps.current-time.outputs.time }}"
+          }
+        ]'
