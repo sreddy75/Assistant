@@ -21,7 +21,6 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
 
-    # Install docker-compose
     - name: Install Docker Compose
       run: |
         sudo apt-get update
@@ -41,9 +40,29 @@ jobs:
         PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
         USER_NAME: ec2-user
+        GITHUB_REPO: sreddy75/Assistant
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Make sure this secret is set in GitHub settings
       run: |
         echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
         ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOST_DNS} '
+          # Install git if not installed
+          if ! command -v git &> /dev/null
+          then
+            sudo yum update -y
+            sudo yum install git -y
+          fi
+
+          # Clone or pull the latest code from the GitHub repository
+          if [ ! -d "/home/ec2-user/Assistant" ]; then
+            git clone https://github.com/$GITHUB_REPO.git /home/ec2-user/Assistant
+          else
+            cd /home/ec2-user/Assistant
+            git pull origin main
+          fi
+
+          # Navigate to the directory containing docker-compose.yml
+          cd /home/ec2-user/Assistant
+
           # Check if Docker is installed and install it if missing
           if ! command -v docker &> /dev/null
           then
@@ -63,6 +82,8 @@ jobs:
 
           # Log in to ECR and deploy the application
           aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          
+          # Pull the latest Docker image and start the application
           /usr/local/bin/docker-compose pull
           /usr/local/bin/docker-compose up -d
         '
