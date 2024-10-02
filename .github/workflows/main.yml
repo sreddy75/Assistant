@@ -35,7 +35,7 @@ jobs:
         docker-compose build
         docker-compose push
 
-        - name: Deploy to EC2
+    - name: Deploy to EC2
       env:
         PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
