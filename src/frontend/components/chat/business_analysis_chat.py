@@ -49,20 +49,34 @@ class BusinessAnalysisChat:
         # Initialize placeholders
         self.chart_placeholder = st.empty()
         self.progress_placeholder = st.empty()
-        self.status_placeholder = st.empty()        
-        self.final_results_placeholder = st.empty()
+        self.status_placeholder = st.empty()                
         self.response_container = st.empty()
 
     def render_chat_interface(self, org_id):
         self.org_id = org_id                        
 
-        # Custom CSS for expander titles
+        # Custom CSS for expander titles and tabs
         st.markdown("""
             <style>
-            .streamlit-expanderHeader {
-                font-weight: bold;
-                font-size: 25px;
-                color: #079107;
+            div[data-testid="stExpander"] > div[role="button"] > div:first-child > div:first-child {
+                font-weight: bold !important;
+                font-size: 1.2em !important;
+                color: red !important;
+            }
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 2px;
+            }
+            .stTabs [data-baseweb="tab"] {
+                height: 50px;
+                white-space: pre-wrap;
+                background-color: #F0F2F6;
+                border-radius: 4px 4px 0 0;
+                gap: 1px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+            }
+            .stTabs [aria-selected="true"] {
+                background-color: #FFFFFF;
             }
             </style>
         """, unsafe_allow_html=True)
@@ -98,7 +112,7 @@ class BusinessAnalysisChat:
             self.render_chat_with_results()
 
         # Final Results
-        st.markdown("---")  # Add a divider        
+        st.divider()  # Add a divider        
         if st.session_state.analysis_complete:
             self.display_final_results()
 
@@ -307,6 +321,7 @@ class BusinessAnalysisChat:
         current_index = st.session_state.current_node_index
         
         mermaid_code = """
+        %%{init: {'theme': 'base', 'themeVariables': { 'lineColor': '#ffffff' }}}%%
         flowchart LR
             A[Analyzing Docs]
             B[Extracting Reqs]
@@ -338,11 +353,14 @@ class BusinessAnalysisChat:
     def display_final_results(self):
         final_results = st.session_state.analysis_results.get("final_results", {})
         
-        with self.final_results_placeholder.container():
-            st.markdown("## Final Analysis Results")
-            
-            for key, value in final_results.items():
-                with st.expander(key.replace("_", " ").title(), expanded=False):
+        st.markdown("## Final Analysis Results")
+        
+        if final_results:
+            tabs = st.tabs([key.replace("_", " ").title() for key in final_results.keys()])
+            for tab, (key, value) in zip(tabs, final_results.items()):
+                with tab:
                     st.write(value)
+        else:
+            st.info("No final results available yet.")
 
         logger.info("Final results displayed")
