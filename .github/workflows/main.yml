@@ -36,7 +36,7 @@ jobs:
         docker-compose build
         docker-compose push
 
-    - name: Deploy to EC2
+        - name: Deploy to EC2
       env:
         PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
@@ -44,9 +44,27 @@ jobs:
       run: |
         echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
         ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOST_DNS} '
+          # Check if Docker is installed and install it if missing
+          if ! command -v docker &> /dev/null
+          then
+            sudo yum update -y
+            sudo amazon-linux-extras install docker -y
+            sudo service docker start
+            sudo usermod -a -G docker ec2-user
+          fi
+
+          # Check if docker-compose is installed and install it if missing
+          if ! command -v docker-compose &> /dev/null
+          then
+            sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+          fi
+
+          # Log in to ECR and deploy the application
           aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-          docker-compose pull
-          docker-compose up -d
+          /usr/local/bin/docker-compose pull
+          /usr/local/bin/docker-compose up -d
         '
 
     - name: Record Deployment in Azure DevOps
