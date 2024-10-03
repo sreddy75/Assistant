@@ -1,4 +1,4 @@
-name: URL-Encoded Azure DevOps Integration
+name: Test Azure DevOps Integration
 
 on:
   workflow_dispatch:
@@ -14,76 +14,47 @@ on:
         - In Progress
 
 jobs:
-  record-deployment:
+  test-record-deployment:
     runs-on: ubuntu-latest
     steps:
-    - name: Check out repository
-      uses: actions/checkout@v2
-
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
 
-    - name: Create curl script
-      run: |
-        cat > execute_curl.sh << EOL
-        #!/bin/bash
-        set -e
-
-        # URL encode function
-        urlencode() {
-          local string="\${1}"
-          local strlen=\${#string}
-          local encoded=""
-          local pos c o
-
-          for (( pos=0 ; pos<strlen ; pos++ )); do
-            c=\${string:\$pos:1}
-            case "\$c" in
-              [-_.~a-zA-Z0-9] ) o="\$c" ;;
-              * )               printf -v o '%%%02x' "'$c"
-            esac
-            encoded+="\$o"
-          done
-          echo "\${encoded}"
-        }
-
-        # Define variables
-        BASE_URL="https://dev.azure.com"
-        ORG=\$(urlencode "\${1}")
-        PROJECT=\$(urlencode "\${2}")
-        API_PATH="_apis/wit/workitems/%24Deployment"
-        QUERY_PARAMS="api-version=6.0"
-        CONTENT_TYPE="application/json-patch+json"
-        AUTH_HEADER="Authorization: Basic \${3}"
-        
-        # Construct full URL
-        FULL_URL="\${BASE_URL}/\${ORG}/\${PROJECT}/\${API_PATH}?\${QUERY_PARAMS}"
-        
-        # Print debug information
-        echo "Full URL: \${FULL_URL}"
-        
-        # Execute curl command
-        curl -v -X POST "\${FULL_URL}" \
-          -H "Content-Type: \${CONTENT_TYPE}" \
-          -H "\${AUTH_HEADER}" \
-          -d "\${4}"
-        EOL
-
-        chmod +x execute_curl.sh
-
-    - name: Execute Azure DevOps API call
+    - name: Record Deployment in Azure DevOps
       env:
         AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
+        # URL encode function
+        urlencode() {
+          local length="${#1}"
+          for (( i = 0; i < length; i++ )); do
+            local c="${1:i:1}"
+            case $c in
+              [a-zA-Z0-9.~_-]) printf "$c" ;;
+              *) printf '%%%02X' "'$c" ;;
+            esac
+          done
+        }
+
+        # URL encode organization and project names
+        ENCODED_ORG=$(urlencode "${AZURE_DEVOPS_ORG}")
+        ENCODED_PROJECT=$(urlencode "${AZURE_DEVOPS_PROJECT}")
+
+        # Construct the URL with encoded values
+        URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
+
+        echo "Constructed URL: $URL"
+
+        # Construct JSON data
         JSON_DATA=$(cat << EOF
         [
           {
             "op": "add",
             "path": "/fields/System.Title",
-            "value": "Deployment ${{ github.run_number }}"
+            "value": "Test Deployment ${{ github.run_number }}"
           },
           {
             "op": "add",
@@ -109,9 +80,25 @@ jobs:
         EOF
         )
 
-        AUTH=$(echo -n :${AZURE_DEVOPS_PAT} | base64)
-        
-        ./execute_curl.sh "${AZURE_DEVOPS_ORG}" "${AZURE_DEVOPS_PROJECT}" "${AUTH}" "${JSON_DATA}"
+        echo "JSON Data:"
+        echo "$JSON_DATA"
+
+        # Execute the curl command
+        RESPONSE=$(curl -s -X POST "${URL}" \
+          -H "Content-Type: application/json-patch+json" \
+          -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
+          -d "$JSON_DATA")
+
+        echo "API Response:"
+        echo "$RESPONSE"
+
+        # Check if the API call was successful
+        if echo "$RESPONSE" | grep -q '"id":'; then
+          echo "Deployment record created successfully"
+        else
+          echo "Failed to create deployment record"
+          exit 1
+        fi
 
     - name: Debug Output
       run: |
