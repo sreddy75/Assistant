@@ -29,14 +29,19 @@ jobs:
       run: |
         # URL encode function
         urlencode() {
-          local length="${#1}"
-          for (( i = 0; i < length; i++ )); do
-            local c="${1:i:1}"
-            case $c in
-              [a-zA-Z0-9.~_-]) printf "$c" ;;
-              *) printf '%%%02X' "'$c" ;;
+          local string="${1}"
+          local strlen=${#string}
+          local encoded=""
+          local pos c o
+          for (( pos=0 ; pos<strlen ; pos++ )); do
+            c=${string:$pos:1}
+            case "$c" in
+              [-_.~a-zA-Z0-9] ) o="${c}" ;;
+              * )               printf -v o '%%%02x' "'$c"
             esac
+            encoded+="${o}"
           done
+          echo "${encoded}"
         }
 
         # URL encode organization and project names
@@ -78,17 +83,21 @@ jobs:
         echo "JSON Data:"
         echo "$JSON_DATA"
 
-        # Execute the curl command
-        RESPONSE=$(curl -s -X POST "${URL}" \
+        # Execute the curl command with verbose output
+        RESPONSE=$(curl -v -s -X POST "${URL}" \
           -H "Content-Type: application/json-patch+json" \
           -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-          -d "$JSON_DATA")
+          -d "$JSON_DATA" 2>&1)
 
-        echo "API Response:"
+        echo "Curl Response (including headers):"
         echo "$RESPONSE"
 
+        # Extract the HTTP status code
+        HTTP_STATUS=$(echo "$RESPONSE" | grep -i "< HTTP" | awk '{print $3}')
+        echo "HTTP Status Code: $HTTP_STATUS"
+
         # Check if the API call was successful
-        if echo "$RESPONSE" | grep -q '"id":'; then
+        if [[ "$HTTP_STATUS" =~ ^2 ]]; then
           echo "Deployment record created successfully"
           WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
           echo "Created Work Item ID: $WORK_ITEM_ID"
