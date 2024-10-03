@@ -52,7 +52,7 @@ jobs:
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
         echo "Constructed URL: $URL"
 
-        # Define possible field references
+        # Define possible field references, with the correct one first
         FIELD_REFS=("Custom.DeploymentFrequency" "DeploymentFrequency" "System.DeploymentFrequency")
 
         # Construct JSON data with multiple attempts for DeploymentFrequency
@@ -79,6 +79,21 @@ jobs:
             "op": "add",
             "path": "/fields/System.State",
             "value": "New"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.Environment",
+            "value": "${{ github.event.inputs.environment }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentStatus",
+            "value": "${{ github.event.inputs.deployment_status }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentTimestamp",
+            "value": "${{ steps.current-time.outputs.rfc3339 }}"
           }
         ]
         EOF
