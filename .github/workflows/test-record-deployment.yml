@@ -1,4 +1,4 @@
-name: Azure DevOps Integration
+name: Enhanced Debug Azure DevOps Integration
 
 on:
   workflow_dispatch:
@@ -27,6 +27,8 @@ jobs:
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
+        set -x  # Enable debug mode
+
         # Construct URL with escaped $
         URL="https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
         echo "Constructed URL (with placeholders): $URL"
@@ -69,12 +71,19 @@ jobs:
         echo "JSON data constructed:"
         echo "$JSON_DATA"
         
-        # Execute curl command
+        # Execute curl command with full verbose output
         echo "Executing curl command..."
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$URL" \
+        set +x  # Disable debug mode to prevent exposing the PAT
+        RESPONSE=$(curl -v -s -w "\n%{http_code}" -X POST "$URL" \
           -H "Content-Type: application/json-patch+json" \
           -H "$AUTH_HEADER" \
-          -d "$JSON_DATA")
+          -d "$JSON_DATA" 2>&1)
+        CURL_EXIT_CODE=$?
+        set -x  # Re-enable debug mode
+        
+        echo "Curl exit code: $CURL_EXIT_CODE"
+        echo "Full curl response:"
+        echo "$RESPONSE"
         
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
@@ -82,11 +91,17 @@ jobs:
         echo "HTTP Status: $HTTP_STATUS"
         echo "Response Body: $BODY"
         
+        # Check if curl was successful
+        if [ $CURL_EXIT_CODE -ne 0 ]; then
+          echo "Curl command failed with exit code $CURL_EXIT_CODE"
+          exit 1
+        fi
+        
         # Check if the request was successful
         if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
           echo "Azure DevOps API call succeeded"
         else
-          echo "Azure DevOps API call failed"
+          echo "Azure DevOps API call failed with status $HTTP_STATUS"
           exit 1
         fi
 
