@@ -1,4 +1,4 @@
-name: DORA-Friendly Test Azure DevOps Integration
+name: Deployment Frequency Debug Workflow
 
 on:
   workflow_dispatch:
@@ -26,21 +26,9 @@ jobs:
   test-record-deployment:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
-
-    - name: Calculate DORA metrics
-      id: dora-metrics
-      run: |
-        # Simulating DORA metric calculations (replace with actual calculations in production)
-        echo "deployment_frequency=Multiple deploys per day" >> $GITHUB_OUTPUT
-        echo "lead_time=120" >> $GITHUB_OUTPUT  # in minutes
-        echo "change_failure_rate=0.05" >> $GITHUB_OUTPUT
-        echo "time_to_restore=30" >> $GITHUB_OUTPUT  # in minutes
 
     - name: Record Deployment in Azure DevOps
       env:
@@ -48,97 +36,49 @@ jobs:
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        # URL encode function
         urlencode() {
-          local string="${1}"
-          local strlen=${#string}
-          local encoded=""
-          local pos c o
-          for (( pos=0 ; pos<strlen ; pos++ )); do
-            c=${string:$pos:1}
-            case "$c" in
-              [-_.~a-zA-Z0-9] ) o="${c}" ;;
-              * )               printf -v o '%%%02x' "'$c"
+          local length="${#1}"
+          for (( i = 0; i < length; i++ )); do
+            local c="${1:i:1}"
+            case $c in
+              [a-zA-Z0-9.~_-]) printf "$c" ;;
+              *) printf '%%%02X' "'$c" ;;
             esac
-            encoded+="${o}"
           done
-          echo "${encoded}"
         }
 
-        # URL encode organization and project names
         ENCODED_ORG=$(urlencode "${AZURE_DEVOPS_ORG}")
         ENCODED_PROJECT=$(urlencode "${AZURE_DEVOPS_PROJECT}")
-
-        # Construct the URL with encoded values
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
-
         echo "Constructed URL: $URL"
 
-        # Get the last commit message
-        LAST_COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+        # Define possible field references
+        FIELD_REFS=("Custom.DeploymentFrequency" "DeploymentFrequency" "System.DeploymentFrequency")
 
-        # Construct JSON data
-        JSON_DATA=$(cat << EOF
-        [
+        # Construct JSON data with multiple attempts for DeploymentFrequency
+        JSON_DATA="["
+        for field_ref in "${FIELD_REFS[@]}"; do
+          JSON_DATA+=$(cat << EOF
+          {
+            "op": "add",
+            "path": "/fields/${field_ref}",
+            "value": "Multiple deploys per day"
+          },
+        EOF
+        )
+        done
+
+        # Add other necessary fields
+        JSON_DATA+=$(cat << EOF
           {
             "op": "add",
             "path": "/fields/System.Title",
-            "value": "Deployment to ${{ github.event.inputs.environment }} - ${{ github.run_number }}"
+            "value": "Deployment Frequency Test - ${{ github.run_number }}"
           },
           {
             "op": "add",
             "path": "/fields/System.State",
             "value": "New"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentID",
-            "value": "${{ github.run_number }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentStatus",
-            "value": "${{ github.event.inputs.deployment_status }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentStartTime",
-            "value": "${{ steps.current-time.outputs.time }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.Environment",
-            "value": "${{ github.event.inputs.environment }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.Version",
-            "value": "${{ github.sha }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentFrequency",
-            "value": "${{ steps.dora-metrics.outputs.deployment_frequency }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.ChangeLeadTime",
-            "value": "${{ steps.dora-metrics.outputs.lead_time }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.ChangeFailureRate",
-            "value": "${{ steps.dora-metrics.outputs.change_failure_rate }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.TimeToRestore",
-            "value": "${{ steps.dora-metrics.outputs.time_to_restore }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/System.Description",
-            "value": "Last commit message: $LAST_COMMIT_MESSAGE"
           }
         ]
         EOF
@@ -153,7 +93,7 @@ jobs:
           -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
           -d "$JSON_DATA" 2>&1)
 
-        echo "Curl Response (including headers):"
+        echo "Full Curl Response:"
         echo "$RESPONSE"
 
         # Extract the HTTP status code
@@ -167,6 +107,14 @@ jobs:
           echo "Created Work Item ID: $WORK_ITEM_ID"
         else
           echo "Failed to create deployment record"
+          ERROR_MESSAGE=$(echo "$RESPONSE" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
+          echo "Error Message: $ERROR_MESSAGE"
+          if echo "$ERROR_MESSAGE" | grep -q "TF401324"; then
+            echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
+          elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
+            FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
+            echo "The field $FIELD_NAME is missing or not accessible. Please check if it exists in your process or if you have permission to access it."
+          fi
           exit 1
         fi
 
@@ -176,7 +124,3 @@ jobs:
         echo "Deployment Status: ${{ github.event.inputs.deployment_status }}"
         echo "Environment: ${{ github.event.inputs.environment }}"
         echo "Timestamp: ${{ steps.current-time.outputs.time }}"
-        echo "Deployment Frequency: ${{ steps.dora-metrics.outputs.deployment_frequency }}"
-        echo "Lead Time: ${{ steps.dora-metrics.outputs.lead_time }} minutes"
-        echo "Change Failure Rate: ${{ steps.dora-metrics.outputs.change_failure_rate }}"
-        echo "Time to Restore: ${{ steps.dora-metrics.outputs.time_to_restore }} minutes"
