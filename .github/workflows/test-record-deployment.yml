@@ -1,4 +1,4 @@
-name: Isolated Curl Command Debug
+name: Script-based Azure DevOps Integration
 
 on:
   workflow_dispatch:
@@ -14,38 +14,52 @@ on:
         - In Progress
 
 jobs:
-  debug-curl-command:
+  record-deployment:
     runs-on: ubuntu-latest
     steps:
+    - name: Check out repository
+      uses: actions/checkout@v2
+
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
 
-    - name: Debug Curl Command
+    - name: Create curl script
+      run: |
+        cat > execute_curl.sh << EOL
+        #!/bin/bash
+        set -e
+
+        # Define variables
+        BASE_URL="https://dev.azure.com"
+        ORG="\${1}"
+        PROJECT="\${2}"
+        API_PATH="_apis/wit/workitems/\\\$Deployment"
+        QUERY_PARAMS="api-version=6.0"
+        CONTENT_TYPE="application/json-patch+json"
+        AUTH_HEADER="Authorization: Basic \${3}"
+        
+        # Construct full URL
+        FULL_URL="\${BASE_URL}/\${ORG}/\${PROJECT}/\${API_PATH}?\${QUERY_PARAMS}"
+        
+        # Print debug information
+        echo "Full URL: \${FULL_URL}"
+        
+        # Execute curl command
+        curl -v -X POST "\${FULL_URL}" \
+          -H "Content-Type: \${CONTENT_TYPE}" \
+          -H "\${AUTH_HEADER}" \
+          -d "\${4}"
+        EOL
+
+        chmod +x execute_curl.sh
+
+    - name: Execute Azure DevOps API call
       env:
         AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        # Define variables
-        BASE_URL="https://dev.azure.com"
-        API_PATH="_apis/wit/workitems/\$Deployment"
-        QUERY_PARAMS="api-version=6.0"
-        CONTENT_TYPE="application/json-patch+json"
-        AUTH_HEADER="Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)"
-        
-        # Construct full URL
-        FULL_URL="${BASE_URL}/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/${API_PATH}?${QUERY_PARAMS}"
-        
-        # Print debug information
-        echo "Base URL: ${BASE_URL}"
-        echo "Organization: ${AZURE_DEVOPS_ORG}"
-        echo "Project: ${AZURE_DEVOPS_PROJECT}"
-        echo "API Path: ${API_PATH}"
-        echo "Query Parameters: ${QUERY_PARAMS}"
-        echo "Full URL: ${FULL_URL}"
-        
-        # Construct JSON data
         JSON_DATA=$(cat << EOF
         [
           {
@@ -76,28 +90,10 @@ jobs:
         ]
         EOF
         )
+
+        AUTH=$(echo -n :${AZURE_DEVOPS_PAT} | base64)
         
-        echo "JSON Data:"
-        echo "${JSON_DATA}"
-        
-        # Execute curl command
-        echo "Executing curl command..."
-        curl_output=$(curl -v -X POST "${FULL_URL}" \
-          -H "Content-Type: ${CONTENT_TYPE}" \
-          -H "${AUTH_HEADER}" \
-          -d "${JSON_DATA}" 2>&1)
-        curl_exit_code=$?
-        
-        echo "Curl Exit Code: ${curl_exit_code}"
-        echo "Curl Output:"
-        echo "${curl_output}"
-        
-        if [ ${curl_exit_code} -ne 0 ]; then
-          echo "Curl command failed"
-          exit 1
-        else
-          echo "Curl command succeeded"
-        fi
+        ./execute_curl.sh "${AZURE_DEVOPS_ORG}" "${AZURE_DEVOPS_PROJECT}" "${AUTH}" "${JSON_DATA}"
 
     - name: Debug Output
       run: |
