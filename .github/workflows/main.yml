@@ -123,9 +123,9 @@ jobs:
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        curl -X POST "https://dev.azure.com/$AZURE_DEVOPS_ORG/$AZURE_DEVOPS_PROJECT/_apis/wit/workitems/\$Deployment?api-version=6.0" \
+        curl -X POST "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0" \
         -H "Content-Type: application/json-patch+json" \
-        -H "Authorization: Basic $(echo -n :$AZURE_DEVOPS_PAT | base64)" \
+        -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
         -d '[
           {
             "op": "add",
