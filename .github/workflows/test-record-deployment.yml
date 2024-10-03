@@ -12,6 +12,15 @@ on:
         - Success
         - Failure
         - In Progress
+      work_item_state:
+        description: 'Work Item State'
+        required: true
+        default: 'New'
+        type: choice
+        options:
+        - New
+        - Committed
+        - Done
 
 jobs:
   test-record-deployment:
@@ -59,7 +68,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/System.State",
-            "value": "Completed"
+            "value": "${{ github.event.inputs.work_item_state }}"
           },
           {
             "op": "add",
@@ -95,6 +104,8 @@ jobs:
         # Check if the API call was successful
         if echo "$RESPONSE" | grep -q '"id":'; then
           echo "Deployment record created successfully"
+          WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+          echo "Created Work Item ID: $WORK_ITEM_ID"
         else
           echo "Failed to create deployment record"
           exit 1
@@ -104,4 +115,5 @@ jobs:
       run: |
         echo "Deployment ID: ${{ github.run_number }}"
         echo "Deployment Status: ${{ github.event.inputs.deployment_status }}"
+        echo "Work Item State: ${{ github.event.inputs.work_item_state }}"
         echo "Timestamp: ${{ steps.current-time.outputs.time }}"
