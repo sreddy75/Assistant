@@ -1,8 +1,17 @@
-name: DORA-Aligned Deployment Tracking
+name: DORA-Friendly Test Azure DevOps Integration
 
 on:
   workflow_dispatch:
     inputs:
+      deployment_status:
+        description: 'Deployment Status'
+        required: true
+        default: 'Success'
+        type: choice
+        options:
+        - Success
+        - Failure
+        - In Progress
       environment:
         description: 'Deployment Environment'
         required: true
@@ -14,36 +23,71 @@ on:
         - Development
 
 jobs:
-  record-deployment:
+  test-record-deployment:
     runs-on: ubuntu-latest
     steps:
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
 
-    - name: Start Deployment Tracking
+    - name: Calculate DORA metrics
+      id: dora-metrics
+      run: |
+        # Simulating DORA metric calculations (replace with actual calculations in production)
+        echo "deployment_frequency=Daily" >> $GITHUB_OUTPUT
+        echo "lead_time=120" >> $GITHUB_OUTPUT  # in minutes
+        echo "change_failure_rate=0.05" >> $GITHUB_OUTPUT
+        echo "time_to_restore=30" >> $GITHUB_OUTPUT  # in minutes
+
+    - name: Record Deployment in Azure DevOps
       env:
         AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        # URL encode function (as before)
-        
-        # Construct the URL
+        # URL encode function
+        urlencode() {
+          local string="${1}"
+          local strlen=${#string}
+          local encoded=""
+          local pos c o
+          for (( pos=0 ; pos<strlen ; pos++ )); do
+            c=${string:$pos:1}
+            case "$c" in
+              [-_.~a-zA-Z0-9] ) o="${c}" ;;
+              * )               printf -v o '%%%02x' "'$c"
+            esac
+            encoded+="${o}"
+          done
+          echo "${encoded}"
+        }
+
+        # URL encode organization and project names
+        ENCODED_ORG=$(urlencode "${AZURE_DEVOPS_ORG}")
+        ENCODED_PROJECT=$(urlencode "${AZURE_DEVOPS_PROJECT}")
+
+        # Construct the URL with encoded values
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
-        
-        # Construct JSON data for deployment start
+
+        echo "Constructed URL: $URL"
+
+        # Construct JSON data
         JSON_DATA=$(cat << EOF
         [
           {
             "op": "add",
             "path": "/fields/System.Title",
-            "value": "Deployment to ${{ github.event.inputs.environment }} - ${{ github.sha }}"
+            "value": "Deployment to ${{ github.event.inputs.environment }} - ${{ github.run_number }}"
           },
           {
             "op": "add",
-            "path": "/fields/System.State",
-            "value": "In Progress"
+            "path": "/fields/Custom.DeploymentID",
+            "value": "${{ github.run_number }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentStatus",
+            "value": "${{ github.event.inputs.deployment_status }}"
           },
           {
             "op": "add",
@@ -59,66 +103,64 @@ jobs:
             "op": "add",
             "path": "/fields/Custom.Version",
             "value": "${{ github.sha }}"
-          }
-        ]
-        EOF
-        )
-        
-        # Create the work item
-        RESPONSE=$(curl -s -X POST "${URL}" \
-          -H "Content-Type: application/json-patch+json" \
-          -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-          -d "$JSON_DATA")
-        
-        # Extract and store the work item ID
-        WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
-        echo "WORK_ITEM_ID=$WORK_ITEM_ID" >> $GITHUB_ENV
-        
-        echo "Deployment tracking started. Work Item ID: $WORK_ITEM_ID"
-
-    # Your actual deployment steps would go here
-    - name: Simulate Deployment
-      run: |
-        echo "Simulating deployment to ${{ github.event.inputs.environment }}..."
-        sleep 10  # Simulate some deployment time
-        # Add your actual deployment commands here
-
-    - name: Complete Deployment Tracking
-      env:
-        AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
-        AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
-        AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
-      run: |
-        # URL for updating the work item
-        URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/${WORK_ITEM_ID}?api-version=6.0"
-        
-        # Construct JSON data for deployment completion
-        JSON_DATA=$(cat << EOF
-        [
-          {
-            "op": "add",
-            "path": "/fields/System.State",
-            "value": "Completed"
           },
           {
             "op": "add",
-            "path": "/fields/Custom.DeploymentEndTime",
-            "value": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            "path": "/fields/Custom.DeploymentFrequency",
+            "value": "${{ steps.dora-metrics.outputs.deployment_frequency }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.ChangeLeadTime",
+            "value": "${{ steps.dora-metrics.outputs.lead_time }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.ChangeFailureRate",
+            "value": "${{ steps.dora-metrics.outputs.change_failure_rate }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.TimeToRestore",
+            "value": "${{ steps.dora-metrics.outputs.time_to_restore }}"
           }
         ]
         EOF
         )
-        
-        # Update the work item
-        RESPONSE=$(curl -s -X PATCH "${URL}" \
+
+        echo "JSON Data:"
+        echo "$JSON_DATA"
+
+        # Execute the curl command with verbose output
+        RESPONSE=$(curl -v -s -X POST "${URL}" \
           -H "Content-Type: application/json-patch+json" \
           -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-          -d "$JSON_DATA")
-        
-        echo "Deployment tracking completed. Work Item ID: $WORK_ITEM_ID"
+          -d "$JSON_DATA" 2>&1)
+
+        echo "Curl Response (including headers):"
+        echo "$RESPONSE"
+
+        # Extract the HTTP status code
+        HTTP_STATUS=$(echo "$RESPONSE" | grep -i "< HTTP" | awk '{print $3}')
+        echo "HTTP Status Code: $HTTP_STATUS"
+
+        # Check if the API call was successful
+        if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+          echo "Deployment record created successfully"
+          WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+          echo "Created Work Item ID: $WORK_ITEM_ID"
+        else
+          echo "Failed to create deployment record"
+          exit 1
+        fi
 
     - name: Debug Output
       run: |
-        echo "Deployment Environment: ${{ github.event.inputs.environment }}"
-        echo "Deployment Version: ${{ github.sha }}"
-        echo "Work Item ID: ${{ env.WORK_ITEM_ID }}"
+        echo "Deployment ID: ${{ github.run_number }}"
+        echo "Deployment Status: ${{ github.event.inputs.deployment_status }}"
+        echo "Environment: ${{ github.event.inputs.environment }}"
+        echo "Timestamp: ${{ steps.current-time.outputs.time }}"
+        echo "Deployment Frequency: ${{ steps.dora-metrics.outputs.deployment_frequency }}"
+        echo "Lead Time: ${{ steps.dora-metrics.outputs.lead_time }} minutes"
+        echo "Change Failure Rate: ${{ steps.dora-metrics.outputs.change_failure_rate }}"
+        echo "Time to Restore: ${{ steps.dora-metrics.outputs.time_to_restore }} minutes"
