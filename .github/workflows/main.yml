@@ -21,9 +21,14 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
 
-    - name: Create ECR repository if not exists
+    - name: Check and create ECR repository
       run: |
-        aws ecr describe-repositories --repository-names myapp || aws ecr create-repository --repository-name myapp
+        if ! aws ecr describe-repositories --repository-names myapp &> /dev/null; then
+          echo "Repository does not exist. Creating..."
+          aws ecr create-repository --repository-name myapp
+        else
+          echo "Repository already exists."
+        fi
 
     - name: Build and push Docker images
       env:
@@ -43,72 +48,66 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+    - name: Install SSH key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        known_hosts: ${{ secrets.KNOWN_HOSTS }}
+
     - name: Deploy to EC2
       env:
-        EC2_PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
         EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
         AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
-        echo "$EC2_PRIVATE_KEY" > ec2_key.pem
-        chmod 600 ec2_key.pem
-
-        echo "Connecting to: ${EC2_USERNAME}@${HOST_DNS}"
-
-        ssh -i ec2_key.pem -o StrictHostKeyChecking=no ${EC2_USERNAME}@${HOST_DNS} '
-          echo "Starting deployment process on EC2..."
-
-          # Clone or pull the repository
-          if [ ! -d "/home/ec2-user/Assistant" ]; then
-            git clone https://github.com/sreddy75/Assistant.git /home/ec2-user/Assistant
-          else
-            cd /home/ec2-user/Assistant
-            git pull origin main
-          fi
-
-          cd /home/ec2-user/Assistant
-
-          # Check if Docker is installed and install it if missing
-          if ! command -v docker &> /dev/null
-          then
-            sudo yum update -y
+        ssh -o StrictHostKeyChecking=accept-new $EC2_USERNAME@$HOST_DNS << 'ENDSSH'
+          set -e
+          
+          # Update system and install Docker if not present
+          sudo yum update -y
+          if ! command -v docker &> /dev/null; then
             sudo amazon-linux-extras install docker -y
-            sudo service docker start
-            sudo usermod -a -G docker ec2-user
+            sudo systemctl start docker
+            sudo systemctl enable docker
           fi
 
-          # Check if docker-compose is installed and install it if missing
-          if ! command -v docker-compose &> /dev/null
-          then
+          # Add EC2 user to docker group
+          sudo usermod -aG docker $USER
+          
+          # Reload user groups without logging out
+          newgrp docker
+
+          # Install docker-compose if not present
+          if ! command -v docker-compose &> /dev/null; then
             sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             sudo chmod +x /usr/local/bin/docker-compose
-            sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
           fi
 
           # Set AWS environment variables
           export AWS_REGION='$AWS_REGION'
           export AWS_ACCOUNT_ID='$AWS_ACCOUNT_ID'
 
-          echo "AWS_REGION: $AWS_REGION"
-          echo "AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
-
-          # Log in to ECR
+          # Login to ECR
           aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-          echo "Contents of docker-compose.yml:"
-          cat docker-compose.yml
+          # Clone or update repository
+          if [ ! -d "Assistant" ]; then
+            git clone https://github.com/sreddy75/Assistant.git
+          else
+            cd Assistant
+            git pull origin main
+          fi
 
-          echo "Available Docker images:"
-          docker images
+          cd Assistant
 
-          # Pull the latest Docker images and start the application
+          # Pull and start containers
           docker-compose pull
           docker-compose up -d
 
           # Clean up old images
           docker image prune -af
-        '
+        ENDSSH
 
   record-deployment:
     needs: deploy
