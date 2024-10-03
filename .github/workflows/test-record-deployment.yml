@@ -26,6 +26,9 @@ jobs:
   test-record-deployment:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
@@ -34,7 +37,7 @@ jobs:
       id: dora-metrics
       run: |
         # Simulating DORA metric calculations (replace with actual calculations in production)
-        echo "deployment_frequency=Daily" >> $GITHUB_OUTPUT
+        echo "deployment_frequency=Multiple deploys per day" >> $GITHUB_OUTPUT
         echo "lead_time=120" >> $GITHUB_OUTPUT  # in minutes
         echo "change_failure_rate=0.05" >> $GITHUB_OUTPUT
         echo "time_to_restore=30" >> $GITHUB_OUTPUT  # in minutes
@@ -71,6 +74,9 @@ jobs:
 
         echo "Constructed URL: $URL"
 
+        # Get the last commit message
+        LAST_COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+
         # Construct JSON data
         JSON_DATA=$(cat << EOF
         [
@@ -78,6 +84,11 @@ jobs:
             "op": "add",
             "path": "/fields/System.Title",
             "value": "Deployment to ${{ github.event.inputs.environment }} - ${{ github.run_number }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/System.State",
+            "value": "New"
           },
           {
             "op": "add",
@@ -123,6 +134,11 @@ jobs:
             "op": "add",
             "path": "/fields/Custom.TimeToRestore",
             "value": "${{ steps.dora-metrics.outputs.time_to_restore }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/System.Description",
+            "value": "Last commit message: $LAST_COMMIT_MESSAGE"
           }
         ]
         EOF
