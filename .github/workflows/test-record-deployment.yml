@@ -1,4 +1,4 @@
-name: Enhanced Debug Azure DevOps Integration
+name: Isolated Curl Command Debug
 
 on:
   workflow_dispatch:
@@ -14,28 +14,36 @@ on:
         - In Progress
 
 jobs:
-  record-deployment:
+  debug-curl-command:
     runs-on: ubuntu-latest
     steps:
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
 
-    - name: Execute Azure DevOps API call
+    - name: Debug Curl Command
       env:
         AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        set -x  # Enable debug mode
-
-        # Construct URL with escaped $
-        URL="https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
-        echo "Constructed URL (with placeholders): $URL"
-        
-        # Construct auth header
+        # Define variables
+        BASE_URL="https://dev.azure.com"
+        API_PATH="_apis/wit/workitems/\$Deployment"
+        QUERY_PARAMS="api-version=6.0"
+        CONTENT_TYPE="application/json-patch+json"
         AUTH_HEADER="Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)"
-        echo "Auth header constructed (not shown for security)"
+        
+        # Construct full URL
+        FULL_URL="${BASE_URL}/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/${API_PATH}?${QUERY_PARAMS}"
+        
+        # Print debug information
+        echo "Base URL: ${BASE_URL}"
+        echo "Organization: ${AZURE_DEVOPS_ORG}"
+        echo "Project: ${AZURE_DEVOPS_PROJECT}"
+        echo "API Path: ${API_PATH}"
+        echo "Query Parameters: ${QUERY_PARAMS}"
+        echo "Full URL: ${FULL_URL}"
         
         # Construct JSON data
         JSON_DATA=$(cat << EOF
@@ -53,7 +61,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentID",
-            "value": ${{ github.run_number }}
+            "value": "${{ github.run_number }}"
           },
           {
             "op": "add",
@@ -68,41 +76,27 @@ jobs:
         ]
         EOF
         )
-        echo "JSON data constructed:"
-        echo "$JSON_DATA"
         
-        # Execute curl command with full verbose output
+        echo "JSON Data:"
+        echo "${JSON_DATA}"
+        
+        # Execute curl command
         echo "Executing curl command..."
-        set +x  # Disable debug mode to prevent exposing the PAT
-        RESPONSE=$(curl -v -s -w "\n%{http_code}" -X POST "$URL" \
-          -H "Content-Type: application/json-patch+json" \
-          -H "$AUTH_HEADER" \
-          -d "$JSON_DATA" 2>&1)
-        CURL_EXIT_CODE=$?
-        set -x  # Re-enable debug mode
+        curl_output=$(curl -v -X POST "${FULL_URL}" \
+          -H "Content-Type: ${CONTENT_TYPE}" \
+          -H "${AUTH_HEADER}" \
+          -d "${JSON_DATA}" 2>&1)
+        curl_exit_code=$?
         
-        echo "Curl exit code: $CURL_EXIT_CODE"
-        echo "Full curl response:"
-        echo "$RESPONSE"
+        echo "Curl Exit Code: ${curl_exit_code}"
+        echo "Curl Output:"
+        echo "${curl_output}"
         
-        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
-        BODY=$(echo "$RESPONSE" | sed '$d')
-        
-        echo "HTTP Status: $HTTP_STATUS"
-        echo "Response Body: $BODY"
-        
-        # Check if curl was successful
-        if [ $CURL_EXIT_CODE -ne 0 ]; then
-          echo "Curl command failed with exit code $CURL_EXIT_CODE"
+        if [ ${curl_exit_code} -ne 0 ]; then
+          echo "Curl command failed"
           exit 1
-        fi
-        
-        # Check if the request was successful
-        if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-          echo "Azure DevOps API call succeeded"
         else
-          echo "Azure DevOps API call failed with status $HTTP_STATUS"
-          exit 1
+          echo "Curl command succeeded"
         fi
 
     - name: Debug Output
