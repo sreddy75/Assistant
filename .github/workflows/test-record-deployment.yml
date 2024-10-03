@@ -1,4 +1,4 @@
-name: Debug Azure DevOps Integration
+name: Azure DevOps Integration
 
 on:
   workflow_dispatch:
@@ -14,26 +14,20 @@ on:
         - In Progress
 
 jobs:
-  test-record-deployment:
+  record-deployment:
     runs-on: ubuntu-latest
     steps:
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
 
-    - name: Prepare and execute curl command
+    - name: Execute Azure DevOps API call
       env:
         AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        # Debug: Print environment variable names (not values)
-        echo "Environment variables set:"
-        echo "AZURE_DEVOPS_ORG is set: $([[ -n $AZURE_DEVOPS_ORG ]] && echo 'Yes' || echo 'No')"
-        echo "AZURE_DEVOPS_PROJECT is set: $([[ -n $AZURE_DEVOPS_PROJECT ]] && echo 'Yes' || echo 'No')"
-        echo "AZURE_DEVOPS_PAT is set: $([[ -n $AZURE_DEVOPS_PAT ]] && echo 'Yes' || echo 'No')"
-        
-        # Construct URL
+        # Construct URL with escaped $
         URL="https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
         echo "Constructed URL (with placeholders): $URL"
         
@@ -47,7 +41,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/System.Title",
-            "value": "Test Deployment ${{ github.run_number }}"
+            "value": "Deployment ${{ github.run_number }}"
           },
           {
             "op": "add",
@@ -77,16 +71,22 @@ jobs:
         
         # Execute curl command
         echo "Executing curl command..."
-        curl -v -X POST "$URL" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$URL" \
           -H "Content-Type: application/json-patch+json" \
           -H "$AUTH_HEADER" \
-          -d "$JSON_DATA"
+          -d "$JSON_DATA")
         
-        # Check curl exit status
-        if [ $? -eq 0 ]; then
-          echo "Curl command succeeded"
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+        
+        echo "HTTP Status: $HTTP_STATUS"
+        echo "Response Body: $BODY"
+        
+        # Check if the request was successful
+        if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+          echo "Azure DevOps API call succeeded"
         else
-          echo "Curl command failed"
+          echo "Azure DevOps API call failed"
           exit 1
         fi
 
