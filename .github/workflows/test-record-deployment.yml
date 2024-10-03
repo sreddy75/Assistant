@@ -1,4 +1,4 @@
-name: Test Record Deployment
+name: Debug Azure DevOps Integration
 
 on:
   workflow_dispatch:
@@ -21,14 +21,27 @@ jobs:
       uses: josStorer/get-current-time@v2
       id: current-time
 
-    - name: Prepare curl command
+    - name: Prepare and execute curl command
       env:
         AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
+        # Debug: Print environment variable names (not values)
+        echo "Environment variables set:"
+        echo "AZURE_DEVOPS_ORG is set: $([[ -n $AZURE_DEVOPS_ORG ]] && echo 'Yes' || echo 'No')"
+        echo "AZURE_DEVOPS_PROJECT is set: $([[ -n $AZURE_DEVOPS_PROJECT ]] && echo 'Yes' || echo 'No')"
+        echo "AZURE_DEVOPS_PAT is set: $([[ -n $AZURE_DEVOPS_PAT ]] && echo 'Yes' || echo 'No')"
+        
+        # Construct URL
         URL="https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
+        echo "Constructed URL (with placeholders): $URL"
+        
+        # Construct auth header
         AUTH_HEADER="Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)"
+        echo "Auth header constructed (not shown for security)"
+        
+        # Construct JSON data
         JSON_DATA=$(cat << EOF
         [
           {
@@ -59,21 +72,17 @@ jobs:
         ]
         EOF
         )
-        echo "URL=${URL}" >> $GITHUB_ENV
-        echo "AUTH_HEADER=${AUTH_HEADER}" >> $GITHUB_ENV
-        echo "JSON_DATA=${JSON_DATA}" >> $GITHUB_ENV
-
-    - name: Execute curl command
-      run: |
-        echo "URL: ${URL}"
+        echo "JSON data constructed:"
+        echo "$JSON_DATA"
+        
+        # Execute curl command
         echo "Executing curl command..."
-        curl -X POST "${URL}" \
+        curl -v -X POST "$URL" \
           -H "Content-Type: application/json-patch+json" \
-          -H "${AUTH_HEADER}" \
-          -d "${JSON_DATA}"
-
-    - name: Check curl exit status
-      run: |
+          -H "$AUTH_HEADER" \
+          -d "$JSON_DATA"
+        
+        # Check curl exit status
         if [ $? -eq 0 ]; then
           echo "Curl command succeeded"
         else
