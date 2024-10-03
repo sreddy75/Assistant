@@ -52,24 +52,14 @@ jobs:
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
         echo "Constructed URL: $URL"
 
-        # Define possible field references, with the correct one first
-        FIELD_REFS=("Custom.DeploymentFrequency" "DeploymentFrequency" "System.DeploymentFrequency")
-
-        # Construct JSON data with multiple attempts for DeploymentFrequency
-        JSON_DATA="["
-        for field_ref in "${FIELD_REFS[@]}"; do
-          JSON_DATA+=$(cat << EOF
+        # Construct JSON data with only the correct field reference
+        JSON_DATA=$(cat << EOF
+        [
           {
             "op": "add",
-            "path": "/fields/${field_ref}",
+            "path": "/fields/Custom.DeploymentFrequency",
             "value": "Multiple deploys per day"
           },
-        EOF
-        )
-        done
-
-        # Add other necessary fields
-        JSON_DATA+=$(cat << EOF
           {
             "op": "add",
             "path": "/fields/System.Title",
