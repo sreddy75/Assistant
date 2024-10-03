@@ -27,10 +27,12 @@ jobs:
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        curl -X POST "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0" \
-        -H "Content-Type: application/json-patch+json" \
-        -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-        -d '[
+        curl -X POST \
+          "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0" \
+          -H "Content-Type: application/json-patch+json" \
+          -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
+          --data-binary @- << EOF
+        [
           {
             "op": "add",
             "path": "/fields/System.Title",
@@ -56,7 +58,8 @@ jobs:
             "path": "/fields/Custom.DeploymentTimestamp",
             "value": "${{ steps.current-time.outputs.time }}"
           }
-        ]'
+        ]
+        EOF
 
     - name: Check curl exit status
       run: |
