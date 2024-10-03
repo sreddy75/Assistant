@@ -36,7 +36,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/System.Title",
-            "value": "Test Deployment ${{ github.sha }}"
+            "value": "Test Deployment ${{ github.run_number }}"
           },
           {
             "op": "add",
@@ -46,7 +46,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentID",
-            "value": "${{ github.sha }}"
+            "value": ${{ github.run_number }}
           },
           {
             "op": "add",
@@ -69,3 +69,9 @@ jobs:
           echo "Curl command failed"
           exit 1
         fi
+
+    - name: Debug Output
+      run: |
+        echo "Deployment ID: ${{ github.run_number }}"
+        echo "Deployment Status: ${{ github.event.inputs.deployment_status }}"
+        echo "Timestamp: ${{ steps.current-time.outputs.time }}"
