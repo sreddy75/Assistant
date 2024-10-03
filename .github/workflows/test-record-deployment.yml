@@ -12,15 +12,6 @@ on:
         - Success
         - Failure
         - In Progress
-      work_item_state:
-        description: 'Work Item State'
-        required: true
-        default: 'New'
-        type: choice
-        options:
-        - New
-        - Committed
-        - Done
 
 jobs:
   test-record-deployment:
@@ -67,11 +58,6 @@ jobs:
           },
           {
             "op": "add",
-            "path": "/fields/System.State",
-            "value": "${{ github.event.inputs.work_item_state }}"
-          },
-          {
-            "op": "add",
             "path": "/fields/Custom.DeploymentID",
             "value": "${{ github.run_number }}"
           },
@@ -115,5 +101,4 @@ jobs:
       run: |
         echo "Deployment ID: ${{ github.run_number }}"
         echo "Deployment Status: ${{ github.event.inputs.deployment_status }}"
-        echo "Work Item State: ${{ github.event.inputs.work_item_state }}"
         echo "Timestamp: ${{ steps.current-time.outputs.time }}"
