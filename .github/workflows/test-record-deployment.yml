@@ -1,4 +1,4 @@
-name: Deployment Frequency Debug Workflow
+name: Comprehensive Deployment Record Workflow
 
 on:
   workflow_dispatch:
@@ -21,9 +21,13 @@ on:
         - Production
         - Staging
         - Development
+      version:
+        description: 'Deployment Version'
+        required: true
+        type: string
 
 jobs:
-  test-record-deployment:
+  record-deployment:
     runs-on: ubuntu-latest
     steps:
     - name: Get current time
@@ -52,29 +56,13 @@ jobs:
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
         echo "Constructed URL: $URL"
 
-        # Construct JSON data with only the correct field reference
+        # Calculate duration (for example purposes, set to 5 minutes)
+        DURATION=300
+        END_TIME=$(date -d "@$(($(date +%s) + $DURATION))" -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+
+        # Construct JSON data with all fields
         JSON_DATA=$(cat << EOF
         [
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentFrequency",
-            "value": "Multiple deploys per day"
-          },
-          {
-            "op": "add",
-            "path": "/fields/System.Title",
-            "value": "Deployment Frequency Test - ${{ github.run_number }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/System.State",
-            "value": "New"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.Environment",
-            "value": "${{ github.event.inputs.environment }}"
-          },
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentStatus",
@@ -84,6 +72,56 @@ jobs:
             "op": "add",
             "path": "/fields/Custom.DeploymentTimestamp",
             "value": "${{ steps.current-time.outputs.rfc3339 }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentID",
+            "value": "${{ github.run_number }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/System.State",
+            "value": "New"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentStartTime",
+            "value": "${{ steps.current-time.outputs.rfc3339 }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentEndTime",
+            "value": "${END_TIME}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.Environment",
+            "value": "${{ github.event.inputs.environment }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.Version",
+            "value": "${{ github.event.inputs.version }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentDuration",
+            "value": ${DURATION}
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.TimeToRestore",
+            "value": 0
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentFrequency",
+            "value": "Multiple deploys per day"
+          },
+          {
+            "op": "add",
+            "path": "/fields/System.Title",
+            "value": "Deployment Record - ${{ github.run_number }}"
           }
         ]
         EOF
@@ -128,4 +166,5 @@ jobs:
         echo "Deployment ID: ${{ github.run_number }}"
         echo "Deployment Status: ${{ github.event.inputs.deployment_status }}"
         echo "Environment: ${{ github.event.inputs.environment }}"
-        echo "Timestamp: ${{ steps.current-time.outputs.time }}"
+        echo "Version: ${{ github.event.inputs.version }}"
+        echo "Timestamp: ${{ steps.current-time.outputs.rfc3339 }}"
