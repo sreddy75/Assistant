@@ -1,115 +1,88 @@
-name: CI/CD Pipeline
+name: Optimized CI/CD Pipeline
 
 on:
   push:
     branches: [ main ]
 
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: myapp
+  EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [streamlit, fastapi]
     steps:
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0  # This fetches all history for all branches and tags
+    - name: Checkout code
+      uses: actions/checkout@v2
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
 
-    - name: Check and create ECR repository
-      run: |
-        if ! aws ecr describe-repositories --repository-names myapp &> /dev/null; then
-          echo "Repository does not exist. Creating..."
-          aws ecr create-repository --repository-name myapp
-        else
-          echo "Repository already exists."
-        fi
+    - name: Cache Docker layers
+      uses: actions/cache@v2
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}-${{ matrix.app }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-${{ matrix.app }}-
 
-    - name: Build and push Docker images
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ secrets.AWS_REGION }}
+        IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build and push streamlit image
-        docker build -t ${ECR_REGISTRY}/myapp:streamlit -f Dockerfile.streamlit .
-        docker push ${ECR_REGISTRY}/myapp:streamlit
+        # Build a docker container and push it to ECR 
+        docker buildx create --use
+        docker buildx build \
+          --cache-from=type=local,src=/tmp/.buildx-cache \
+          --cache-to=type=local,dest=/tmp/.buildx-cache-new \
+          --tag $ECR_REGISTRY/$ECR_REPOSITORY:${{ matrix.app }}-$IMAGE_TAG \
+          --file Dockerfile.${{ matrix.app }} \
+          --push \
+          .
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:${{ matrix.app }}-$IMAGE_TAG"
 
-        # Build and push fastapi image
-        docker build -t ${ECR_REGISTRY}/myapp:fastapi -f Dockerfile.fastapi .
-        docker push ${ECR_REGISTRY}/myapp:fastapi
+    - name: Move cache
+      run: |
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-    - name: Install SSH key
-      uses: shimataro/ssh-key-action@v2
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
       with:
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        known_hosts: ${{ secrets.KNOWN_HOSTS }}
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Deploy to EC2
-      env:
-        HOST_DNS: ${{ secrets.EC2_HOST_DNS }}
-        EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
-        ssh -o StrictHostKeyChecking=accept-new $EC2_USERNAME@$HOST_DNS << 'ENDSSH'
-          set -e
-          
-          # Update system and install Docker if not present
-          sudo yum update -y
-          if ! command -v docker &> /dev/null; then
-            sudo amazon-linux-extras install docker -y
-            sudo systemctl start docker
-            sudo systemctl enable docker
-          fi
-
-          # Add EC2 user to docker group
-          sudo usermod -aG docker $USER
-          
-          # Reload user groups without logging out
-          newgrp docker
-
-          # Install docker-compose if not present
-          if ! command -v docker-compose &> /dev/null; then
-            sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-          fi
-
-          # Set AWS environment variables
-          export AWS_REGION='$AWS_REGION'
-          export AWS_ACCOUNT_ID='$AWS_ACCOUNT_ID'
-
-          # Login to ECR
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-
-          # Clone or update repository
-          if [ ! -d "Assistant" ]; then
-            git clone https://github.com/sreddy75/Assistant.git
-          else
-            cd Assistant
-            git pull origin main
-          fi
-
-          cd Assistant
-
-          # Pull and start containers
-          docker-compose pull
-          docker-compose up -d
-
-          # Clean up old images
-          docker image prune -af
-        ENDSSH
+        aws ssm send-command \
+          --instance-ids $EC2_INSTANCE_ID \
+          --document-name "AWS-RunShellScript" \
+          --parameters commands=[
+            "cd /path/to/your/app",
+            "aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
+            "docker-compose pull",
+            "docker-compose up -d",
+            "docker image prune -af"
+          ]
 
   record-deployment:
     needs: deploy
@@ -117,7 +90,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-        fetch-depth: 0  # This fetches all history for all branches and tags
+        fetch-depth: 0
 
     - name: Get current time
       uses: josStorer/get-current-time@v2
@@ -126,18 +99,11 @@ jobs:
     - name: Get deployed work items
       id: get-work-items
       run: |
-        # Get the commit messages since the last deployment
         COMMIT_MESSAGES=$(git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:%s)
-        
-        # Extract work item IDs from commit messages
-        # This assumes your team prefixes commits with the work item ID, e.g., "AB#123: Fix bug"
         WORK_ITEMS=$(echo "$COMMIT_MESSAGES" | grep -oP 'AB#\K\d+' | sort -u | tr '\n' ',' | sed 's/,$//')
-        
         if [ -z "$WORK_ITEMS" ]; then
-          echo "No work items found in commit messages"
           echo "::set-output name=ids::"
         else
-          echo "Work Items: $WORK_ITEMS"
           echo "::set-output name=ids::$WORK_ITEMS"
         fi
 
@@ -182,105 +148,40 @@ jobs:
         ENCODED_ORG=$(urlencode "${AZURE_DEVOPS_ORG}")
         ENCODED_PROJECT=$(urlencode "${AZURE_DEVOPS_PROJECT}")
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
-        echo "Constructed URL: $URL"
 
         END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
 
-        # Construct JSON data with all fields
         JSON_DATA=$(cat << EOF
         [
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentStatus",
-            "value": "Success"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentTimestamp",
-            "value": "${{ steps.current-time.outputs.rfc3339 }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentID",
-            "value": "${{ github.run_number }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/System.State",
-            "value": "New"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentStartTime",
-            "value": "${{ steps.current-time.outputs.rfc3339 }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentEndTime",
-            "value": "${END_TIME}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.Environment",
-            "value": "Production"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.Version",
-            "value": "${{ github.sha }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentDuration",
-            "value": ${{ steps.deployment-duration.outputs.duration }}
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.TimeToRestore",
-            "value": 0
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentFrequency",
-            "value": "${{ steps.deployment-frequency.outputs.frequency }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/System.Title",
-            "value": "Deployment Record - ${{ github.run_number }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeployedWorkItems",
-            "value": "${{ steps.get-work-items.outputs.ids }}"
-          }
+          { "op": "add", "path": "/fields/Custom.DeploymentStatus", "value": "Success" },
+          { "op": "add", "path": "/fields/Custom.DeploymentTimestamp", "value": "${{ steps.current-time.outputs.rfc3339 }}" },
+          { "op": "add", "path": "/fields/Custom.DeploymentID", "value": "${{ github.run_number }}" },
+          { "op": "add", "path": "/fields/System.State", "value": "New" },
+          { "op": "add", "path": "/fields/Custom.DeploymentStartTime", "value": "${{ steps.current-time.outputs.rfc3339 }}" },
+          { "op": "add", "path": "/fields/Custom.DeploymentEndTime", "value": "${END_TIME}" },
+          { "op": "add", "path": "/fields/Custom.Environment", "value": "Production" },
+          { "op": "add", "path": "/fields/Custom.Version", "value": "${{ github.sha }}" },
+          { "op": "add", "path": "/fields/Custom.DeploymentDuration", "value": ${{ steps.deployment-duration.outputs.duration }} },
+          { "op": "add", "path": "/fields/Custom.TimeToRestore", "value": 0 },
+          { "op": "add", "path": "/fields/Custom.DeploymentFrequency", "value": "${{ steps.deployment-frequency.outputs.frequency }}" },
+          { "op": "add", "path": "/fields/System.Title", "value": "Deployment Record - ${{ github.run_number }}" },
+          { "op": "add", "path": "/fields/Custom.DeployedWorkItems", "value": "${{ steps.get-work-items.outputs.ids }}" }
         ]
         EOF
         )
 
-        echo "JSON Data:"
-        echo "$JSON_DATA"
-
-        # Execute the curl command with verbose output
-        RESPONSE=$(curl -v -s -X POST "${URL}" \
+        RESPONSE=$(curl -s -X POST "${URL}" \
           -H "Content-Type: application/json-patch+json" \
           -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-          -d "$JSON_DATA" 2>&1)
+          -d "$JSON_DATA")
 
-        echo "Full Curl Response:"
-        echo "$RESPONSE"
-
-        # Extract the HTTP status code
-        HTTP_STATUS=$(echo "$RESPONSE" | grep -i "< HTTP" | awk '{print $3}')
-        echo "HTTP Status Code: $HTTP_STATUS"
-
-        # Check if the API call was successful
-        if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+        HTTP_STATUS=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+        
+        if [ ! -z "$HTTP_STATUS" ]; then
           echo "Deployment record created successfully"
-          WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+          WORK_ITEM_ID=$HTTP_STATUS
           echo "Created Work Item ID: $WORK_ITEM_ID"
 
-          # Link the deployment work item to the associated work items
           if [ ! -z "${{ steps.get-work-items.outputs.ids }}" ]; then
             IFS=',' read -ra WORK_ITEM_ARRAY <<< "${{ steps.get-work-items.outputs.ids }}"
             for ITEM_ID in "${WORK_ITEM_ARRAY[@]}"; do
@@ -309,14 +210,7 @@ jobs:
           fi
         else
           echo "Failed to create deployment record"
-          ERROR_MESSAGE=$(echo "$RESPONSE" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
-          echo "Error Message: $ERROR_MESSAGE"
-          if echo "$ERROR_MESSAGE" | grep -q "TF401324"; then
-            echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
-          elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
-            FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
-            echo "The field $FIELD_NAME is missing or not accessible. Check if it exists in your process or if you have permission to access it."
-          fi
+          echo "Error: $RESPONSE"
           exit 1
         fi
 
