@@ -46,12 +46,12 @@ jobs:
       id: deployment-duration
       run: |
         START_TIME="${{ steps.current-time.outputs.epoch }}"
-        # Simulate a deployment time (e.g., 5 minutes)
+        # Simulate a deployment time (e.g., 30 seconds)
         sleep 30
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - START_TIME))
-        echo "::set-output name=duration::$DURATION"
-        echo "::set-output name=end_time::$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")"
+        echo "duration=$DURATION" >> $GITHUB_OUTPUT
+        echo "end_time=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")" >> $GITHUB_OUTPUT
 
     - name: Determine deployment frequency
       id: deployment-frequency
@@ -64,7 +64,7 @@ jobs:
         else
           FREQUENCY="Less than once per day"
         fi
-        echo "::set-output name=frequency::$FREQUENCY"
+        echo "frequency=$FREQUENCY" >> $GITHUB_OUTPUT
 
     - name: Record Deployment in Azure DevOps
       env:
@@ -180,34 +180,41 @@ jobs:
         if [[ "$HTTP_STATUS" =~ ^2 ]]; then
           echo "Deployment record created successfully"
           WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
-          echo "Created Work Item ID: $WORK_ITEM_ID"
+          if [ -z "$WORK_ITEM_ID" ]; then
+            echo "Warning: Could not extract Work Item ID from the response."
+            echo "Full response body:"
+            echo "$RESPONSE" | sed -n '/^{/,/^}/p'
+          else
+            echo "Created Work Item ID: $WORK_ITEM_ID"
 
-          # Link the deployment work item to the associated work items
-          if [ ! -z "${{ github.event.inputs.associated_work_items }}" ]; then
-            IFS=',' read -ra WORK_ITEM_ARRAY <<< "${{ github.event.inputs.associated_work_items }}"
-            for ITEM_ID in "${WORK_ITEM_ARRAY[@]}"; do
-              LINK_JSON=$(cat << EOF
-              [
-                {
-                  "op": "add",
-                  "path": "/relations/-",
-                  "value": {
-                    "rel": "System.LinkTypes.Related",
-                    "url": "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workItems/${ITEM_ID}",
-                    "attributes": {
-                      "comment": "Associated with deployment"
+            # Link the deployment work item to the associated work items
+            if [ ! -z "${{ github.event.inputs.associated_work_items }}" ]; then
+              IFS=',' read -ra WORK_ITEM_ARRAY <<< "${{ github.event.inputs.associated_work_items }}"
+              for ITEM_ID in "${WORK_ITEM_ARRAY[@]}"; do
+                LINK_JSON=$(cat << EOF
+                [
+                  {
+                    "op": "add",
+                    "path": "/relations/-",
+                    "value": {
+                      "rel": "System.LinkTypes.Related",
+                      "url": "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workItems/${ITEM_ID}",
+                      "attributes": {
+                        "comment": "Associated with deployment"
+                      }
                     }
                   }
-                }
-              ]
-              EOF
-              )
+                ]
+                EOF
+                )
 
-              curl -s -X PATCH "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/${WORK_ITEM_ID}?api-version=6.0" \
-                -H "Content-Type: application/json-patch+json" \
-                -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-                -d "$LINK_JSON"
-            done
+                LINK_RESPONSE=$(curl -s -X PATCH "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/${WORK_ITEM_ID}?api-version=6.0" \
+                  -H "Content-Type: application/json-patch+json" \
+                  -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
+                  -d "$LINK_JSON")
+                echo "Link response for item $ITEM_ID: $LINK_RESPONSE"
+              done
+            fi
           fi
         else
           echo "Failed to create deployment record"
