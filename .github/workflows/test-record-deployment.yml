@@ -171,15 +171,18 @@ jobs:
           -d "$JSON_DATA")
 
         echo "HTTP Status Code: $HTTP_CODE"
-        echo "Response Body:"
-        cat "$RESPONSE_FILE"
+        echo "Response Body (first 1000 characters):"
+        head -c 1000 "$RESPONSE_FILE"
 
         # Check if the API call was successful
         if [[ "$HTTP_CODE" =~ ^2 ]]; then
           echo "Deployment record created successfully"
-          WORK_ITEM_ID=$(jq -r '.id' "$RESPONSE_FILE")
-          if [ -z "$WORK_ITEM_ID" ] || [ "$WORK_ITEM_ID" == "null" ]; then
-            echo "Warning: Could not extract Work Item ID from the response."
+          # Try to parse the JSON response, but handle potential errors
+          WORK_ITEM_ID=$(jq -r '.id' "$RESPONSE_FILE" 2>/dev/null)
+          if [ $? -ne 0 ] || [ -z "$WORK_ITEM_ID" ] || [ "$WORK_ITEM_ID" == "null" ]; then
+            echo "Warning: Could not extract Work Item ID from the response. The response might be truncated or malformed."
+            echo "Full response content:"
+            cat "$RESPONSE_FILE"
           else
             echo "Created Work Item ID: $WORK_ITEM_ID"
 
@@ -214,13 +217,18 @@ jobs:
           fi
         else
           echo "Failed to create deployment record"
-          ERROR_MESSAGE=$(jq -r '.message' "$RESPONSE_FILE")
-          echo "Error Message: $ERROR_MESSAGE"
-          if echo "$ERROR_MESSAGE" | grep -q "TF401324"; then
-            echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
-          elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
-            FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
-            echo "The field $FIELD_NAME is missing or not accessible. Please check if it exists in your process or if you have permission to access it."
+          ERROR_MESSAGE=$(jq -r '.message' "$RESPONSE_FILE" 2>/dev/null)
+          if [ $? -ne 0 ] || [ -z "$ERROR_MESSAGE" ] || [ "$ERROR_MESSAGE" == "null" ]; then
+            echo "Could not parse error message. Full response content:"
+            cat "$RESPONSE_FILE"
+          else
+            echo "Error Message: $ERROR_MESSAGE"
+            if echo "$ERROR_MESSAGE" | grep -q "TF401324"; then
+              echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
+            elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
+              FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
+              echo "The field $FIELD_NAME is missing or not accessible. Please check if it exists in your process or if you have permission to access it."
+            fi
           fi
           exit 1
         fi
