@@ -123,50 +123,29 @@ jobs:
         AZURE_DEVOPS_ORG: ${{ secrets.AZURE_DEVOPS_ORG }}
         AZURE_DEVOPS_PROJECT: ${{ secrets.AZURE_DEVOPS_PROJECT }}
       run: |
-        # URL encode function
         urlencode() {
-          local string="${1}"
-          local strlen=${#string}
-          local encoded=""
-          local pos c o
-          for (( pos=0 ; pos<strlen ; pos++ )); do
-            c=${string:$pos:1}
-            case "$c" in
-              [-_.~a-zA-Z0-9] ) o="$c" ;;
-              * )               printf -v o '%%%02x' "'$c"
+          local length="${#1}"
+          for (( i = 0; i < length; i++ )); do
+            local c="${1:i:1}"
+            case $c in
+              [a-zA-Z0-9.~_-]) printf "$c" ;;
+              *) printf '%%%02X' "'$c" ;;
             esac
-            encoded+="$o"
           done
-          echo "${encoded}"
         }
 
-        # URL encode organization and project names
         ENCODED_ORG=$(urlencode "${AZURE_DEVOPS_ORG}")
         ENCODED_PROJECT=$(urlencode "${AZURE_DEVOPS_PROJECT}")
+        URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
+        echo "Constructed URL: $URL"
 
-        # Construct the URL with encoded values
-        URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/%24Deployment?api-version=6.0"
+        # Calculate duration (for example purposes, set to 5 minutes)
+        DURATION=300
+        END_TIME=$(date -d "@$(($(date +%s) + $DURATION))" -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
 
-        # Execute the curl command
-        curl -X POST "${URL}" \
-        -H "Content-Type: application/json-patch+json" \
-        -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-        -d '[
-          {
-            "op": "add",
-            "path": "/fields/System.Title",
-            "value": "Deployment ${{ github.sha }}"
-          },
-          {
-            "op": "add",
-            "path": "/fields/System.State",
-            "value": "Completed"
-          },
-          {
-            "op": "add",
-            "path": "/fields/Custom.DeploymentID",
-            "value": "${{ github.sha }}"
-          },
+        # Construct JSON data with all fields
+        JSON_DATA=$(cat << EOF
+        [
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentStatus",
@@ -175,6 +154,100 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentTimestamp",
-            "value": "${{ steps.current-time.outputs.time }}"
+            "value": "${{ steps.current-time.outputs.rfc3339 }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentID",
+            "value": "${{ github.run_number }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/System.State",
+            "value": "New"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentStartTime",
+            "value": "${{ steps.current-time.outputs.rfc3339 }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentEndTime",
+            "value": "${END_TIME}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.Environment",
+            "value": "Production"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.Version",
+            "value": "${{ github.sha }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentDuration",
+            "value": ${DURATION}
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.TimeToRestore",
+            "value": 0
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeploymentFrequency",
+            "value": "Multiple deploys per day"
+          },
+          {
+            "op": "add",
+            "path": "/fields/System.Title",
+            "value": "Deployment Record - ${{ github.run_number }}"
           }
-        ]'
+        ]
+        EOF
+        )
+
+        echo "JSON Data:"
+        echo "$JSON_DATA"
+
+        # Execute the curl command with verbose output
+        RESPONSE=$(curl -v -s -X POST "${URL}" \
+          -H "Content-Type: application/json-patch+json" \
+          -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
+          -d "$JSON_DATA" 2>&1)
+
+        echo "Full Curl Response:"
+        echo "$RESPONSE"
+
+        # Extract the HTTP status code
+        HTTP_STATUS=$(echo "$RESPONSE" | grep -i "< HTTP" | awk '{print $3}')
+        echo "HTTP Status Code: $HTTP_STATUS"
+
+        # Check if the API call was successful
+        if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+          echo "Deployment record created successfully"
+          WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+          echo "Created Work Item ID: $WORK_ITEM_ID"
+        else
+          echo "Failed to create deployment record"
+          ERROR_MESSAGE=$(echo "$RESPONSE" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
+          echo "Error Message: $ERROR_MESSAGE"
+          if echo "$ERROR_MESSAGE" | grep -q "TF401324"; then
+            echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
+          elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
+            FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
+            echo "The field $FIELD_NAME is missing or not accessible. Please check if it exists in your process or if you have permission to access it."
+          fi
+          exit 1
+        fi
+
+    - name: Debug Output
+      run: |
+        echo "Deployment ID: ${{ github.run_number }}"
+        echo "Deployment Status: Success"
+        echo "Environment: Production"
+        echo "Version: ${{ github.sha }}"
+        echo "Timestamp: ${{ steps.current-time.outputs.rfc3339 }}"
