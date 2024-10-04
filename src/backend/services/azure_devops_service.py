@@ -1,7 +1,9 @@
 import base64
 from datetime import datetime
 import logging
+from typing import List, Any, Optional
 from azure.devops.connection import Connection
+from azure.devops.v7_0.work_item_tracking.models import Wiql  
 from msrest.authentication import BasicAuthentication
 import requests
 from src.backend.config.azure_devops_config import azure_devops_settings, is_azure_devops_configured
@@ -56,9 +58,8 @@ class AzureDevOpsService:
 
             if response.status_code == 200:
                 data = response.json()
-                logger.debug(f"Full response payload: {data}")  # Log the full response for debugging
+                logger.debug(f"Full response payload: {data}")
                 
-                # Look for the value corresponding to 'System.AreaPath'
                 for value in data.get('values', []):
                     if value.get('value'):
                         logger.info(f"Found area path: {value.get('value')} for team: {team_id}")
@@ -75,7 +76,46 @@ class AzureDevOpsService:
             logger.error(f"Error fetching area path for team: {team_id} in project: {project_id}: {str(e)}")
             raise
 
-    def get_completed_work_items(self, project_id: str, team_id: str, start_date, end_date):
+    def get_deployment_tickets(self, project_id: str, team_id: str, start_date: datetime, end_date: datetime) -> List[Any]:
+        logger.info(f"Fetching deployment tickets for project: {project_id}, team: {team_id}")
+        if not self.validate_project(project_id):
+            raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
+        
+        project_name = self.get_project_name(project_id)
+        area_path = self.get_team_area_path(project_id, team_id)
+        
+        if not area_path:
+            raise ValueError(f"Could not determine area path for team: {team_id}")
+        
+        wit_client = self.connection.clients.get_work_item_tracking_client()
+        
+        wiql = Wiql(
+            query=f"""
+            SELECT [System.Id]
+            FROM WorkItems
+            WHERE [System.TeamProject] = '{project_name}'
+            AND [System.AreaPath] UNDER '{area_path}'
+            AND [System.WorkItemType] = 'Deployment'
+            AND [System.ChangedDate] >= '{start_date.isoformat()}'
+            AND [System.ChangedDate] <= '{end_date.isoformat()}'
+            ORDER BY [System.ChangedDate] DESC
+            """
+        )
+        
+        wiql_results = wit_client.query_by_wiql(wiql).work_items
+        if not wiql_results:
+            logger.info(f"No deployment tickets found for project: {project_name}")
+            return []
+        
+        deployment_ids = [int(res.id) for res in wiql_results]
+        return wit_client.get_work_items(deployment_ids, expand="All")
+
+    def get_work_items(self, work_item_ids: List[int]) -> List[Any]:
+        logger.info(f"Fetching work items: {work_item_ids}")
+        wit_client = self.connection.clients.get_work_item_tracking_client()
+        return wit_client.get_work_items(work_item_ids, expand="All")
+
+    def get_completed_work_items(self, project_id: str, team_id: str, start_date: datetime, end_date: datetime) -> List[Any]:
         logger.info(f"Fetching completed work items for project: {project_id}, team: {team_id}")
         if not self.validate_project(project_id):
             raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
@@ -88,17 +128,17 @@ class AzureDevOpsService:
         
         wit_client = self.connection.clients.get_work_item_tracking_client()
         
-        wiql = {
-            "query": f"""
+        wiql = Wiql(
+            query=f"""
             SELECT [System.Id]
             FROM WorkItems
             WHERE [System.TeamProject] = '{project_name}'
             AND [System.AreaPath] UNDER '{area_path}'
             AND [System.State] IN ('Closed', 'Done', 'Completed')
-            AND [System.ChangedDate] >= '{start_date.date()}'
-            AND [System.ChangedDate] <= '{end_date.date()}'
+            AND [System.ChangedDate] >= '{start_date.isoformat()}'
+            AND [System.ChangedDate] <= '{end_date.isoformat()}'
             """
-        }
+        )
         
         wiql_results = wit_client.query_by_wiql(wiql).work_items
         if not wiql_results:
@@ -108,89 +148,7 @@ class AzureDevOpsService:
         work_item_ids = [int(res.id) for res in wiql_results]
         return wit_client.get_work_items(work_item_ids, expand="All")
 
-    def get_resolved_incidents(self, project_id: str, team_id: str, start_date, end_date):
-        logger.info(f"Fetching resolved incidents for project: {project_id}, team: {team_id}")
-        if not self.validate_project(project_id):
-            raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
-        
-        project_name = self.get_project_name(project_id)
-        area_path = self.get_team_area_path(project_id, team_id)
-        
-        if not area_path:
-            raise ValueError(f"Could not determine area path for team: {team_id}")
-        
-        wit_client = self.connection.clients.get_work_item_tracking_client()
-        
-        wiql = {
-            "query": f"""
-            SELECT [System.Id]
-            FROM WorkItems
-            WHERE [System.TeamProject] = '{project_name}'
-            AND [System.AreaPath] UNDER '{area_path}'
-            AND [System.WorkItemType] = 'Bug'
-            AND [System.State] = 'Resolved'
-            AND [System.ChangedDate] >= '{start_date.date()}'
-            AND [System.ChangedDate] <= '{end_date.date()}'
-            """
-        }
-        
-        wiql_results = wit_client.query_by_wiql(wiql).work_items
-        if not wiql_results:
-            logger.info(f"No resolved incidents found for project: {project_name}")
-            return []
-        
-        incident_ids = [int(res.id) for res in wiql_results]
-        return wit_client.get_work_items(incident_ids, expand="All")
-
-    def get_incidents(self, project_id: str, team_id: str, start_date, end_date):
-        logger.info(f"Fetching incidents for project: {project_id}, team: {team_id}")
-        if not self.validate_project(project_id):
-            raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
-        
-        project_name = self.get_project_name(project_id)
-        area_path = self.get_team_area_path(project_id, team_id)
-        
-        if not area_path:
-            raise ValueError(f"Could not determine area path for team: {team_id}")
-        
-        wit_client = self.connection.clients.get_work_item_tracking_client()
-        
-        wiql = {
-            "query": f"""
-            SELECT [System.Id]
-            FROM WorkItems
-            WHERE [System.TeamProject] = '{project_name}'
-            AND [System.AreaPath] UNDER '{area_path}'
-            AND [System.WorkItemType] = 'Bug'
-            AND [System.CreatedDate] >= '{start_date.date()}'
-            AND [System.CreatedDate] <= '{end_date.date()}'
-            """
-        }
-        
-        wiql_results = wit_client.query_by_wiql(wiql).work_items
-        if not wiql_results:
-            logger.info(f"No incidents found for project: {project_name}")
-            return []
-        
-        incident_ids = [int(res.id) for res in wiql_results]
-        return wit_client.get_work_items(incident_ids, expand="All")
-
-    def get_releases(self, project_id: str, team_id: str, start_date, end_date):
-        logger.info(f"Fetching releases for project: {project_id}, team: {team_id}")
-        if not self.validate_project(project_id):
-            raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
-        
-        release_client = self.connection.clients.get_release_client()
-        releases = release_client.get_releases(
-            project=project_id,
-            definition_id=None,
-            min_created_time=start_date.isoformat(),
-            max_created_time=end_date.isoformat(),
-            top=1000
-        )
-        return [r for r in releases if r.team_id == team_id]
-
-    def get_teams(self, project_id: str):
+    def get_teams(self, project_id: str) -> List[Any]:
         logger.info(f"Fetching teams for project: {project_id}")
         if not self.validate_project(project_id):
             raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
@@ -209,4 +167,82 @@ class AzureDevOpsService:
             return team is not None
         except Exception as e:
             logger.error(f"Error checking team existence: {str(e)}")
+            return False
+
+    def create_deployment_ticket(self, project_id: str, team_id: str, deployment_data: dict) -> Optional[Any]:
+        logger.info(f"Creating deployment ticket for project: {project_id}, team: {team_id}")
+        if not self.validate_project(project_id):
+            raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
+
+        wit_client = self.connection.clients.get_work_item_tracking_client()
+
+        try:
+            work_item = wit_client.create_work_item(
+                project=project_id,
+                type="Deployment",
+                document=[
+                    {"op": "add", "path": "/fields/System.Title", "value": deployment_data.get("title", "Deployment Record")},
+                    {"op": "add", "path": "/fields/Custom.DeploymentStatus", "value": deployment_data.get("status", "Success")},
+                    {"op": "add", "path": "/fields/Custom.DeploymentTimestamp", "value": deployment_data.get("timestamp")},
+                    {"op": "add", "path": "/fields/Custom.DeploymentID", "value": deployment_data.get("id")},
+                    {"op": "add", "path": "/fields/Custom.DeploymentStartTime", "value": deployment_data.get("start_time")},
+                    {"op": "add", "path": "/fields/Custom.DeploymentEndTime", "value": deployment_data.get("end_time")},
+                    {"op": "add", "path": "/fields/Custom.Environment", "value": deployment_data.get("environment", "Production")},
+                    {"op": "add", "path": "/fields/Custom.Version", "value": deployment_data.get("version")},
+                    {"op": "add", "path": "/fields/Custom.DeploymentDuration", "value": deployment_data.get("duration")},
+                    {"op": "add", "path": "/fields/Custom.TimeToRestore", "value": deployment_data.get("time_to_restore", 0)},
+                    {"op": "add", "path": "/fields/Custom.DeploymentFrequency", "value": deployment_data.get("frequency", "Multiple deploys per day")},
+                    {"op": "add", "path": "/fields/Custom.DeployedWorkItems", "value": ",".join(map(str, deployment_data.get("work_items", [])))}
+                ]
+            )
+            logger.info(f"Created deployment ticket with ID: {work_item.id}")
+            return work_item
+        except Exception as e:
+            logger.error(f"Error creating deployment ticket: {str(e)}")
+            return None
+
+    def update_deployment_ticket(self, project_id: str, work_item_id: int, update_data: dict) -> Optional[Any]:
+        logger.info(f"Updating deployment ticket {work_item_id} for project: {project_id}")
+        if not self.validate_project(project_id):
+            raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
+
+        wit_client = self.connection.clients.get_work_item_tracking_client()
+
+        try:
+            document = []
+            for field, value in update_data.items():
+                document.append({"op": "add", "path": f"/fields/{field}", "value": value})
+
+            work_item = wit_client.update_work_item(
+                project=project_id,
+                id=work_item_id,
+                document=document
+            )
+            logger.info(f"Updated deployment ticket with ID: {work_item.id}")
+            return work_item
+        except Exception as e:
+            logger.error(f"Error updating deployment ticket: {str(e)}")
+            return None
+
+    def link_work_items_to_deployment(self, project_id: str, deployment_id: int, work_item_ids: List[int]) -> bool:
+        logger.info(f"Linking work items to deployment {deployment_id} for project: {project_id}")
+        if not self.validate_project(project_id):
+            raise ValueError(f"Project with ID {project_id} not found or inaccessible.")
+
+        wit_client = self.connection.clients.get_work_item_tracking_client()
+
+        try:
+            for work_item_id in work_item_ids:
+                wit_client.add_link(
+                    project=project_id,
+                    work_item_id=deployment_id,
+                    link_to_add={
+                        "rel": "System.LinkTypes.Related",
+                        "url": f"{self.organization_url}/{project_id}/_apis/wit/workItems/{work_item_id}"
+                    }
+                )
+            logger.info(f"Successfully linked work items to deployment {deployment_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error linking work items to deployment: {str(e)}")
             return False
