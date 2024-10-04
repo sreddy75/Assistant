@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0  # This fetches all history for all branches and tags
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
@@ -113,9 +115,52 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0  # This fetches all history for all branches and tags
+
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
+
+    - name: Get deployed work items
+      id: get-work-items
+      run: |
+        # Get the commit messages since the last deployment
+        COMMIT_MESSAGES=$(git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:%s)
+        
+        # Extract work item IDs from commit messages
+        # This assumes your team prefixes commits with the work item ID, e.g., "AB#123: Fix bug"
+        WORK_ITEMS=$(echo "$COMMIT_MESSAGES" | grep -oP 'AB#\K\d+' | sort -u | tr '\n' ',' | sed 's/,$//')
+        
+        if [ -z "$WORK_ITEMS" ]; then
+          echo "No work items found in commit messages"
+          echo "::set-output name=ids::"
+        else
+          echo "Work Items: $WORK_ITEMS"
+          echo "::set-output name=ids::$WORK_ITEMS"
+        fi
+
+    - name: Calculate deployment duration
+      id: deployment-duration
+      run: |
+        START_TIME="${{ steps.current-time.outputs.epoch }}"
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        echo "::set-output name=duration::$DURATION"
+
+    - name: Determine deployment frequency
+      id: deployment-frequency
+      run: |
+        DEPLOYMENTS_LAST_DAY=$(git log --since="1 day ago" --grep="Deployment Record" --oneline | wc -l)
+        if [ $DEPLOYMENTS_LAST_DAY -gt 1 ]; then
+          FREQUENCY="Multiple deploys per day"
+        elif [ $DEPLOYMENTS_LAST_DAY -eq 1 ]; then
+          FREQUENCY="Once per day"
+        else
+          FREQUENCY="Less than once per day"
+        fi
+        echo "::set-output name=frequency::$FREQUENCY"
 
     - name: Record Deployment in Azure DevOps
       env:
@@ -139,9 +184,7 @@ jobs:
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
         echo "Constructed URL: $URL"
 
-        # Calculate duration (for example purposes, set to 5 minutes)
-        DURATION=300
-        END_TIME=$(date -d "@$(($(date +%s) + $DURATION))" -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+        END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
 
         # Construct JSON data with all fields
         JSON_DATA=$(cat << EOF
@@ -189,7 +232,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentDuration",
-            "value": ${DURATION}
+            "value": ${{ steps.deployment-duration.outputs.duration }}
           },
           {
             "op": "add",
@@ -199,12 +242,17 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentFrequency",
-            "value": "Multiple deploys per day"
+            "value": "${{ steps.deployment-frequency.outputs.frequency }}"
           },
           {
             "op": "add",
             "path": "/fields/System.Title",
             "value": "Deployment Record - ${{ github.run_number }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeployedWorkItems",
+            "value": "${{ steps.get-work-items.outputs.ids }}"
           }
         ]
         EOF
@@ -231,6 +279,34 @@ jobs:
           echo "Deployment record created successfully"
           WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
           echo "Created Work Item ID: $WORK_ITEM_ID"
+
+          # Link the deployment work item to the associated work items
+          if [ ! -z "${{ steps.get-work-items.outputs.ids }}" ]; then
+            IFS=',' read -ra WORK_ITEM_ARRAY <<< "${{ steps.get-work-items.outputs.ids }}"
+            for ITEM_ID in "${WORK_ITEM_ARRAY[@]}"; do
+              LINK_JSON=$(cat << EOF
+              [
+                {
+                  "op": "add",
+                  "path": "/relations/-",
+                  "value": {
+                    "rel": "System.LinkTypes.Related",
+                    "url": "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workItems/${ITEM_ID}",
+                    "attributes": {
+                      "comment": "Associated with deployment"
+                    }
+                  }
+                }
+              ]
+              EOF
+              )
+
+              curl -s -X PATCH "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/${WORK_ITEM_ID}?api-version=6.0" \
+                -H "Content-Type: application/json-patch+json" \
+                -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
+                -d "$LINK_JSON"
+            done
+          fi
         else
           echo "Failed to create deployment record"
           ERROR_MESSAGE=$(echo "$RESPONSE" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
@@ -239,7 +315,7 @@ jobs:
             echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
           elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
             FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
-            echo "The field $FIELD_NAME is missing or not accessible. Please check if it exists in your process or if you have permission to access it."
+            echo "The field $FIELD_NAME is missing or not accessible. Check if it exists in your process or if you have permission to access it."
           fi
           exit 1
         fi
@@ -251,3 +327,5 @@ jobs:
         echo "Environment: Production"
         echo "Version: ${{ github.sha }}"
         echo "Timestamp: ${{ steps.current-time.outputs.rfc3339 }}"
+        echo "Duration: ${{ steps.deployment-duration.outputs.duration }} seconds"
+        echo "Frequency: ${{ steps.deployment-frequency.outputs.frequency }}"

@@ -25,14 +25,46 @@ on:
         description: 'Deployment Version'
         required: true
         type: string
+      associated_work_items:
+        description: 'Associated Work Item IDs (comma-separated)'
+        required: false
+        type: string
 
 jobs:
   record-deployment:
     runs-on: ubuntu-latest
     steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0  # This fetches all history for all branches and tags
+
     - name: Get current time
       uses: josStorer/get-current-time@v2
       id: current-time
+
+    - name: Calculate deployment duration
+      id: deployment-duration
+      run: |
+        START_TIME="${{ steps.current-time.outputs.epoch }}"
+        # Simulate a deployment time (e.g., 30 seconds)
+        sleep 30
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        echo "duration=$DURATION" >> $GITHUB_OUTPUT
+        echo "end_time=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")" >> $GITHUB_OUTPUT
+
+    - name: Determine deployment frequency
+      id: deployment-frequency
+      run: |
+        DEPLOYMENTS_LAST_DAY=$(git log --since="1 day ago" --grep="Deployment Record" --oneline | wc -l)
+        if [ $DEPLOYMENTS_LAST_DAY -gt 1 ]; then
+          FREQUENCY="Multiple deploys per day"
+        elif [ $DEPLOYMENTS_LAST_DAY -eq 1 ]; then
+          FREQUENCY="Once per day"
+        else
+          FREQUENCY="Less than once per day"
+        fi
+        echo "frequency=$FREQUENCY" >> $GITHUB_OUTPUT
 
     - name: Record Deployment in Azure DevOps
       env:
@@ -55,10 +87,6 @@ jobs:
         ENCODED_PROJECT=$(urlencode "${AZURE_DEVOPS_PROJECT}")
         URL="https://dev.azure.com/${ENCODED_ORG}/${ENCODED_PROJECT}/_apis/wit/workitems/\$Deployment?api-version=6.0"
         echo "Constructed URL: $URL"
-
-        # Calculate duration (for example purposes, set to 5 minutes)
-        DURATION=300
-        END_TIME=$(date -d "@$(($(date +%s) + $DURATION))" -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
 
         # Construct JSON data with all fields
         JSON_DATA=$(cat << EOF
@@ -91,7 +119,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentEndTime",
-            "value": "${END_TIME}"
+            "value": "${{ steps.deployment-duration.outputs.end_time }}"
           },
           {
             "op": "add",
@@ -106,7 +134,7 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentDuration",
-            "value": ${DURATION}
+            "value": ${{ steps.deployment-duration.outputs.duration }}
           },
           {
             "op": "add",
@@ -116,12 +144,17 @@ jobs:
           {
             "op": "add",
             "path": "/fields/Custom.DeploymentFrequency",
-            "value": "Multiple deploys per day"
+            "value": "${{ steps.deployment-frequency.outputs.frequency }}"
           },
           {
             "op": "add",
             "path": "/fields/System.Title",
             "value": "Deployment Record - ${{ github.run_number }}"
+          },
+          {
+            "op": "add",
+            "path": "/fields/Custom.DeployedWorkItems",
+            "value": "${{ github.event.inputs.associated_work_items }}"
           }
         ]
         EOF
@@ -130,33 +163,72 @@ jobs:
         echo "JSON Data:"
         echo "$JSON_DATA"
 
-        # Execute the curl command with verbose output
-        RESPONSE=$(curl -v -s -X POST "${URL}" \
+        # Execute the curl command and save the response to a file
+        RESPONSE_FILE="curl_response.txt"
+        HTTP_CODE=$(curl -s -w "%{http_code}" -o "$RESPONSE_FILE" -X POST "${URL}" \
           -H "Content-Type: application/json-patch+json" \
           -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
-          -d "$JSON_DATA" 2>&1)
+          -d "$JSON_DATA")
 
-        echo "Full Curl Response:"
-        echo "$RESPONSE"
-
-        # Extract the HTTP status code
-        HTTP_STATUS=$(echo "$RESPONSE" | grep -i "< HTTP" | awk '{print $3}')
-        echo "HTTP Status Code: $HTTP_STATUS"
+        echo "HTTP Status Code: $HTTP_CODE"
+        echo "Response Body (first 1000 characters):"
+        head -c 1000 "$RESPONSE_FILE"
 
         # Check if the API call was successful
-        if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+        if [[ "$HTTP_CODE" =~ ^2 ]]; then
           echo "Deployment record created successfully"
-          WORK_ITEM_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
-          echo "Created Work Item ID: $WORK_ITEM_ID"
+          # Try to parse the JSON response, but handle potential errors
+          WORK_ITEM_ID=$(jq -r '.id' "$RESPONSE_FILE" 2>/dev/null)
+          if [ $? -ne 0 ] || [ -z "$WORK_ITEM_ID" ] || [ "$WORK_ITEM_ID" == "null" ]; then
+            echo "Warning: Could not extract Work Item ID from the response. The response might be truncated or malformed."
+            echo "Full response content:"
+            cat "$RESPONSE_FILE"
+          else
+            echo "Created Work Item ID: $WORK_ITEM_ID"
+
+            # Link the deployment work item to the associated work items
+            if [ ! -z "${{ github.event.inputs.associated_work_items }}" ]; then
+              IFS=',' read -ra WORK_ITEM_ARRAY <<< "${{ github.event.inputs.associated_work_items }}"
+              for ITEM_ID in "${WORK_ITEM_ARRAY[@]}"; do
+                LINK_JSON=$(cat << EOF
+                [
+                  {
+                    "op": "add",
+                    "path": "/relations/-",
+                    "value": {
+                      "rel": "System.LinkTypes.Related",
+                      "url": "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workItems/${ITEM_ID}",
+                      "attributes": {
+                        "comment": "Associated with deployment"
+                      }
+                    }
+                  }
+                ]
+                EOF
+                )
+
+                LINK_RESPONSE=$(curl -s -X PATCH "https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/wit/workitems/${WORK_ITEM_ID}?api-version=6.0" \
+                  -H "Content-Type: application/json-patch+json" \
+                  -H "Authorization: Basic $(echo -n :${AZURE_DEVOPS_PAT} | base64)" \
+                  -d "$LINK_JSON")
+                echo "Link response for item $ITEM_ID: $LINK_RESPONSE"
+              done
+            fi
+          fi
         else
           echo "Failed to create deployment record"
-          ERROR_MESSAGE=$(echo "$RESPONSE" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
-          echo "Error Message: $ERROR_MESSAGE"
-          if echo "$ERROR_MESSAGE" | grep -q "TF401324"; then
-            echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
-          elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
-            FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
-            echo "The field $FIELD_NAME is missing or not accessible. Please check if it exists in your process or if you have permission to access it."
+          ERROR_MESSAGE=$(jq -r '.message' "$RESPONSE_FILE" 2>/dev/null)
+          if [ $? -ne 0 ] || [ -z "$ERROR_MESSAGE" ] || [ "$ERROR_MESSAGE" == "null" ]; then
+            echo "Could not parse error message. Full response content:"
+            cat "$RESPONSE_FILE"
+          else
+            echo "Error Message: $ERROR_MESSAGE"
+            if echo "$ERROR_MESSAGE" | grep -q "TF401324"; then
+              echo "You might not have permission to create work items or use certain fields. Please check your PAT permissions."
+            elif echo "$ERROR_MESSAGE" | grep -q "TF51535"; then
+              FIELD_NAME=$(echo "$ERROR_MESSAGE" | grep -oP "TF51535: Cannot find field \K\S+")
+              echo "The field $FIELD_NAME is missing or not accessible. Please check if it exists in your process or if you have permission to access it."
+            fi
           fi
           exit 1
         fi
@@ -168,3 +240,6 @@ jobs:
         echo "Environment: ${{ github.event.inputs.environment }}"
         echo "Version: ${{ github.event.inputs.version }}"
         echo "Timestamp: ${{ steps.current-time.outputs.rfc3339 }}"
+        echo "Duration: ${{ steps.deployment-duration.outputs.duration }} seconds"
+        echo "Frequency: ${{ steps.deployment-frequency.outputs.frequency }}"
+        echo "Associated Work Items: ${{ github.event.inputs.associated_work_items }}"
