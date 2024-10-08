@@ -9,5 +9,6 @@
     "enable_research_assistant": true,
     "enable_investment_assistant": true,
     "enable_company_analyst": true,
-    "enable_maintenance_engineer": true
+    "enable_maintenance_engineer": true,
+    "enable_feedback_sentiment_analysis": true
   }

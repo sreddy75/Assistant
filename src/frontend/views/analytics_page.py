@@ -21,49 +21,72 @@ def render_analytics_page():
     st.title("Analytics Dashboard")
 
     # Fetch all analytics data at once
+    all_analytics = fetch_analytics_data()
+
+    if all_analytics:
+        render_dashboard(all_analytics)
+
+def fetch_analytics_data():
     with st.spinner("Loading analytics data..."):
         all_analytics = fetch_data("/api/v1/analytics/all-analytics")
 
-    if isinstance(all_analytics, dict) and 'error' in all_analytics:
-        st.error(f"Failed to fetch analytics data: {all_analytics['error']}")
-        return
+    if all_analytics is None:
+        st.error("Failed to fetch analytics data. Please try again later.")
+        if st.button("Retry"):
+            st.experimental_rerun()
+        return None
 
+    if isinstance(all_analytics, dict) and 'detail' in all_analytics:
+        st.error(f"Failed to fetch analytics data: {all_analytics['detail']}")
+        if st.button("Retry"):
+            st.experimental_rerun()
+        return None
+
+    if not isinstance(all_analytics, dict) or not all_analytics:
+        st.error("Received invalid analytics data. Please try again later.")
+        if st.button("Retry"):
+            st.experimental_rerun()
+        return None
+
+    return all_analytics
+
+def render_dashboard(all_analytics):
+    st.header("User Engagement")
     col1, col2 = st.columns(2)
-
     with col1:
         render_key_insights(all_analytics)
-
     with col2:
-        render_active_users(all_analytics['user_engagement'])
+        render_active_users(all_analytics.get('user_engagement', {}))
 
     st.header("User Growth and Interaction")
     col1, col2 = st.columns(2)
-
     with col1:
-        render_user_growth(all_analytics['user_engagement'])
-
+        render_user_growth(all_analytics.get('user_engagement', {}))
     with col2:
-        render_interaction_metrics(all_analytics['interaction_metrics'])
+        render_interaction_metrics(all_analytics.get('interaction_metrics', {}))
 
-    render_query_volume_trend(all_analytics['interaction_metrics'])
-    render_user_retention(all_analytics['user_engagement'])
-    render_quality_metrics(all_analytics['quality_metrics'], all_analytics['sentiment_analysis'])
-    render_sentiment_trend(all_analytics['quality_metrics'])
-    render_usage_patterns(all_analytics['usage_patterns'])
-    render_feature_adoption(all_analytics['usage_patterns'])
-    render_feedback_analysis(all_analytics['feedback_analysis'])
+    render_query_volume_trend(all_analytics.get('interaction_metrics', {}))
+    render_user_retention(all_analytics.get('user_retention', {}))
+    render_quality_metrics(all_analytics.get('quality_metrics', {}), all_analytics.get('sentiment_analysis', {}))
+    render_sentiment_trend(all_analytics.get('quality_metrics', {}))
+    render_usage_patterns(all_analytics.get('usage_patterns', {}))
+    render_feature_adoption(all_analytics.get('feature_usage', {}))
+    render_feedback_analysis(all_analytics.get('feedback_analysis', {}))
+    render_user_segmentation(all_analytics.get('user_segmentation', {}))
+    render_conversion_funnel(all_analytics.get('conversion_funnel', {}))
+    render_churn_rate(all_analytics.get('churn_rate', {}))
 
 def render_key_insights(all_analytics):
     st.subheader("Key Insights")
     insights = []
 
-    user_engagement = all_analytics['user_engagement']
-    interaction_metrics = all_analytics['interaction_metrics']
-    quality_metrics = all_analytics['quality_metrics']
-    usage_patterns = all_analytics['usage_patterns']
+    user_engagement = all_analytics.get('user_engagement', {})
+    interaction_metrics = all_analytics.get('interaction_metrics', {})
+    quality_metrics = all_analytics.get('quality_metrics', {})
+    usage_patterns = all_analytics.get('usage_patterns', {})
 
     if user_engagement:
-        user_growth = safe_get(user_engagement, 'user_growth')
+        user_growth = safe_get(user_engagement, 'user_growth', default=[])
         if user_growth and len(user_growth) > 1:
             growth = user_growth[-1]['new_users'] - user_growth[0]['new_users']
             insights.append(f"User base growth: {growth} users")
@@ -139,40 +162,18 @@ def render_query_volume_trend(interaction_metrics):
     else:
         st.warning("Query volume trend data is not available.")
 
-def render_user_retention(user_engagement):
+def render_user_retention(user_retention):
     st.subheader("User Retention")
-    if user_engagement:
-        user_retention = safe_get(user_engagement, 'user_retention', default=[])
-        if user_retention:
-            retention_df = pd.DataFrame(user_retention)
-
-            if 'cohort' in retention_df.columns and 'retention_rate' in retention_df.columns:
-                if 'week' in retention_df.columns:
-                    fig_retention = px.imshow(
-                        retention_df.pivot(columns='cohort', values='retention_rate', index='week'),
-                        title="User Retention Heatmap",
-                        labels=dict(x="Cohort", y="Week", color="Retention Rate")
-                    )
-                else:
-                    fig_retention = px.imshow(
-                        retention_df.pivot(columns='cohort', values='retention_rate'),
-                        title="User Retention Heatmap",
-                        labels=dict(x="Cohort", y="Period", color="Retention Rate")
-                    )
-                st.plotly_chart(fig_retention, use_container_width=True)
-            elif 'cohort' in retention_df.columns:
-                fig_retention = px.line(
-                    retention_df, 
-                    x='cohort', 
-                    y=retention_df.columns.drop('cohort'), 
-                    title="User Retention Over Time"
-                )
-                st.plotly_chart(fig_retention, use_container_width=True)
-            else:
-                st.write("User Retention Data:")
-                st.write(retention_df)
+    if user_retention:
+        retention_df = pd.DataFrame(user_retention)
+        if 'cohort' in retention_df.columns and 'retention_rate' in retention_df.columns:
+            fig_retention = px.line(retention_df, x='cohort', y='retention_rate', title="User Retention Over Time")
+            st.plotly_chart(fig_retention, use_container_width=True)
         else:
-            st.warning("User retention data is not available.")
+            st.write("User Retention Data:")
+            st.write(retention_df)
+    else:
+        st.warning("User retention data is not available.")
 
 def render_quality_metrics(quality_metrics, sentiment_analysis):
     st.header("Quality Metrics")
@@ -245,12 +246,11 @@ def render_usage_patterns(usage_patterns):
             else:
                 st.warning("Peak usage data is not available.")
 
-def render_feature_adoption(usage_patterns):
+def render_feature_adoption(feature_usage):
     st.header("Feature Adoption")
-    feature_adoption = safe_get(usage_patterns, 'feature_adoption', default=[])
-    if feature_adoption:
-        feature_adoption_df = pd.DataFrame(feature_adoption)
-        fig_feature_adoption = px.bar(feature_adoption_df, x='feature', y='count', title="Feature Adoption")
+    if feature_usage:
+        feature_usage_df = pd.DataFrame(feature_usage)
+        fig_feature_adoption = px.bar(feature_usage_df, x='feature', y='usage_count', title="Feature Adoption")
         st.plotly_chart(fig_feature_adoption, use_container_width=True)
     else:
         st.warning("Feature adoption data is not available.")
@@ -287,5 +287,102 @@ def render_feedback_analysis(feedback_analysis):
         else:
             st.warning("Top keywords data is not available.")
 
-if __name__ == "__main__":
+def render_user_segmentation(user_segmentation):
+    st.header("User Segmentation")
+    if user_segmentation:
+        col1, col2 = st.columns(2)
+        with col1:
+            active_users = safe_get(user_segmentation, 'active_users')
+            inactive_users = safe_get(user_segmentation, 'inactive_users')
+            fig_active_inactive = px.pie(
+                values=[active_users, inactive_users],
+                names=['Active', 'Inactive'],
+                title="Active vs Inactive Users"
+            )
+            st.plotly_chart(fig_active_inactive, use_container_width=True)
+        
+        with col2:
+            engagement_data = {
+                'High': safe_get(user_segmentation, 'high_engagement'),
+                'Medium': safe_get(user_segmentation, 'medium_engagement'),
+                'Low': safe_get(user_segmentation, 'low_engagement')
+            }
+            fig_engagement = px.bar(
+                x=list(engagement_data.keys()),
+                y=list(engagement_data.values()),
+                title="User Engagement Levels"
+            )
+            st.plotly_chart(fig_engagement, use_container_width=True)
+    else:
+        st.warning("User segmentation data is not available.")
+
+def render_conversion_funnel(conversion_funnel):
+    st.header("Conversion Funnel")
+    if conversion_funnel:
+        funnel_stages = ['total_visitors', 'signed_up', 'active_users', 'paying_users']
+        funnel_values = [safe_get(conversion_funnel, stage) for stage in funnel_stages]
+        funnel_labels = ['Total Visitors', 'Signed Up', 'Active Users', 'Paying Users']
+        
+        fig_funnel = go.Figure(go.Funnel(
+            y=funnel_labels,
+            x=funnel_values,
+            textinfo="value+percent initial"
+        ))
+        fig_funnel.update_layout(title_text="Conversion Funnel")
+        st.plotly_chart(fig_funnel, use_container_width=True)
+    else:
+        st.warning("Conversion funnel data is not available.")
+
+def render_churn_rate(churn_rate):
+    st.header("Churn Rate")
+    if churn_rate:
+        col1, col2 = st.columns(2)
+        with col1:
+            churn_rate_value = safe_get(churn_rate, 'churn_rate')
+            if churn_rate_value is not None:
+                st.metric("Churn Rate", f"{churn_rate_value:.2f}%")
+            else:
+                st.metric("Churn Rate", "N/A")
+        with col2:
+            fig_churn = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=safe_get(churn_rate, 'churn_rate', 0),
+                title={'text': "Churn Rate"},
+                gauge={'axis': {'range': [None, 100]},
+                       'bar': {'color': "red"},
+                       'steps': [
+                           {'range': [0, 5], 'color': "lightgreen"},
+                           {'range': [5, 15], 'color': "yellow"},
+                           {'range': [15, 100], 'color': "orange"}],
+                       'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 15}}
+            ))
+            st.plotly_chart(fig_churn, use_container_width=True)
+        
+        st.subheader("Churn Details")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Users (Last Month)", format_metric(safe_get(churn_rate, 'total_users_month_ago'), '{:.0f}'))
+        col2.metric("Active Users", format_metric(safe_get(churn_rate, 'active_users'), '{:.0f}'))
+        col3.metric("Churned Users", format_metric(safe_get(churn_rate, 'churned_users'), '{:.0f}'))
+    else:
+        st.warning("Churn rate data is not available.")
+
+def render_user_journey(user_journey):
+    st.header("User Journey")
+    if user_journey:
+        journey_df = pd.DataFrame(user_journey)
+        journey_df['timestamp'] = pd.to_datetime(journey_df['timestamp'])
+        journey_df = journey_df.sort_values('timestamp')
+        
+        fig_journey = px.timeline(journey_df, x_start="timestamp", x_end="timestamp", y="event_type", color="event_type",
+                                  hover_data=["event_data"])
+        fig_journey.update_yaxes(autorange="reversed")
+        st.plotly_chart(fig_journey, use_container_width=True)
+    else:
+        st.warning("User journey data is not available.")
+
+def main():
+    st.set_page_config(page_title="Analytics Dashboard", layout="wide")
     render_analytics_page()
+
+if __name__ == "__main__":
+    main()
