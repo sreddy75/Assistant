@@ -12,6 +12,11 @@ from src.backend.db.session import get_db
 from src.backend.models.models import User, AzureDevOpsConfig
 from src.backend.core.config import settings
 
+# Debug logging
+import jwt
+print(f"JWT library path: {jwt.__file__}")
+print(f"JWT library version: {jwt.__version__}")
+
 logger = logging.getLogger(__name__)
 
 # to get a string like this run:

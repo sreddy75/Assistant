@@ -11,7 +11,7 @@ from jsonschema import ValidationError
 from psycopg import OperationalError
 from pydantic import BaseModel, ConfigDict, field_validator, Field
 import json as json_module
-
+import openai
 from sqlalchemy import create_engine
 from src.backend.kr8.document.base import Document
 from src.backend.kr8.llm.base import LLM
@@ -632,6 +632,17 @@ class Assistant(BaseModel):
                         llm_response = f"Response from {delegated_response['delegated_assistant']}:\n{delegated_response['delegated_response']}"
                 except json_module.JSONDecodeError:
                     pass  # Not a JSON response, use as is
+                
+        except openai.RateLimitError as e:
+            logger.error(f"OpenAI RateLimitError: {str(e)}")
+            error_message = (
+                f"I apologize, {self.user_nickname}. The token per minute (TPM) quota has been exceeded. "
+                "Please wait a moment and try again. If this persists, you may need to reduce the length "
+                "of your input or wait for a longer period."
+            )
+            yield error_message
+            return
+                    
         except Exception as e:
             logger.error(f"Error generating response: {traceback.format_exc()}")
             yield f"I'm having trouble generating a response right now, {self.user_nickname}. Please try again later."
