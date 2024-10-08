@@ -173,24 +173,18 @@ def get_chat_history(assistant_id: int) -> list:
         st.error(f"Failed to fetch chat history: {str(e)}")
         return []
 
-def submit_feedback(user_id: int, query: str, response: str, is_upvote: bool, usefulness_rating: int, feedback_text: str):
+def submit_feedback(feedback_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         response = requests.post(
             f"{BACKEND_URL}/api/v1/feedback/submit-feedback",
-            json={
-                "user_id": user_id,
-                "query": query,
-                "response": response,
-                "is_upvote": is_upvote,
-                "usefulness_rating": usefulness_rating,
-                "feedback_text": feedback_text
-            },
+            json=feedback_data,
             headers=get_auth_header()
         )
-        if response.status_code != 200:
-            st.error("Failed to submit feedback. Please try again.")
-    except requests.RequestException as e:
-        st.error(f"Failed to submit feedback: {str(e)}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error submitting feedback: {str(e)}")
+        raise
         
 def update_azure_devops_schema():
     try:

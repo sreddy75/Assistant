@@ -13,6 +13,10 @@ from utils.api import BACKEND_URL
 import datetime
 import requests
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def cached_load_org_config():
+    return load_org_config()
+
 def load_org_config():
     """
     Load the organization configuration from the server.
@@ -50,7 +54,7 @@ def main():
     else:
         # Load organization config after authentication
         org_config = load_org_config()
-        render_main_app(org_config)
+        render_main_app()
         
 def render_layout():
     current_year = datetime.datetime.now().year
@@ -105,10 +109,13 @@ def render_footer():
     """
     st.markdown(footer, unsafe_allow_html=True)
 
-def render_main_app(org_config):
+def render_main_app():
     # Initialize session state for navigation
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "Dashboard"
+
+    # Load cached org config
+    org_config = cached_load_org_config()
 
     # Navigation using tabs
     tabs = st.tabs(["Dashboard", "Chat", "Knowledge Base", "Analytics", "Settings"])
