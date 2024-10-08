@@ -5,6 +5,7 @@ import asyncio
 from sseclient import SSEClient
 from utils.api import BACKEND_URL
 from utils.helpers import restart_assistant
+from utils.helpers import send_event
 from config.settings import ENABLED_ASSISTANTS
 from src.backend.db.session import get_db
 from src.backend.models.models import Organization, OrganizationConfig
@@ -160,6 +161,7 @@ def process_project(project_type, project_name, project_files):
                         st.session_state['current_project'] = project_name
                         st.session_state['current_project_type'] = project_type.lower()
                         st.session_state.project_files_processed = True
+                        send_event("project_processed", {"project_name": project_name, "project_type": project_type.lower()})
                         break
 
     except Exception as e:
