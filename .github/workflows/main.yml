@@ -13,6 +13,9 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         app: [streamlit, fastapi]
@@ -23,9 +26,10 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        role-to-assume: arn:aws:iam::637423187524:role/GitHubActionsRole
         aws-region: ${{ env.AWS_REGION }}
+        role-session-name: GitHubActionsSession
+        audience: sts.amazonaws.com
 
     - name: Login to Amazon ECR
       id: login-ecr
@@ -63,12 +67,17 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
         role-to-assume: arn:aws:iam::637423187524:role/GitHubActionsRole
         aws-region: ${{ env.AWS_REGION }}
+        role-session-name: GitHubActionsSession
+        audience: sts.amazonaws.com
 
     - name: Login to Amazon ECR
       id: login-ecr
