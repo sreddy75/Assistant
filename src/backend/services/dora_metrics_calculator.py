@@ -90,31 +90,34 @@ class DORAMetricsCalculator:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
             
+            # Get all deployments
             deployments = self.azure_devops_service.get_deployment_tickets(project_id, team_id, start_date, end_date)
             logger.info(f"Found {len(deployments)} deployments")
             
-            if not deployments:
-                return {
-                    'message': "No deployments found for the specified time range.",
-                    'deployments': 0
-                }
+            # Get all completed work items
+            completed_work_items = self.azure_devops_service.get_completed_work_items(project_id, team_id, start_date, end_date)
+            logger.info(f"Found {len(completed_work_items)} completed work items")
             
-            lead_times = self.calculate_lead_times(deployments)
-            logger.info(f"Calculated lead times for {len(lead_times)} items")
+            deployed_lead_times = self.calculate_lead_times(deployments)
+            completed_lead_times = self.calculate_completed_lead_times(completed_work_items)
             
-            if not lead_times:
+            all_lead_times = deployed_lead_times + completed_lead_times
+            
+            if not all_lead_times:
                 return {
                     'message': "Could not calculate lead times for any work items.",
                     'deployments': len(deployments),
-                    'error': "No valid lead times calculated. Check 'Custom.DeployedWorkItems' field and work item data."
+                    'completed_items': len(completed_work_items),
+                    'error': "No valid lead times calculated."
                 }
             
-            lead_time_values = [lt['lead_time'] for lt in lead_times if lt['lead_time'] is not None]
+            lead_time_values = [lt['lead_time'] for lt in all_lead_times if lt['lead_time'] is not None]
             
             if not lead_time_values:
                 return {
                     'message': "All calculated lead times were invalid (None).",
                     'deployments': len(deployments),
+                    'completed_items': len(completed_work_items),
                     'error': "Check date fields in work items and deployment tickets."
                 }
             
@@ -128,7 +131,8 @@ class DORAMetricsCalculator:
                 "max_lead_time": f"{max(lead_time_values):.2f} hours",
                 "category": category,
                 "calculated_items": len(lead_time_values),
-                "total_deployments": len(deployments)
+                "total_deployments": len(deployments),
+                "total_completed_items": len(completed_work_items)
             }
                         
         except Exception as e:
@@ -177,6 +181,34 @@ class DORAMetricsCalculator:
             return None
         except Exception as e:
             logger.error(f"Error calculating lead time for deployment {deployment.id}: {str(e)}", exc_info=True)
+            return None
+
+    def calculate_completed_lead_times(self, work_items: List[Any]) -> List[Dict[str, Any]]:
+        lead_times = []
+        for work_item in work_items:
+            lead_time = self.calculate_single_completed_lead_time(work_item)
+            if lead_time is not None:
+                lead_times.append(lead_time)
+            else:
+                logger.warning(f"Unable to calculate lead time for work item {work_item.id}")
+        return lead_times
+
+    def calculate_single_completed_lead_time(self, work_item: Any) -> Optional[Dict[str, Any]]:
+        try:
+            created_date = datetime.fromisoformat(work_item.fields['System.CreatedDate'])
+            completed_date = datetime.fromisoformat(work_item.fields['System.ChangedDate'])
+            
+            lead_time = completed_date - created_date
+
+            return {
+                'work_item_id': work_item.id,
+                'lead_time': lead_time.total_seconds() / 3600  # Convert to hours
+            }
+        except KeyError as ke:
+            logger.error(f"Missing required field in work item {work_item.id}: {str(ke)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error calculating lead time for work item {work_item.id}: {str(e)}", exc_info=True)
             return None
 
     def categorize_lead_time(self, lead_time: float) -> str:
