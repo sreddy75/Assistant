@@ -89,6 +89,10 @@ class AzureDevOpsService:
         
         wit_client = self.connection.clients.get_work_item_tracking_client()
         
+        # Convert datetime to date for WIQL query
+        start_date_str = start_date.date().isoformat()
+        end_date_str = end_date.date().isoformat()
+        
         wiql = Wiql(
             query=f"""
             SELECT [System.Id]
@@ -96,8 +100,8 @@ class AzureDevOpsService:
             WHERE [System.TeamProject] = '{project_name}'
             AND [System.AreaPath] UNDER '{area_path}'
             AND [System.WorkItemType] = 'Deployment'
-            AND [System.ChangedDate] >= '{start_date.isoformat()}'
-            AND [System.ChangedDate] <= '{end_date.isoformat()}'
+            AND [System.ChangedDate] >= '{start_date_str}'
+            AND [System.ChangedDate] <= '{end_date_str}'
             ORDER BY [System.ChangedDate] DESC
             """
         )

@@ -9,6 +9,7 @@ from src.frontend.utils.api_helpers import update_azure_devops_schema
 from utils.api import BACKEND_URL
 from utils.helpers import handle_response
 from src.frontend.utils.helpers import restart_assistant
+from utils.helpers import send_event
 
 def render_org_management():
     st.header("Organization Management")
@@ -121,6 +122,8 @@ def create_or_edit_organization(org=None):
 
     if st.button("Update" if is_editing else "Create"):
         update_or_create_organization(is_editing, org['id'] if is_editing else None, name, json_data, new_files)
+        send_event("organization_updated" if is_editing else "organization_created", {"org_id": org['id'] if is_editing else None})
+
 
     if is_editing and st.button("Cancel Editing"):
         del st.session_state.editing_org_id
@@ -269,6 +272,8 @@ def render_user_management():
                 new_role = st.selectbox(f"Change role for {user['nickname']}", ['trial', 'user', 'admin'])
                 if st.button(f"Update Role"):
                     update_user_role(user['id'], new_role)
+                    send_event("user_role_updated", {"user_id": user['id'], "new_role": new_role})
+
 
             with col2:
                 if user.get('role') == 'trial':
@@ -276,12 +281,16 @@ def render_user_management():
                                                      min_value=1, max_value=30, value=7)
                     if st.button(f"Extend Trial"):
                         extend_user_trial(user['id'], days_to_extend)
+                        send_event("user_trial_extended", {"user_id": user['id'], "days_extended": days_to_extend})
+
                 else:
                     st.write("User is not on trial")
 
             with col3:
                 if st.button(f"Delete User"):
                     delete_user(user['id'])
+                    send_event("user_deleted", {"user_id": user['id']})
+
 
         st.subheader("Create New User")
         new_email = st.text_input("Email", key="new_email")
@@ -294,6 +303,8 @@ def render_user_management():
 
         if st.button("Create User", key="create_user"):
             create_new_user(new_email, new_password, new_first_name, new_last_name, new_nickname, new_role, new_org)
+            send_event("user_created", {"email": new_email, "role": new_role, "organization": new_org})
+
     else:
         st.error("Failed to fetch users")
 
@@ -375,6 +386,8 @@ def render_model_selection():
                 with st.spinner("Restarting assistant with new model..."):
                     restart_assistant()
                 st.success("Model changed successfully. Assistant restarted.")
+                send_event("model_changed", {"new_model": llm_id})
+
 
         st.info(f"Currently selected model: {st.session_state['llm_id']}")
 
@@ -387,6 +400,8 @@ def render_model_selection():
         if st.button("Update Advanced Settings"):
             # Here you would typically send these settings to your backend
             st.success("Advanced settings updated successfully.")
+            send_event("advanced_settings_updated", {"temperature": temperature, "max_tokens": max_tokens})
+
 
     # Model performance metrics
     st.subheader("Model Performance")

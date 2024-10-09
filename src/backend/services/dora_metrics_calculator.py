@@ -91,21 +91,32 @@ class DORAMetricsCalculator:
             start_date = end_date - timedelta(days=days)
             
             deployments = self.azure_devops_service.get_deployment_tickets(project_id, team_id, start_date, end_date)
+            logger.info(f"Found {len(deployments)} deployments")
             
             if not deployments:
                 return {
-                    'message': "No deployments found for the specified time range."
+                    'message': "No deployments found for the specified time range.",
+                    'deployments': 0
                 }
             
             lead_times = self.calculate_lead_times(deployments)
+            logger.info(f"Calculated lead times for {len(lead_times)} items")
             
             if not lead_times:
                 return {
                     'message': "Could not calculate lead times for any work items.",
-                    'deployments': len(deployments)
+                    'deployments': len(deployments),
+                    'error': "No valid lead times calculated. Check 'Custom.DeployedWorkItems' field and work item data."
                 }
             
             lead_time_values = [lt['lead_time'] for lt in lead_times if lt['lead_time'] is not None]
+            
+            if not lead_time_values:
+                return {
+                    'message': "All calculated lead times were invalid (None).",
+                    'deployments': len(deployments),
+                    'error': "Check date fields in work items and deployment tickets."
+                }
             
             avg_lead_time = mean(lead_time_values)
             category = self.categorize_lead_time(avg_lead_time)
@@ -121,7 +132,7 @@ class DORAMetricsCalculator:
             }
                         
         except Exception as e:
-            logger.error(f"Error calculating lead time for changes: {str(e)}")
+            logger.error(f"Error calculating lead time for changes: {str(e)}", exc_info=True)
             return {"error": f"Failed to calculate lead time for changes: {str(e)}"}
 
     def calculate_lead_times(self, deployments: List[Any]) -> List[Dict[str, Any]]:
@@ -130,17 +141,24 @@ class DORAMetricsCalculator:
             lead_time = self.calculate_single_lead_time(deployment)
             if lead_time is not None:
                 lead_times.append(lead_time)
+            else:
+                logger.warning(f"Unable to calculate lead time for deployment {deployment.id}")
         return lead_times
 
     def calculate_single_lead_time(self, deployment: Any) -> Optional[Dict[str, Any]]:
         try:
             deployed_items = deployment.fields.get('Custom.DeployedWorkItems', '')
             if not deployed_items:
+                logger.warning(f"No deployed work items found for deployment {deployment.id}")
                 return None
 
             deployed_item_ids = [int(item.strip()) for item in deployed_items.split(',') if item.strip()]
-            work_items = self.azure_devops_service.get_work_items(deployed_item_ids)
+            if not deployed_item_ids:
+                logger.warning(f"No valid work item IDs found in 'Custom.DeployedWorkItems' for deployment {deployment.id}")
+                return None
 
+            work_items = self.azure_devops_service.get_work_items(deployed_item_ids)
+            
             deployment_time = datetime.fromisoformat(deployment.fields['Custom.DeploymentTimestamp'])
             
             max_lead_time = timedelta(hours=0)
@@ -154,8 +172,11 @@ class DORAMetricsCalculator:
                 'deployment_id': deployment.id,
                 'lead_time': max_lead_time.total_seconds() / 3600  # Convert to hours
             }
+        except KeyError as ke:
+            logger.error(f"Missing required field in deployment {deployment.id}: {str(ke)}")
+            return None
         except Exception as e:
-            logger.error(f"Error calculating lead time for deployment {deployment.id}: {str(e)}")
+            logger.error(f"Error calculating lead time for deployment {deployment.id}: {str(e)}", exc_info=True)
             return None
 
     def categorize_lead_time(self, lead_time: float) -> str:

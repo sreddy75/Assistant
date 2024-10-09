@@ -105,8 +105,7 @@ class BusinessAnalysisChat(BaseChat):
                     st.session_state.confluence_pages = pages
                     st.session_state.loaded_space_key = selected_space['key']
                     st.success(f"Pages loaded from '{selected_space_name}' successfully!")
-                    if not st.session_state.pages_loaded:
-                        send_event("confluence_pages_loaded", {"space_name": selected_space_name, "page_count": len(pages)})
+                    if not st.session_state.pages_loaded:                        
                         st.session_state.pages_loaded = True
                 else:
                     st.error("Failed to load pages. Please try again.")
@@ -156,8 +155,7 @@ class BusinessAnalysisChat(BaseChat):
             self.perform_business_analysis()
 
     def perform_business_analysis(self):
-        try:
-            send_event("business_analysis_started", {})
+        try:            
             start_time = time.time()
             response_iterator = generate_development_artifacts(self.org_id)
             
@@ -180,8 +178,7 @@ class BusinessAnalysisChat(BaseChat):
                         completed_steps = st.session_state.current_node_index + 1
                         progress = completed_steps / len(self.nodes)
                         self.progress_placeholder.progress(progress)
-                        self.status_placeholder.text(f"step {completed_steps}/{len(self.nodes)}")
-                        send_event("business_analysis_step_executed", {"step": current_node, "progress": progress})
+                        self.status_placeholder.text(f"step {completed_steps}/{len(self.nodes)}")                        
                     
                         # Give Streamlit a moment to update the UI
                         time.sleep(0.5)
@@ -252,7 +249,7 @@ class BusinessAnalysisChat(BaseChat):
             st.info("No final results available yet.")
 
     def send_message(self, message):
-        send_event("business_analysis_message_sent", {"message_length": len(message)})
+        send_event("business_analysis_chat_message", {"message_length": len(message)})
         return send_business_analysis_query(message, st.session_state.analysis_results, self.org_id)
 
     def get_input_placeholder(self):

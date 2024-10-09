@@ -88,7 +88,7 @@ def send_chat_message(message: str, assistant_id: int) -> Iterator[str]:
     logger.info(f"Sending chat message: message={message}, assistant_id={assistant_id}")
     try:
         response = requests.post(
-            f"{BACKEND_URL}/api/v1/chat/",
+            f"{BACKEND_URL}/api/v1/chat",
             json={"message": message, "assistant_id": assistant_id},
             headers=get_auth_header(),
             stream=True

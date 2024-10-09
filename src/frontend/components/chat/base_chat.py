@@ -165,7 +165,7 @@ class BaseChat:
             st.session_state[submitted_key] = False
 
         if not st.session_state[submitted_key]:
-            with st.expander("Provide feedback", expanded=True):
+            with st.expander("Provide feedback", expanded=False):
                 self.collect_feedback(feedback_key, submitted_key)
 
     def collect_feedback(self, feedback_key, submitted_key):

@@ -4,6 +4,7 @@ import pandas as pd
 from utils.api import BACKEND_URL
 from utils.helpers import handle_response
 from utils.file_processor import process_file
+from utils.helpers import send_event
 
 def render_knowledge_base():    
     st.markdown("""
@@ -58,6 +59,7 @@ def add_content():
             if st.button("Upload Files", key="kb_upload_files_button"):
                 for file in uploaded_files:
                     upload_file(file)
+                    send_event("knowledge_base_file_uploaded", {"file_name": file.name, "file_size": file.size})
                 st.success(f"Successfully uploaded {len(uploaded_files)} file(s)")
 
     with col2:
@@ -65,6 +67,8 @@ def add_content():
         input_url = st.text_input("Enter URL", key="kb_url_input")
         if st.button("Add URL", key="kb_add_url_button"):
             add_url(input_url)
+            send_event("knowledge_base_url_added", {"url": input_url})
+
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -127,6 +131,7 @@ def manage_documents():
     if st.button("Clear Knowledge Base", key="clear_kb"):
         assistant_id = st.session_state.get("assistant_id")
         clear_knowledge_base(assistant_id)
+        send_event("knowledge_base_cleared", {"assistant_id": assistant_id})
     st.markdown('</div>', unsafe_allow_html=True)
 
 def upload_file(uploaded_file):
