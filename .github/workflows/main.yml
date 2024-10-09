@@ -76,17 +76,25 @@ jobs:
       uses: aws-actions/amazon-ecr-login@v1
 
     - name: Deploy to EC2
+      env:
+        EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
       run: |
-        aws ssm send-command \
-          --instance-ids "$EC2_INSTANCE_ID" \
-          --document-name "AWS-RunShellScript" \
-          --parameters '{"commands":[
-            "cd ${{ env.APP_PATH }}",
-            "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
-            "docker-compose pull",
-            "docker-compose up -d",
-            "docker image prune -af"
-          ]}'
+        echo "$EC2_SSH_KEY" > ec2_ssh_key.pem
+        chmod 400 ec2_ssh_key.pem
+        
+        ssh -i ec2_ssh_key.pem -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_HOST << EOF
+          cd ${{ env.APP_PATH }}
+          echo "$ENV_FILE_CONTENT" > .env
+          echo "export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> .env
+          echo "export AWS_REGION=${{ env.AWS_REGION }}" >> .env
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          docker-compose pull
+          docker-compose up -d
+          docker image prune -af
+        EOF
 
   record-deployment:
     needs: deploy
