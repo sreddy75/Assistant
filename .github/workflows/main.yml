@@ -8,6 +8,7 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REPOSITORY: myapp
   EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+  APP_PATH: ${{ secrets.APP_PATH }}
 
 jobs:
   build-and-push:
@@ -44,7 +45,6 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build a docker container and push it to ECR 
         docker buildx create --use
         docker buildx build \
           --cache-from=type=local,src=/tmp/.buildx-cache \
@@ -53,7 +53,7 @@ jobs:
           --file Dockerfile.${{ matrix.app }} \
           --push \
           .
-        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:${{ matrix.app }}-$IMAGE_TAG"
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:${{ matrix.app }}-$IMAGE_TAG" >> $GITHUB_OUTPUT
 
     - name: Move cache
       run: |
@@ -71,13 +71,17 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
     - name: Deploy to EC2
       run: |
         aws ssm send-command \
           --instance-ids "$EC2_INSTANCE_ID" \
           --document-name "AWS-RunShellScript" \
           --parameters '{"commands":[
-            "cd /path/to/your/app",
+            "cd ${{ env.APP_PATH }}",
             "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
             "docker-compose pull",
             "docker-compose up -d",
@@ -101,11 +105,7 @@ jobs:
       run: |
         COMMIT_MESSAGES=$(git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:%s)
         WORK_ITEMS=$(echo "$COMMIT_MESSAGES" | grep -oP 'AB#\K\d+' | sort -u | tr '\n' ',' | sed 's/,$//')
-        if [ -z "$WORK_ITEMS" ]; then
-          echo "::set-output name=ids::"
-        else
-          echo "::set-output name=ids::$WORK_ITEMS"
-        fi
+        echo "ids=$WORK_ITEMS" >> $GITHUB_OUTPUT
 
     - name: Calculate deployment duration
       id: deployment-duration
@@ -113,7 +113,7 @@ jobs:
         START_TIME="${{ steps.current-time.outputs.epoch }}"
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - START_TIME))
-        echo "::set-output name=duration::$DURATION"
+        echo "duration=$DURATION" >> $GITHUB_OUTPUT
 
     - name: Determine deployment frequency
       id: deployment-frequency
@@ -126,7 +126,7 @@ jobs:
         else
           FREQUENCY="Less than once per day"
         fi
-        echo "::set-output name=frequency::$FREQUENCY"
+        echo "frequency=$FREQUENCY" >> $GITHUB_OUTPUT
 
     - name: Record Deployment in Azure DevOps
       env:
